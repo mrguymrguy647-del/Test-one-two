@@ -122,6 +122,7 @@ function rayMob(o, d, maxD) {
 // G: { P, survival, sky, gamma, hurtPlayer(dmg, from), soundAt(name, x, y, z), dropLoot(m) }
 function updateMobs(dt, G) {
   const P = G.P;
+  const villager = mobs.find(m => m.type === 'villager' && !m.deathT);
   for (let i = mobs.length - 1; i >= 0; i--) {
     const m = mobs[i], inf = MOB_INFO[m.type];
     m.bright = lightAt(m.x, m.y + m.h * 0.7, m.z, G.sky.sun, G.gamma);
@@ -138,13 +139,23 @@ function updateMobs(dt, G) {
     const dx = P.x - m.x, dz = P.z - m.z, dist = Math.hypot(dx, dz) || 0.001, dy = P.y - m.y;
     if ((dist > 80 && m.type !== 'villager') || m.y < -10) { mobs.splice(i, 1); continue; }
     const inWater = waterAt(m.x, m.y + 0.4, m.z);
-    let tx = 0, tz = 0, speed = 0;
-    if (m.type === 'zombie' && G.survival && !P.dead && dist < 22 && Math.abs(dy) < 8) {
-      tx = dx / dist; tz = dz / dist; speed = 2.5;
-      m.headPitch = clamp(-Math.atan2(dy + 0.2, dist) * 0.6, -0.6, 0.6);
-      if (dist < 1.25 && Math.abs(dy) < 1.7 && m.attackCd <= 0) {
+    let tx = 0, tz = 0, speed = 0, jump = false;
+    // zombies go for whoever is closer: you or the villager
+    let prey = null, pdist = 22;
+    if (m.type === 'zombie' && G.survival) {
+      if (!P.dead && dist < pdist && Math.abs(dy) < 8) { prey = P; pdist = dist; }
+      if (villager) { const vd = Math.hypot(villager.x - m.x, villager.z - m.z); if (vd < pdist && Math.abs(villager.y - m.y) < 8) { prey = villager; pdist = vd; } }
+    }
+    if (m.type === 'villager') {
+      const r = villagerThink(m, dt, G);
+      tx = r.tx; tz = r.tz; speed = r.speed; jump = r.jump;
+    } else if (prey) {
+      const ex = prey.x - m.x, ez = prey.z - m.z, ey = prey.y - m.y;
+      tx = ex / pdist; tz = ez / pdist; speed = 2.5;
+      m.headPitch = clamp(-Math.atan2(ey + 0.2, pdist) * 0.6, -0.6, 0.6);
+      if (pdist < 1.25 && Math.abs(ey) < 1.7 && m.attackCd <= 0) {
         m.attackCd = 1; m.attackT = 1;
-        G.hurtPlayer(3, m);
+        if (prey === P) G.hurtPlayer(3, m); else hurtMob(prey, 3, m, G);
       }
     } else if (m.ai.flee > 0) {
       m.ai.flee -= dt; tx = -dx / dist; tz = -dz / dist; speed = 3.6;
@@ -170,7 +181,7 @@ function updateMobs(dt, G) {
     if (inWater) { m.vy = Math.min(m.vy + 22 * dt, 2.2); }
     else m.vy = Math.max(m.vy - 26 * dt, -40);
     const blocked = moveEntity(m, dt);
-    if (blocked && (m.onGround || inWater) && speed > 0) m.vy = inWater ? 4 : 8.2;
+    if ((blocked && (m.onGround || inWater) && speed > 0) || (jump && m.onGround)) m.vy = inWater ? 4 : 8.2;
     if (speed > 0.1) {
       const target = Math.atan2(-tx, -tz);
       let dd = target - m.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd));
@@ -198,7 +209,8 @@ function hurtMob(m, dmg, from, G) {
     const kx = m.x - from.x, kz = m.z - from.z, kd = Math.hypot(kx, kz) || 1;
     m.vx = kx / kd * 7; m.vz = kz / kd * 7; m.vy = 5.5;
   }
-  if (m.type === 'pig' || m.type === 'villager') m.ai.flee = 5;
+  if (m.type === 'pig') m.ai.flee = 5;
+  if (m.type === 'villager') onVillagerHurt(m, from);
   G.soundAt(MOB_INFO[m.type].hurt, m.x, m.y + 1, m.z);
   if (m.health <= 0) m.deathT = 0.001;
 }

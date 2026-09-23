@@ -23,6 +23,19 @@
   <button id="down" class="tbtn touchonly hide" aria-label="Fly down"><svg viewBox="0 0 24 24"><path d="M12 19l-8-9h5V4h6v6h5z"/></svg></button>
   <button id="fly" class="tbtn hide" aria-label="Toggle flying">Fly</button>
   <button id="pause" class="tbtn" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+  <div id="vcard" class="hide" aria-live="polite">
+    <b>Homeless Villager</b>
+    <span id="vstatus"></span>
+    <div id="vhearts" class="row mini"></div>
+    <div id="vfood" class="row mini"></div>
+    <span id="vtrust"></span><span id="vdist"></span>
+  </div>
+  <div id="vtag" class="hide">
+    <div id="vsay" class="hide"></div>
+    <b>Homeless Villager</b>
+    <div id="vtagHearts" class="row mini"></div>
+    <div id="vtagFood" class="row mini"></div>
+  </div>
   <div id="bottom">
     <div id="toast"></div>
     <div id="blockname"></div>
@@ -131,6 +144,7 @@
 <script src="js/render.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/entities.js"></script>
+<script src="js/villager.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

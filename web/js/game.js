@@ -267,7 +267,7 @@ function attackMob(m) {
 // tap / right click
 function useAction() {
   if (!target || P.dead) { eatHeld(); return; }
-  if (target.mob && target.mob.type === 'villager' && feedVillager(target.mob)) return;
+  if (target.mob && target.mob.type === 'villager') { interactVillager(target.mob); return; }
   if (target.mob) { attackMob(target.mob); return; }
   if (target.b === TABLE || target.b === FURNACE) { openInventory(); return; }
   if (eatHeld()) return;
@@ -455,6 +455,7 @@ function updateDrops(dt) {
   }
 }
 function dropLoot(m) {
+  if (m.type === 'villager') villagerDied(m);
   if (m.type === 'pig') spawnDrop(PORK, 1 + Math.floor(Math.random() * 3), m.x, m.y + 0.5, m.z);
   if (m.type === 'zombie') { const n = Math.floor(Math.random() * 3); if (n) spawnDrop(FLESH, n, m.x, m.y + 0.5, m.z); }
 }
@@ -514,37 +515,6 @@ function spawnStartingPigs() {
     const y = surfaceSpot(x, z);
     if (y && get(x, y - 1, z) === GRASS) { spawnMob('pig', x + 0.5, y, z + 0.5); made++; }
   }
-}
-// one homeless villager wanders near where you start
-function spawnVillager() {
-  if (mobs.some(m => m.type === 'villager')) return;
-  for (let i = 0; i < 200; i++) {
-    const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 6;
-    const x = Math.floor(P.x + Math.cos(a) * r), z = Math.floor(P.z + Math.sin(a) * r);
-    if (x < 1 || z < 1 || x >= WX - 1 || z >= WZ - 1) continue;
-    const y = surfaceSpot(x, z);
-    if (!y || get(x, y - 1, z) === WATER) continue;
-    const v = spawnMob('villager', x + 0.5, y, z + 0.5);
-    v.yaw = Math.atan2(-(P.x - v.x), -(P.z - v.z));
-    return;
-  }
-}
-// tapping the villager while holding food gives it to him
-function feedVillager(v) {
-  const it = held();
-  swingHand();
-  if (!it || !ITEMS[it.id].food) {
-    soundAt('villager', v.x, v.y + 1.6, v.z);
-    toast('Homeless Villager: "Hrmm... spare some food?"');
-    return true;
-  }
-  consumeHeld();
-  Sound.play('eat');
-  soundAt('villager', v.x, v.y + 1.6, v.z);
-  spawnParticles(T.rose, v.x - 0.5, v.y + 1.9, v.z - 0.5, 12, { spread: 0.8, up: 1.5, grav: -1, size: 0.08, bright: v.bright });
-  v.health = MOB_INFO.villager.health;
-  toast('Homeless Villager: "Hrmm! Thank you, friend."');
-  return true;
 }
 function findSpawn(apply) {
   let best = null;
@@ -963,7 +933,7 @@ function peekSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)); }
 function save() {
   if (!session || !worldReady) return;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, seed, mode, edits: [...edits], time, days, spawn: spawnPt, sel, inv,
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, seed, mode, edits: [...edits], time, days, spawn: spawnPt, sel, inv, villager: villagerSave(),
       p: { x: P.x, y: P.y, z: P.z, yaw: P.yaw, pitch: P.pitch, flying: P.flying, health: P.health, food: P.food, sat: P.sat, air: P.air, dead: P.dead } }));
   } catch (e) { toast('Could not save the world (storage full?)'); }
 }
@@ -996,7 +966,8 @@ async function newGame(m) {
   if (mode === 'creative') [GRASS, DIRT, STONE, COBBLE, PLANKS, LOG, GLASS, TORCH, BRICK].forEach((id, i) => inv[i] = { id, count: 64 });
   setFlying(false);
   spawnStartingPigs();
-  spawnVillager();
+  villagerRespawnDay = -1;
+  spawnVillager(null);
   session = true; invDirty = true;
   save();
   startPlaying();
@@ -1026,7 +997,9 @@ function applySave(d) {
   if (p.dead || P.health <= 0) { Object.assign(P, { x: spawnPt[0], y: spawnPt[1], z: spawnPt[2], health: 20, food: 20 }); }
   if (boxHits(P.x, P.y, P.z, P.hw, P.h)) findSpawn(true);
   if (!mobs.some(m => m.type === 'pig')) spawnStartingPigs();
-  spawnVillager();
+  for (let i = mobs.length - 1; i >= 0; i--) if (mobs[i].type === 'villager') mobs.splice(i, 1);
+  villagerRespawnDay = -1;
+  spawnVillager(d.villager || null);
   session = true; invDirty = true;
 }
 function startPlaying() {
@@ -1057,7 +1030,7 @@ let moodT = 0, autosaveT = 0;
 function update(dt) {
   const prevT = time;
   time = (time + dt / DAY_LEN) % 1;
-  if (time < prevT) days++;
+  if (time < prevT) { days++; villagerNewDay(); }
   sky = skyState(time);
   attackCd -= dt; eatCd -= dt;
   updatePlayer(dt);
@@ -1113,6 +1086,8 @@ function frame(now) {
   const gamma = settings.bright / 100;
   const blockTarget = playingView && target && !target.mob ? target : null;
   const it = held();
+  const vp = M4.mul(M4.persp(fov * Math.PI / 180, canvas.width / canvas.height, 0.05, 400), M4.view(yaw, pitch, eye));
+  updateVillagerHUD(vp, eye, session && curScreen === null);
   renderFrame({
     eye, yaw, pitch, fov, sky, underwater, gamma, viewDist: settings.view, dpr,
     mobs, drops, particles, cloudDrift: cloudT,

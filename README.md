@@ -20,7 +20,19 @@ engine, and every texture, sound and song is generated in code (no downloads, no
   in wood, stone, iron and diamond (tools wear out)
 - Smelting at a furnace: iron ingots, cooked porkchops, glass, stone and bricks
 - Pigs to hunt for food, apples from leaves, and zombies that come out at night (they burn in the sun)
-- A homeless villager who wanders near your starting point. Tap him while holding food to share it
+
+**The Homeless Villager**
+
+A homeless villager lives near your starting point. His health, hunger and trust show in a card in
+the top corner, and a name tag with speech bubbles floats over his head.
+- He gets hungry over time. When he's hungry he walks to food lying on the ground, forages berries
+  near trees in the daytime, and begs you for food. With no food at all he slowly starves
+- Tap him while holding food to feed him. Each meal builds his trust
+- Once he trusts you (3 meals), tap him with empty hands to make him **follow you**; tap again to make
+  him **stay**
+- He finds his way around walls and up hills, runs from zombies (zombies go after him too), and at
+  night he looks for a roof to sleep under: a tree, an overhang, or a house you build for him
+- If he dies, a new homeless villager wanders in the next day. His state is saved with your world
 - If you die you drop your items and respawn
 
 **Creative mode**
@@ -104,6 +116,7 @@ web/js/world.js     World generation, lighting and chunk meshing
 web/js/render.js    WebGL renderer (world, sky, clouds, mobs, items, hand)
 web/js/audio.js     Synthesized sound effects and generative music
 web/js/entities.js  Physics, mobs, dropped items and particles
+web/js/villager.js  The homeless villager: needs, pathfinding, behaviour and his HUD
 web/js/game.js      Survival rules, inventory, crafting, controls, menus, saving, main loop
 android/            Android app that shows the game full screen in a WebView
 .github/workflows/  CI that builds the APK

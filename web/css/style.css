@@ -81,6 +81,23 @@ body.paused #hud, body.paused #cross { visibility: hidden; }
 #hotbar .slot.sel { border-color: #fff; background: rgba(255, 255, 255, .25); box-shadow: 0 0 0 2px rgba(0, 0, 0, .55); }
 #hotbar .more { font: 700 18px/1 var(--font); color: #fff; letter-spacing: .1em; }
 
+/* the homeless villager's card and floating name tag */
+.row.mini i { width: min(11px, 2.2vw); height: min(11px, 2.2vw); }
+#vcard { position: absolute; left: calc(72px + env(safe-area-inset-left, 0px)); top: calc(10px + env(safe-area-inset-top, 0px));
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 9px 7px; background: rgba(20, 16, 12, .55); border: 2px solid rgba(0, 0, 0, .5);
+  border-left: 4px solid #b58a5a; font-size: 12px; line-height: 1.2; pointer-events: none; max-width: 190px; }
+#vcard b { font-size: 13px; color: #f1d9b5; }
+#vstatus { color: var(--ink-dim); }
+#vtrust { color: var(--gold); letter-spacing: .05em; }
+#vdist { color: var(--ink-dim); font-size: 11px; }
+#vtag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none;
+  transform-origin: 50% 100%; will-change: transform; }
+#vtag b { font-size: 13px; padding: 1px 6px; background: rgba(0, 0, 0, .45); text-shadow: 1px 1px 0 #000; white-space: nowrap; }
+#vtag.far .row { display: none; }
+#vsay { position: relative; max-width: 220px; margin-bottom: 6px; padding: 5px 9px; font-size: 13px; line-height: 1.25; text-align: center;
+  color: #2b2118; background: #fdf6e8; border: 2px solid #2b2118; border-radius: 6px; }
+#vsay::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: #2b2118; border-bottom: 0; }
+
 #blockname, #toast { font-weight: 700; font-size: 16px; text-shadow: 2px 2px 0 rgba(0, 0, 0, .6); opacity: 0; transition: opacity .5s; pointer-events: none; white-space: nowrap; }
 #blockname.show, #toast.show { opacity: 1; transition: none; }
 #toast { color: var(--gold); }

@@ -315,7 +315,9 @@ function renderFrame(R) {
   gl.enable(gl.CULL_FACE);
   for (const m of R.mobs) {
     const model = MODELS[m.type];
-    const base = M4.chain(M4.trans(m.x, m.y, m.z), M4.rotY(m.yaw), M4.rotZ(m.deathT ? Math.min(1, m.deathT * 3) * Math.PI / 2 : 0));
+    const base = m.sleeping
+      ? M4.chain(M4.trans(m.x, m.y + 0.17, m.z), M4.rotY(m.yaw), M4.rotX(-Math.PI / 2), M4.trans(0, -0.9, 0))   // lying down
+      : M4.chain(M4.trans(m.x, m.y, m.z), M4.rotY(m.yaw), M4.rotZ(m.deathT ? Math.min(1, m.deathT * 3) * Math.PI / 2 : 0));
     const red = m.hurtT > 0 || m.deathT;
     const tint = red ? 0.45 : m.burning ? 0.18 + 0.1 * Math.sin(m.walk * 3 + m.burnT * 20) : 0;
     gl.uniform4f(entProg.u.uTint, 1, red ? 0.1 : 0.45, 0.05, tint);
