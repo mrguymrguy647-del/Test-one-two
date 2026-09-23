@@ -161,14 +161,22 @@ function buildStaticMeshes() {
     { mesh: arm, pivot: [-0.375, 1.375, 0], anim: 'armA' },
     { mesh: arm, pivot: [0.375, 1.375, 0], anim: 'armB' },
   ];
-  const V = T.vHeadSide;
+  // the homeless villager: beanie with a pom-pom, big red nose, scarf, patched coat, bindle over his shoulder
+  const V = T.vHeadSide, RS = T.vRobeSide, AS = T.vArmsSide, LS = T.vLegSide;
+  const headMesh = face => makeMesh([
+    ...boxGeom(0.5, 0.56, 0.5, [V, V, T.vHatTop, T.vHeadBack, T.vHeadBack, face], 0, 0.28, 0),
+    ...boxGeom(0.13, 0.15, 0.12, six(T.vNose), 0, 0.27, -0.3),
+    ...boxGeom(0.15, 0.13, 0.15, six(T.vPom), 0, 0.62, 0.03),
+  ]);
   MODELS.villager = [
-    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, six(T.vPants), 0, -0.375, 0)), pivot: [-0.125, 0.75, 0], anim: 'legA' },
-    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, six(T.vPants), 0, -0.375, 0)), pivot: [0.125, 0.75, 0], anim: 'legB' },
-    { mesh: makeMesh(boxGeom(0.52, 0.85, 0.32, six(T.vRobe))), pivot: [0, 1.1, 0] },
-    { mesh: makeMesh(boxGeom(0.6, 0.24, 0.26, six(T.vArms), 0, 0, -0.26)), pivot: [0, 1.28, 0] },   // folded arms
-    { mesh: makeMesh([...boxGeom(0.5, 0.56, 0.5, [V, V, T.vHair, V, V, T.vFace], 0, 0.28, 0),
-                      ...boxGeom(0.13, 0.24, 0.12, six(T.vNose), 0, 0.12, -0.3)]), pivot: [0, 1.5, 0], anim: 'head' },
+    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, [LS, LS, LS, LS, LS, T.vLegL], 0, -0.375, 0)), pivot: [-0.125, 0.75, 0], anim: 'legA' },
+    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, [LS, LS, LS, LS, LS, T.vLegR], 0, -0.375, 0)), pivot: [0.125, 0.75, 0], anim: 'legB' },
+    { mesh: makeMesh(boxGeom(0.52, 0.85, 0.32, [RS, RS, RS, RS, T.vRobeBack, T.vRobeFront])), pivot: [0, 1.1, 0] },
+    { mesh: makeMesh(boxGeom(0.6, 0.24, 0.26, [AS, AS, AS, AS, AS, T.vArmsFront], 0, 0, -0.26)), pivot: [0, 1.28, 0] },   // folded arms
+    { mesh: makeMesh([...boxGeom(0.58, 0.14, 0.38, six(T.vScarf)), ...boxGeom(0.13, 0.32, 0.06, six(T.vScarf), -0.15, -0.2, -0.2)]), pivot: [0, 1.5, 0] },
+    { faces: { normal: headMesh(T.vFace), happy: headMesh(T.vFaceHappy), sleep: headMesh(T.vFaceSleep), sad: headMesh(T.vFaceSad) }, pivot: [0, 1.5, 0], anim: 'head' },
+    { mesh: makeMesh(boxGeom(0.06, 0.06, 1.0, six(T.vStick), 0, 0, 0.25)), pivot: [0.3, 1.47, 0], anim: 'bindle' },
+    { mesh: makeMesh(boxGeom(0.3, 0.28, 0.3, six(T.vBundle), 0, -0.12, 0)), pivot: [0.3, 1.95, 0.57], anim: 'bundle' },
   ];
   MESH.arm = makeMesh(boxGeom(0.24, 0.24, 0.75, six(T.arm), 0, 0, 0));
 
@@ -328,8 +336,10 @@ function renderFrame(R) {
       else if (part.anim === 'armA') rot = Math.PI / 2 + swing * 0.2 + (m.attackT > 0 ? -0.6 * m.attackT : 0);
       else if (part.anim === 'armB') rot = Math.PI / 2 - swing * 0.2 + (m.attackT > 0 ? -0.6 * m.attackT : 0);
       else if (part.anim === 'head') rot = m.headPitch || 0;
+      else if (part.anim === 'bindle') rot = -0.7 + Math.sin(m.walk) * 0.06 * Math.min(1, m.speedAnim * 2);
+      else if (part.anim === 'bundle') rot = Math.sin(m.walk + 0.6) * 0.18 * Math.min(1, m.speedAnim * 2);
       const mm = M4.chain(base, M4.trans(part.pivot[0], part.pivot[1], part.pivot[2]), M4.rotX(rot));
-      drawEnt(part.mesh, vp, mm, m.bright);
+      drawEnt(part.faces ? part.faces[m.face] || part.faces.normal : part.mesh, vp, mm, m.bright);
     }
   }
   gl.uniform4f(entProg.u.uTint, 0, 0, 0, 0);

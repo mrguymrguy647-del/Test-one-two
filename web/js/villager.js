@@ -272,6 +272,7 @@ function villagerThink(v, dt, G) {
         Sound.play('eat');
         spawnParticles(ITEMS[food.id].tile, v.x - 0.5, v.y + 1.2, v.z - 0.5, 8, { spread: 0.4, size: 0.05, bright: v.bright });
         say(v, pick(V_LINES.ate), true);
+        b.happyT = 4;
         b.path = null;
       }
     } else if (next === 'follow' || next === 'beg') {
@@ -306,6 +307,8 @@ function villagerThink(v, dt, G) {
   // ---- steer
   const res = { tx: 0, tz: 0, speed: 0, jump: false };
   v.sleeping = b.state === 'sleep';
+  b.happyT = (b.happyT || 0) - dt;
+  v.face = v.sleeping ? 'sleep' : b.happyT > 0 ? 'happy' : (v.hunger <= 6 || v.health <= 6 || b.state === 'flee') ? 'sad' : 'normal';
   if (b.state === 'flee' && b.fleeDir) { res.tx = b.fleeDir[0]; res.tz = b.fleeDir[1]; res.speed = 3.4; }
   else if (b.path && b.pi < b.path.length) {
     const [wx, wy, wz] = b.path[b.pi];
@@ -354,6 +357,7 @@ function interactVillager(v) {
     Sound.play('eat');
     spawnParticles(T.rose, v.x - 0.5, v.y + 1.9, v.z - 0.5, 12, { spread: 0.8, up: 1.5, grav: -1, size: 0.08, bright: v.bright });
     say(v, it.id === FLESH ? 'Ugh... rotten. But thanks, I guess.' : pick(V_LINES.thanks), true);
+    if (it.id !== FLESH) v.brain.happyT = 5;
     if (before < V_TRUST_FOLLOW && v.trust >= V_TRUST_FOLLOW) setTimeout(() => say(v, V_LINES.trust[0], true), 3000);
     return;
   }
@@ -362,15 +366,27 @@ function interactVillager(v) {
     return;
   }
   v.follow = !v.follow;
-  if (v.follow) { v.brain.state = 'follow'; say(v, pick(V_LINES.follow), true); }
+  if (v.follow) { v.brain.state = 'follow'; v.brain.happyT = 2.5; say(v, pick(V_LINES.follow), true); }
   else { v.homeX = v.x; v.homeZ = v.z; v.brain.state = 'stay'; v.brain.path = null; say(v, pick(V_LINES.stay), true); }
 }
 
 // ---------------- HUD: corner card and floating name tag ----------------
+const portraitCache = {};
+function villagerPortrait(face) {
+  const key = face || 'normal';
+  if (portraitCache[key]) return portraitCache[key];
+  const tile = { normal: T.vFace, happy: T.vFaceHappy, sleep: T.vFaceSleep, sad: T.vFaceSad }[key];
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+  const src = t => [(t % 16) * 16, (t >> 4) * 16];
+  let [sx, sy] = src(tile); x.drawImage(ATLAS, sx, sy, 16, 16, 0, 0, 48, 48);
+  [sx, sy] = src(T.vNose); x.drawImage(ATLAS, sx, sy, 16, 16, 20, 19, 8, 10);   // the big red nose
+  return portraitCache[key] = c.toDataURL();
+}
 const vUI = {};
 function initVillagerUI() {
   vUI.card = $('vcard'); vUI.status = $('vstatus'); vUI.trust = $('vtrust'); vUI.dist = $('vdist');
-  vUI.tag = $('vtag'); vUI.sayEl = $('vsay');
+  vUI.tag = $('vtag'); vUI.sayEl = $('vsay'); vUI.face = $('vface'); vUI.faceKey = '';
   const make = (id) => { const row = $(id), arr = []; for (let i = 0; i < 10; i++) { const el = document.createElement('i'); row.appendChild(el); arr.push(el); } return arr; };
   vUI.hearts = make('vhearts'); vUI.food = make('vfood');
   vUI.tagHearts = make('vtagHearts'); vUI.tagFood = make('vtagFood');
@@ -390,6 +406,7 @@ function updateVillagerHUD(vp, eye, show) {
   }
   vUI.card.classList.remove('hide');
   const b = v.brain;
+  if (v.face !== vUI.faceKey) { vUI.faceKey = v.face; vUI.face.src = villagerPortrait(v.face); }
   const hp = Math.max(0, Math.ceil(v.health)), food = v.hunger;
   const status = (v.hunger === 0 ? 'Starving! ' : v.hunger <= 6 ? 'Hungry · ' : '') + (STATUS_TEXT[b.state] || '');
   const key = `${hp}|${food}|${status}|${v.trust}`;

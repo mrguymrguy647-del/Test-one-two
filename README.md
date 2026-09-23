@@ -23,7 +23,10 @@ engine, and every texture, sound and song is generated in code (no downloads, no
 
 **The Homeless Villager**
 
-A homeless villager lives near your starting point. His health, hunger and trust show in a card in
+A homeless villager lives near your starting point: red knit beanie with a pom-pom, big cold red nose,
+scruffy beard, striped scarf, patched coat with odd buttons and a fish in his pocket, torn trousers, a
+boot with his toe poking out, and a polka-dot bindle over his shoulder. His face changes too: happy
+when you feed him, sad when he's hungry or scared, eyes closed when he sleeps. His health, hunger and trust show in a card in
 the top corner, and a name tag with speech bubbles floats over his head.
 - He gets hungry over time. When he's hungry he walks to food lying on the ground, forages berries
   near trees in the daytime, and begs you for food. With no food at all he slowly starves

@@ -22,8 +22,11 @@ const T = {};
 T.crack = 32; // 10 stages
 ['stick', 'coal', 'iron', 'diamond', 'apple', 'pork', 'cookedPork', 'flesh'].forEach((n, i) => T[n] = 48 + i);
 T.tools = 56; // 16 tiles: kind * 4 + tier
-['pigSkin', 'pigFace', 'zFace', 'zHeadSide', 'zHair', 'zShirt', 'zPants', 'zSkin', 'arm',
-  'vFace', 'vHeadSide', 'vHair', 'vRobe', 'vPants', 'vArms', 'vNose'].forEach((n, i) => T[n] = 80 + i);
+['pigSkin', 'pigFace', 'zFace', 'zHeadSide', 'zHair', 'zShirt', 'zPants', 'zSkin', 'arm'].forEach((n, i) => T[n] = 80 + i);
+// the homeless villager (rows 6 and 7 of the atlas)
+['vFace', 'vFaceHappy', 'vFaceSleep', 'vFaceSad', 'vHeadSide', 'vHeadBack', 'vHatTop', 'vPom', 'vNose', 'vScarf',
+  'vRobeFront', 'vRobeBack', 'vRobeSide', 'vArmsFront', 'vArmsSide', 'vLegL', 'vLegR', 'vLegSide', 'vBundle', 'vStick']
+  .forEach((n, i) => T[n] = 96 + i);
 
 // ---------- blocks ----------
 const BLOCKS = [];
@@ -283,27 +286,82 @@ function buildAtlas() {
   paint(T.zSkin, () => vary(GREEN, 16));
   paint(T.arm, (x, y) => vary(y > 12 ? [60, 150, 200] : [205, 152, 116], 10));
 
-  // the homeless villager: tired face, stubble, a patched and worn-out robe
-  const VSKIN = [196, 146, 110];
-  paint(T.vFace, (x, y) => {
-    if (y === 5 && x >= 2 && x <= 13) return [70, 50, 36];                      // one long eyebrow
-    if (y === 7 && (x === 3 || x === 4 || x === 11 || x === 12)) return x === 4 || x === 11 ? [40, 110, 40] : [245, 245, 245];
-    if (y === 8 && (x === 3 || x === 4 || x === 11 || x === 12)) return [150, 100, 76]; // tired eyes
-    if (y >= 12 && r() < 0.35) return [110, 84, 64];                             // stubble
-    return vary(VSKIN, 12);
+  // ---------- the homeless villager's hand-drawn textures ----------
+  // Each is a 16x16 pixel map; letters pick colours from the palette below.
+  const VP = {
+    s: [202, 150, 110], S: [168, 118, 82], r: [222, 128, 106], K: [58, 39, 24],
+    w: [244, 244, 240], g: [70, 150, 70], p: [24, 24, 24], e: [74, 50, 34], W: [150, 210, 255],
+    b: [138, 122, 106], B: [102, 90, 78], m: [96, 40, 34],
+    h: [196, 58, 44], H: [150, 40, 32], t: [236, 222, 184], T: [200, 186, 150],
+    a: [110, 86, 64], A: [80, 60, 44], G: [168, 164, 156],
+    R: [124, 92, 62], D: [92, 66, 42], L: [146, 112, 76], O: [60, 42, 26],
+    x: [210, 50, 50], y: [60, 110, 200], z: [40, 30, 20],
+    c: [190, 160, 104], C: [140, 114, 70], k: [110, 88, 52],
+    q: [40, 30, 20], u: [76, 108, 160], F: [66, 46, 28], P: [100, 72, 46], f: [150, 166, 176],
+  };
+  const pat = (t, rows, noise = 10) => paint(t, (x, y) => { const c = VP[rows[y][x]]; return c ? vary(c, noise) : [255, 0, 255]; });
+  const HAT = ['hHhhHhhHhhHhhHhh', 'HhhHhhHhhHhhHhhH', 'tttttttttttttttt', 'TTTTTTTTTTTTTTTT'];
+  const BEARD = ['bbsBBBBBBBBBBsbb', 'bbbBmmmmmmmmBbbb', 'bbbbbbbbbbbbbbbb', 'BbbbbbbbbbbbbbbB', 'BBbbBbbbbbBbbBBB'];
+  pat(T.vFace, [...HAT, 'ssssssssssssssss', 'seeeesssssseeees', 'sswgpsssssspgwss', 'ssSwwSssssSwwSss',
+    'sssSSssssssSSsss', 'srrssssssssssrrs', 'bssssssssssssssb', ...BEARD]);
+  pat(T.vFaceHappy, [...HAT, 'ssssssssssssssss', 'seeeesssssseeees', 'sssKKssssssKKsss', 'ssKssKssssKssKss',
+    'ssssssssssssssss', 'srrrssssssssrrrs', 'bssssssssssssssb', 'bbmBBBBBBBBBBmbb', 'bbbmwwwwwwwwmbbb',
+    'bbbbmmmmmmmmbbbb', 'BbbbbbbbbbbbbbbB', 'BBbbBbbbbbBbbBBB']);
+  pat(T.vFaceSleep, [...HAT, 'ssssssssssssssss', 'ssssssssssssssss', 'seeeesssssseeees', 'ssKKKssssssKKKss',
+    'sssSSssssssSSsss', 'srrssssssssssrrs', 'bssssssssssssssb', 'bbsBBBBBBBBBBsbb', 'bbbbbbbmmbbbbbbb',
+    'bbbbbbbbbbbbbbbb', 'BbbbbbbbbbbbbbbB', 'BBbbBbbbbbBbbBBB']);
+  pat(T.vFaceSad, [...HAT, 'sssssessssesssss', 'sseeesssssseeess', 'sswgpsssssspgwss', 'ssSwwSssssSwwSss',
+    'sssSSssssssSSWss', 'srrssssssssssWrs', 'bssssssssssssssb', 'bbsBBBBBBBBBBsbb', 'bbbbmmmmmmmmbbbb',
+    'bbbmbbbbbbbbmbbb', 'BbbbbbbbbbbbbbbB', 'BBbbBbbbbbBbbBBB']);
+  pat(T.vHeadSide, [...HAT, 'ssssssaaaaaaaaaa', 'sssssssaaaaaaaaa', 'ssssssSSsaaaaaaa', 'ssssssSKSaaaaaaa',
+    'ssssssSSsaaaaaaa', 'bsssssssaaaaaaaa', 'bbssssssaaaaaaaa', 'bbbssssssaaaaaaa', 'bbbbsssssssaaaaa',
+    'BbbbbbsssssssaaG', 'BbbbbbbsssssssSS', 'BBbbbbbbSSSSSSSS']);
+  pat(T.vHeadBack, [...HAT, 'aaaaaaaaaaaaaaaa', 'aAaaGaaAaaaGaaAa', 'aaaAaaaaaGaaaaaa', 'aaaaaaaaaaaaaaaa',
+    'aGaaaAaaaaaaGaaa', 'aaaaaaaaaaaaaaaa', 'aaaaAaaaaaaaaaAa', 'AaaaaaaaaaaaaaaA', 'sAaaaaaaaaaaaaAs',
+    'ssAaaaaaaaaaaAss', 'sssSSSSSSSSSSsss', 'SSSSSSSSSSSSSSSS']);
+  paint(T.vHatTop, (x, y) => { const d = Math.floor(Math.hypot(x - 7.5, y - 7.5)); return vary(d % 3 === 2 ? VP.t : (x + y) % 2 ? VP.h : VP.H, 10); });
+  paint(T.vPom, () => vary(r() < 0.3 ? VP.h : r() < 0.5 ? [255, 250, 240] : VP.t, 12));
+  paint(T.vNose, (x, y) => y < 6 ? vary(VP.S, 8) : (x === 5 || x === 6) && y === 8 ? [255, 170, 150] : vary([214, 84, 70], 12));
+  paint(T.vScarf, (x, y) => (y === 0 || y === 15) ? vary([40, 80, 44], 8) : vary(Math.floor(x / 3) % 2 ? [228, 190, 70] : [62, 138, 72], 12));
+  pat(T.vRobeFront, ['DRRRRRRDDRRRRRRD', 'RLRRRRROORRRRLRR', 'RRRRRRxOORRRRRRR', 'RgggggROORRRRRRR', 'RgqgqgROORRRRRRR',
+    'RgggggyOORRRRRRR', 'RqgqggROORRRRRRR', 'RRRRRRROORRRRRRR', 'RRRRRRzOORRRRRRR', 'cCcCcCckkcCcCcCc',
+    'CcCcCcCkkCcCcCcC', 'RRRffRROkRRRRRRR', 'RRRPPPPOkRRuuuuR', 'RRRPPPPOORRuquuR', 'RRRPPPPOORRuuuuR',
+    'FRFFRFFOOFFRFFRF']);
+  pat(T.vRobeBack, ['DRRRRRRRRRRRRRRD', 'RRRRRRRRRRRRRRRR', 'RRLRRRRRRRRRRLRR', 'RRRRRRRRRRRRRRRR', 'RRRRuuuuuuRRRRRR',
+    'RRRRuququqRRRRRR', 'RRRRuuuuuuRRRRRR', 'RRRRuquququRRRRR', 'RRRRuuuuuuRRRRRR', 'cCcCcCcCcCcCcCcC',
+    'CcCcCcCcCcCcCcCc', 'RRRRRRRRRRRRLRRR', 'RRRRRRRRRRgggRRR', 'RRLRRRRRRRgqgRRR', 'RRRRRRRRRRRRRRRR',
+    'FRFFRFFRFFFRFFRF']);
+  paint(T.vRobeSide, (x, y) => y === 9 || y === 10 ? vary((x + y) % 2 ? VP.c : VP.C, 8) : y === 15 ? vary(x % 3 ? VP.F : VP.R, 8)
+    : vary(r() < 0.1 ? VP.D : r() < 0.1 ? VP.L : VP.R, 12));
+  paint(T.vArmsFront, (x, y) => {
+    if (x === 0 || x === 15) return y >= 4 && y <= 11 ? vary(VP.s, 8) : vary([110, 110, 116], 8);     // fingertips
+    if (x <= 2 || x >= 13) return vary((x + y) % 2 ? [122, 122, 128] : [96, 96, 104], 6);          // fingerless gloves
+    if (x === 3 || x === 12) return vary(VP.O, 6);                                                  // cuffs
+    if (x >= 6 && x <= 9 && y >= 3 && y <= 12) return (x === 6 || x === 9 || y === 3 || y === 12) && (x + y) % 2 ? VP.q : vary([96, 140, 80], 10);
+    return vary(y === 8 ? VP.D : VP.R, 12);
   });
-  paint(T.vHeadSide, (x, y) => y < 3 ? vary([96, 70, 44], 14) : vary(VSKIN, 12));
-  paint(T.vHair, () => vary([96, 70, 44], 18));
-  paint(T.vRobe, (x, y) => {
-    if (x >= 3 && x <= 6 && y >= 9 && y <= 12) return vary([92, 110, 70], 16);   // green patch
-    if (x >= 10 && x <= 13 && y >= 3 && y <= 5) return vary([130, 80, 60], 14);  // red patch
-    if ((x === 3 || x === 6) && y >= 9 && y <= 12 && r() < 0.5) return [50, 36, 24]; // stitches
-    if (y === 15 && r() < 0.5) return [0, 0, 0, 0];                              // frayed hem
-    return vary(r() < 0.12 ? [84, 62, 44] : [112, 86, 60], 18);
+  paint(T.vArmsSide, (x, y) => vary(x < 3 ? [110, 110, 116] : x === 3 ? VP.O : VP.R, 10));
+  const LEG = (hole, toe) => (x, y) => {
+    if (y === 15) return vary(VP.K, 6);                                                             // sole
+    if (y >= 11) {
+      if (toe && y >= 13 && x >= 10 && x <= 12) return vary(VP.s, 8);                               // toe out of the boot!
+      if (y === 11 && x >= 5 && x <= 10 && x % 2) return vary(VP.c, 8);                              // laces
+      return vary([74, 48, 32], 10);
+    }
+    if (hole && y >= 5 && y <= 7 && x >= 5 && x <= 10) return (x === 5 || x === 10) ? vary([130, 140, 160], 8) : vary(VP.s, 8);
+    if (!hole && y >= 4 && y <= 8 && x >= 3 && x <= 12) return (x === 3 || x === 12 || y === 4 || y === 8) && (x + y) % 2 ? VP.q : vary([140, 96, 60], 10);
+    if (y === 10) return vary(r() < 0.5 ? [70, 80, 100] : [100, 110, 130], 8);                      // frayed cuff
+    return vary(r() < 0.12 ? [74, 84, 104] : [92, 102, 124], 10);
+  };
+  paint(T.vLegL, LEG(false, false));
+  paint(T.vLegR, LEG(true, true));
+  paint(T.vLegSide, (x, y) => y === 15 ? vary(VP.K, 6) : y >= 11 ? vary([74, 48, 32], 10) : vary([92, 102, 124], 10));
+  paint(T.vBundle, (x, y) => {
+    if (y <= 2 && x >= 6 && x <= 9) return vary([150, 30, 26], 8);                                   // knot
+    if ((x % 5 === 1 && y % 5 === 1) || ((x + 2) % 5 === 1 && (y + 3) % 5 === 1)) return [250, 245, 235];
+    return vary([196, 48, 40], 12);
   });
-  paint(T.vPants, () => vary([72, 60, 50], 14));
-  paint(T.vArms, (x, y) => (x < 3 || x > 12) ? vary(VSKIN, 12) : vary([104, 80, 56], 16));
-  paint(T.vNose, () => vary([186, 130, 96], 10));
+  paint(T.vStick, (x, y) => vary(x % 5 === 0 ? [100, 72, 42] : [134, 98, 58], 10));
 
   ctx.putImageData(img, 0, 0);
   drawItemSprites(ctx);
