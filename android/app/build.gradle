@@ -10,11 +10,11 @@ android {
         applicationId 'com.blockcraft.game'
         minSdk 21
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName '2.0'
     }
 
-    // The game itself lives in ../../web so the browser version and the app share one file.
+    // The game itself lives in ../../web so the browser version and the app share the same files.
     sourceSets {
         main {
             assets.srcDirs = ['../../web']
