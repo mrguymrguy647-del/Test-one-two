@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#7fb4f0">
+<meta name="mobile-web-app-capable" content="yes">
+<title>BlockCraft</title>
+<style>
+:root{
+  --sky:#8ec2f2;
+  --panel:rgba(18,24,34,.46);
+  --panel-strong:rgba(18,24,34,.72);
+  --edge:rgba(255,255,255,.5);
+  --ink:#fff;
+  --grass:#5fa038;
+  --grass-dark:#3f7424;
+  --dirt:#86603f;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--sky);color:var(--ink);touch-action:none;
+  font-family:"Trebuchet MS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+#touch{position:fixed;inset:0}
+#cross{position:fixed;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;pointer-events:none;mix-blend-mode:difference}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff}
+#cross:before{left:9px;top:0;width:2px;height:20px}
+#cross:after{top:9px;left:0;height:2px;width:20px}
+#cross.busy{animation:pulse .28s linear infinite}
+@keyframes pulse{50%{transform:scale(1.35)}}
+
+.hud{position:fixed;z-index:2}
+#hotbar{left:50%;transform:translateX(-50%);bottom:calc(8px + env(safe-area-inset-bottom,0px));display:flex;gap:3px;padding:3px;
+  background:var(--panel);border:2px solid rgba(0,0,0,.35);border-radius:4px}
+.slot{width:min(44px,8.2vw);height:min(44px,8.2vw);border:2px solid transparent;border-radius:3px;display:grid;place-items:center;background:rgba(255,255,255,.08)}
+.slot canvas{width:88%;height:88%;image-rendering:pixelated}
+.slot.sel{border-color:#fff;background:rgba(255,255,255,.28);box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+#blockname{left:50%;transform:translateX(-50%);bottom:calc(min(44px,8.2vw) + 26px + env(safe-area-inset-bottom,0px));
+  font-weight:700;font-size:15px;text-shadow:0 2px 0 rgba(0,0,0,.55);opacity:0;transition:opacity .4s;pointer-events:none}
+#blockname.show{opacity:1;transition:none}
+
+.btn{display:grid;place-items:center;border-radius:50%;background:var(--panel);border:2px solid var(--edge);color:var(--ink);
+  font:700 13px/1 inherit;letter-spacing:.04em;text-transform:uppercase}
+.btn.on{background:rgba(255,255,255,.35)}
+.btn:active,.btn.held{background:rgba(255,255,255,.4)}
+#jump{right:calc(24px + env(safe-area-inset-right,0px));bottom:calc(88px + env(safe-area-inset-bottom,0px));width:76px;height:76px}
+#down{right:calc(110px + env(safe-area-inset-right,0px));bottom:calc(70px + env(safe-area-inset-bottom,0px));width:60px;height:60px}
+#fly{right:calc(16px + env(safe-area-inset-right,0px));top:calc(14px + env(safe-area-inset-top,0px));width:52px;height:52px;font-size:11px}
+#pause{left:calc(16px + env(safe-area-inset-left,0px));top:calc(14px + env(safe-area-inset-top,0px));width:46px;height:46px;border-radius:8px;font-size:16px}
+#jump svg,#down svg{width:30px;height:30px;fill:#fff}
+
+#stick{left:0;top:0;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;border:2px solid var(--edge);background:var(--panel);opacity:.45;pointer-events:none;transition:opacity .2s}
+#stick.active{opacity:.9;transition:none}
+#knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,255,255,.75)}
+
+#menu{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;
+  background:linear-gradient(rgba(20,40,70,.35),rgba(10,20,30,.7))}
+#menu h1{margin:0;font-size:clamp(40px,9vw,76px);letter-spacing:.04em;line-height:1;color:#f3f3f3;
+  text-shadow:0 4px 0 #3b3b3b,0 7px 0 rgba(0,0,0,.35);font-family:Impact,"Arial Black","Trebuchet MS",sans-serif;text-transform:uppercase}
+#menu h1 span{color:#8fd35a}
+#menu .tag{margin:-8px 0 0;font-size:14px;color:#ffe66b;text-shadow:0 2px 0 #3f3000;transform:rotate(-4deg)}
+.mbtn{min-width:240px;padding:13px 20px;font:700 17px/1 inherit;color:#fff;background:#7a7a7a;border:2px solid #1b1b1b;border-radius:2px;
+  box-shadow:inset 2px 2px 0 #a8a8a8,inset -2px -3px 0 #505050;text-shadow:0 2px 0 #3a3a3a}
+.mbtn.go{background:var(--grass);box-shadow:inset 2px 2px 0 #8ccb62,inset -2px -3px 0 var(--grass-dark)}
+.mbtn:focus-visible,.btn:focus-visible{outline:3px solid #ffe66b;outline-offset:2px}
+#help{max-width:520px;margin:4px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px;
+  background:var(--panel-strong);padding:12px 16px;border-radius:6px}
+#help b{color:#ffe66b;text-align:right;white-space:nowrap}
+#status{font-size:13px;min-height:1em;opacity:.85}
+.hide{display:none!important}
+body.paused .hud{visibility:hidden}
+@media (pointer:fine){ .touchonly{display:none!important} }
+@media (max-height:420px){ #menu{gap:10px} #help{font-size:12px;padding:8px 12px} .mbtn{padding:10px 18px} }
+</style>
+</head>
+<body class="paused">
+<canvas id="gl"></canvas>
+<div id="touch"></div>
+<div id="cross"></div>
+
+<div id="stick" class="hud touchonly"><div id="knob"></div></div>
+<button id="jump" class="hud btn touchonly" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 5l8 9h-5v6H9v-6H4z"/></svg></button>
+<button id="down" class="hud btn touchonly hide" aria-label="Fly down"><svg viewBox="0 0 24 24"><path d="M12 19l-8-9h5V4h6v6h5z"/></svg></button>
+<button id="fly" class="hud btn" aria-label="Toggle flying">Fly</button>
+<button id="pause" class="hud btn" aria-label="Pause">II</button>
+<div id="hotbar" class="hud"></div>
+<div id="blockname" class="hud"></div>
+
+<div id="menu">
+  <h1>Block<span>Craft</span></h1>
+  <p class="tag">Build anything!</p>
+  <button id="play" class="mbtn go">Play</button>
+  <button id="newworld" class="mbtn">New World</button>
+  <ul id="help">
+    <li class="touchonly" style="display:contents"><b>Left thumb</b><span>Move (drag anywhere on the left)</span></li>
+    <li class="touchonly" style="display:contents"><b>Right thumb</b><span>Drag to look around</span></li>
+    <li class="touchonly" style="display:contents"><b>Tap</b><span>Place the selected block</span></li>
+    <li class="touchonly" style="display:contents"><b>Hold</b><span>Break blocks</span></li>
+    <li style="display:contents"><b>Keyboard</b><span>WASD move · Space jump · F fly · Shift down · 1–9 blocks</span></li>
+    <li style="display:contents"><b>Mouse</b><span>Left click break · Right click place · Wheel pick block</span></li>
+  </ul>
+  <div id="status">Generating world…</div>
+</div>
+
+<script>
+'use strict';
+// ======================= constants & blocks =======================
+const WX = 128, WZ = 128, WY = 48, CS = 16, NCX = WX / CS, NCZ = WZ / CS, SEA = 12;
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SAND = 4, LOG = 5, LEAVES = 6, PLANKS = 7,
+      COBBLE = 8, GLASS = 9, BRICK = 10, WATER = 11, BEDROCK = 12;
+const T = { grassTop: 0, grassSide: 1, dirt: 2, stone: 3, sand: 4, logSide: 5, logTop: 6, leaves: 7,
+            planks: 8, cobble: 9, glass: 10, brick: 11, water: 12, bedrock: 13 };
+const NT = 16; // tiles in the atlas row
+
+const BLOCKS = [];
+function def(id, name, top, bottom, side, transparent = false, solid = true) {
+  BLOCKS[id] = { name, tex: [top, bottom, side], transparent, solid };
+}
+BLOCKS[AIR] = { name: 'Air', tex: [0, 0, 0], transparent: true, solid: false };
+def(GRASS, 'Grass', T.grassTop, T.dirt, T.grassSide);
+def(DIRT, 'Dirt', T.dirt, T.dirt, T.dirt);
+def(STONE, 'Stone', T.stone, T.stone, T.stone);
+def(SAND, 'Sand', T.sand, T.sand, T.sand);
+def(LOG, 'Oak Log', T.logTop, T.logTop, T.logSide);
+def(LEAVES, 'Leaves', T.leaves, T.leaves, T.leaves, true);
+def(PLANKS, 'Planks', T.planks, T.planks, T.planks);
+def(COBBLE, 'Cobblestone', T.cobble, T.cobble, T.cobble);
+def(GLASS, 'Glass', T.glass, T.glass, T.glass, true);
+def(BRICK, 'Bricks', T.brick, T.brick, T.brick);
+def(WATER, 'Water', T.water, T.water, T.water, true, false);
+def(BEDROCK, 'Bedrock', T.bedrock, T.bedrock, T.bedrock);
+
+const OPAQUE = new Uint8Array(16), SOLID = new Uint8Array(16), OCC = new Uint8Array(16);
+BLOCKS.forEach((b, i) => {
+  OPAQUE[i] = i !== AIR && !b.transparent ? 1 : 0;
+  SOLID[i] = b.solid ? 1 : 0;
+  OCC[i] = i !== AIR && i !== WATER && i !== GLASS ? 1 : 0;
+});
+const HOTBAR = [GRASS, DIRT, STONE, COBBLE, PLANKS, LOG, BRICK, GLASS, LEAVES, SAND, WATER];
+
+// ======================= random & noise =======================
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hash2(x, z, s) {
+  let h = Math.imul(x, 374761393) ^ Math.imul(z, 668265263) ^ Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+const smooth = t => t * t * (3 - 2 * t);
+function vnoise(x, z, s) {
+  const x0 = Math.floor(x), z0 = Math.floor(z), fx = smooth(x - x0), fz = smooth(z - z0);
+  const a = hash2(x0, z0, s), b = hash2(x0 + 1, z0, s), c = hash2(x0, z0 + 1, s), d = hash2(x0 + 1, z0 + 1, s);
+  const ab = a + (b - a) * fx, cd = c + (d - c) * fx;
+  return ab + (cd - ab) * fz;
+}
+function fbm(x, z, s) {
+  let v = 0, amp = 1, f = 1, sum = 0;
+  for (let i = 0; i < 4; i++) { v += vnoise(x * f, z * f, s + i * 17) * amp; sum += amp; amp *= 0.5; f *= 2; }
+  return v / sum;
+}
+
+// ======================= world =======================
+const world = new Uint8Array(WX * WY * WZ);
+const idx = (x, y, z) => (y * WZ + z) * WX + x;
+function get(x, y, z) {
+  if (x < 0 || z < 0 || x >= WX || z >= WZ || y >= WY) return AIR;
+  if (y < 0) return BEDROCK;
+  return world[idx(x, y, z)];
+}
+function solidAt(x, y, z) {
+  if (x < 0 || z < 0 || x >= WX || z >= WZ || y < 0) return true; // invisible world border
+  if (y >= WY) return false;
+  return SOLID[world[idx(x, y, z)]] === 1;
+}
+
+let seed = 1, edits = new Map();
+const heightMap = new Int16Array(WX * WZ);
+
+function generate() {
+  world.fill(0);
+  for (let z = 0; z < WZ; z++) for (let x = 0; x < WX; x++) {
+    const base = fbm(x / 52, z / 52, seed), hills = fbm(x / 18, z / 18, seed + 99);
+    let h = Math.floor(6 + (base - 0.3) * 52 + (hills - 0.5) * 9);
+    h = Math.max(3, Math.min(WY - 12, h));
+    heightMap[z * WX + x] = h;
+    const beach = h <= SEA + 1;
+    for (let y = 0; y <= Math.max(h, SEA); y++) {
+      let b;
+      if (y === 0) b = BEDROCK;
+      else if (y > h) b = WATER;
+      else if (y < h - 3) b = STONE;
+      else if (beach) b = SAND;
+      else b = y === h ? GRASS : DIRT;
+      world[idx(x, y, z)] = b;
+    }
+  }
+  // trees
+  for (let z = 3; z < WZ - 3; z++) for (let x = 3; x < WX - 3; x++) {
+    const h = heightMap[z * WX + x];
+    if (world[idx(x, h, z)] !== GRASS || hash2(x, z, seed + 7) > 0.014) continue;
+    const trunk = 4 + Math.floor(hash2(x, z, seed + 8) * 2), top = h + trunk;
+    if (top + 2 >= WY) continue;
+    for (let dy = -2; dy <= 1; dy++) {
+      const r = dy < 0 ? 2 : 1;
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) === r && Math.abs(dz) === r && (dy === 1 || hash2(x + dx, z + dz, seed + dy) < 0.5)) continue;
+        const i = idx(x + dx, top + dy, z + dz);
+        if (world[i] === AIR) world[i] = LEAVES;
+      }
+    }
+    world[idx(x, top + 2, z)] = LEAVES;
+    for (let y = h + 1; y <= top; y++) world[idx(x, y, z)] = LOG;
+    world[idx(x, h, z)] = DIRT;
+  }
+  for (const [i, b] of edits) world[i] = b;
+}
+
+// ======================= textures =======================
+function makeAtlas() {
+  const S = 16, W = NT * S;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = S;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(W, S), d = img.data;
+  const r = mulberry32(20240611);
+  const cl = v => Math.max(0, Math.min(255, v | 0));
+  const px = (t, x, y, c, a = 255) => {
+    const i = (y * W + t * S + x) * 4;
+    d[i] = cl(c[0]); d[i + 1] = cl(c[1]); d[i + 2] = cl(c[2]); d[i + 3] = a;
+  };
+  const vary = (c, amt) => { const v = (r() - 0.5) * amt; return [c[0] + v, c[1] + v, c[2] + v]; };
+  const shade = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
+  const GR = [98, 162, 58], DI = [134, 96, 67];
+  const grassEdge = []; for (let x = 0; x < S; x++) grassEdge[x] = 3 + Math.floor(r() * 3);
+  // cobble cells (worley)
+  const pts = []; for (let i = 0; i < 8; i++) pts.push([r() * S, r() * S, 0.8 + r() * 0.35]);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    px(T.grassTop, x, y, vary(r() < 0.12 ? shade(GR, 0.82) : GR, 36));
+    px(T.dirt, x, y, vary(r() < 0.1 ? shade(DI, 0.78) : DI, 26));
+    px(T.grassSide, x, y, y < grassEdge[x] ? vary(shade(GR, 0.92), 30) : vary(r() < 0.1 ? shade(DI, 0.78) : DI, 26));
+    px(T.stone, x, y, vary(r() < 0.1 ? [104, 104, 108] : [128, 128, 131], 24));
+    px(T.sand, x, y, vary([221, 207, 158], 18));
+    px(T.logSide, x, y, vary(x % 4 === 0 || (x + y * 3) % 11 === 0 ? [82, 63, 38] : [108, 84, 52], 14));
+    {
+      const dx = x - 7.5, dy = y - 7.5, ring = Math.floor(Math.sqrt(dx * dx + dy * dy));
+      const border = x === 0 || y === 0 || x === 15 || y === 15;
+      px(T.logTop, x, y, vary(border ? [96, 75, 45] : ring % 2 ? [176, 142, 88] : [152, 120, 72], 10));
+    }
+    if (r() < 0.2) px(T.leaves, x, y, [0, 0, 0], 0);
+    else px(T.leaves, x, y, vary(r() < 0.3 ? [44, 104, 28] : [62, 136, 38], 30));
+    {
+      const row = y >> 2, seam = row % 2 ? 4 : 12;
+      const dark = y % 4 === 3 || x === seam;
+      px(T.planks, x, y, vary(dark ? [120, 93, 55] : [166, 133, 80], 14));
+    }
+    {
+      let d1 = 99, d2 = 99, which = 0;
+      for (let i = 0; i < pts.length; i++) {
+        let ddx = Math.abs(x + 0.5 - pts[i][0]), ddy = Math.abs(y + 0.5 - pts[i][1]);
+        ddx = Math.min(ddx, S - ddx); ddy = Math.min(ddy, S - ddy);
+        const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+        if (dd < d1) { d2 = d1; d1 = dd; which = i; } else if (dd < d2) d2 = dd;
+      }
+      px(T.cobble, x, y, d2 - d1 < 1.1 ? vary([74, 74, 76], 14) : vary(shade([132, 132, 134], pts[which][2]), 18));
+    }
+    {
+      const border = x === 0 || y === 0 || x === 15 || y === 15;
+      const streak = (x - y === 4 || x - y === 5 || x - y === -6) && x > 1 && x < 14 && y > 1 && y < 14;
+      if (border) px(T.glass, x, y, [214, 236, 248]);
+      else if (streak) px(T.glass, x, y, [245, 252, 255], 190);
+      else px(T.glass, x, y, [0, 0, 0], 0);
+    }
+    {
+      const row = y >> 2, mortar = y % 4 === 3 || (x + (row % 2) * 4) % 8 === 0;
+      px(T.brick, x, y, mortar ? vary([186, 178, 166], 10) : vary(r() < 0.2 ? [132, 60, 46] : [158, 74, 56], 20));
+    }
+    px(T.water, x, y, vary((x + y * 2) % 7 === 0 ? [80, 130, 230] : [46, 96, 212], 16));
+    px(T.bedrock, x, y, vary(r() < 0.35 ? [36, 36, 38] : [84, 84, 88], 30));
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+// ======================= GL setup =======================
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) document.getElementById('status').textContent = 'Sorry — this device does not support WebGL.';
+
+function shader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}, a = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES); i++) { const n = gl.getActiveAttrib(p, i).name; a[n] = gl.getAttribLocation(p, n); }
+  return { p, u, a };
+}
+
+const blockProg = program(`
+attribute vec3 aPos; attribute vec2 aUv; attribute float aLight;
+uniform mat4 uMvp; uniform vec3 uCam; uniform vec2 uFog;
+varying vec2 vUv; varying float vLight; varying float vFog;
+void main(){
+  gl_Position = uMvp * vec4(aPos, 1.0);
+  vUv = aUv; vLight = aLight;
+  vFog = clamp((distance(aPos, uCam) - uFog.x) / (uFog.y - uFog.x), 0.0, 1.0);
+}`, `
+precision mediump float;
+uniform sampler2D uTex; uniform vec3 uFogCol; uniform float uAlpha;
+varying vec2 vUv; varying float vLight; varying float vFog;
+void main(){
+  vec4 c = texture2D(uTex, vUv);
+  if (c.a < 0.5) discard;
+  gl_FragColor = vec4(mix(c.rgb * vLight, uFogCol, vFog), uAlpha);
+}`);
+
+const lineProg = program(`
+attribute vec3 aPos; uniform mat4 uMvp; uniform vec3 uOff;
+void main(){ gl_Position = uMvp * vec4(aPos + uOff, 1.0); }`, `
+precision mediump float;
+void main(){ gl_FragColor = vec4(0.05, 0.05, 0.05, 0.75); }`);
+
+const atlas = makeAtlas();
+const tex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, tex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+// selection box edges
+const lineBuf = gl.createBuffer();
+{
+  const e = -0.003, E = 1.003, c = [];
+  const corners = [];
+  for (let i = 0; i < 8; i++) corners.push([i & 1 ? E : e, i & 2 ? E : e, i & 4 ? E : e]);
+  for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) c.push(...corners[i], ...corners[i | bit]);
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(c), gl.STATIC_DRAW);
+}
+
+// ======================= meshing =======================
+const FACES = [
+  { n: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], shade: 0.8 },
+  { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], shade: 0.8 },
+  { n: [0, 1, 0], c: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]], shade: 1.0 },
+  { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], shade: 0.55 },
+  { n: [0, 0, 1], c: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], shade: 0.68 },
+  { n: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], shade: 0.68 },
+];
+for (const f of FACES) {
+  // make every face counter-clockwise when seen from outside
+  const [a, b, c] = f.c;
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  if (cr[0] * f.n[0] + cr[1] * f.n[1] + cr[2] * f.n[2] < 0) f.c.reverse();
+  f.axis = f.n[0] ? 0 : f.n[1] ? 1 : 2;
+  f.slot = f.n[1] > 0 ? 0 : f.n[1] < 0 ? 1 : 2;
+  const cuv = t => Math.min(0.998, Math.max(0.002, t));
+  f.uv = f.c.map(p => f.axis === 1 ? [cuv(p[0]), cuv(p[2])] : [cuv(f.axis === 0 ? p[2] : p[0]), cuv(1 - p[1])]);
+  const [a1, a2] = [0, 1, 2].filter(k => k !== f.axis);
+  f.ao = f.c.map(p => {
+    const d1 = [0, 0, 0], d2 = [0, 0, 0];
+    d1[a1] = p[a1] ? 1 : -1; d2[a2] = p[a2] ? 1 : -1;
+    return [d1, d2];
+  });
+}
+const AOL = [0.45, 0.62, 0.8, 1.0];
+const ORDER_A = [0, 1, 2, 0, 2, 3], ORDER_B = [1, 2, 3, 1, 3, 0];
+
+function faceVisible(b, nb) {
+  if (nb === AIR) return true;
+  if (OPAQUE[nb]) return false;
+  if (b === WATER) return nb !== WATER;
+  if (b === GLASS) return nb !== GLASS;
+  return true;
+}
+
+const chunks = [];
+for (let cz = 0; cz < NCZ; cz++) for (let cx = 0; cx < NCX; cx++)
+  chunks.push({ cx, cz, op: { buf: gl.createBuffer(), n: 0 }, wa: { buf: gl.createBuffer(), n: 0 }, dirty: true });
+
+function buildChunk(ch) {
+  const op = [], wa = [], x0 = ch.cx * CS, z0 = ch.cz * CS;
+  const L = [0, 0, 0, 0], A = [0, 0, 0, 0];
+  for (let y = 0; y < WY; y++) for (let z = z0; z < z0 + CS; z++) for (let x = x0; x < x0 + CS; x++) {
+    const b = world[idx(x, y, z)];
+    if (b === AIR) continue;
+    const isW = b === WATER, lowTop = isW && get(x, y + 1, z) !== WATER;
+    const tex3 = BLOCKS[b].tex;
+    for (let fi = 0; fi < 6; fi++) {
+      const f = FACES[fi], nx = x + f.n[0], ny = y + f.n[1], nz = z + f.n[2];
+      if (!faceVisible(b, get(nx, ny, nz))) continue;
+      for (let k = 0; k < 4; k++) {
+        if (isW) { A[k] = 3; L[k] = f.shade; continue; }
+        const [d1, d2] = f.ao[k];
+        const s1 = OCC[get(nx + d1[0], ny + d1[1], nz + d1[2])], s2 = OCC[get(nx + d2[0], ny + d2[1], nz + d2[2])];
+        const cc = OCC[get(nx + d1[0] + d2[0], ny + d1[1] + d2[1], nz + d1[2] + d2[2])];
+        const a = s1 && s2 ? 0 : 3 - (s1 + s2 + cc);
+        A[k] = a; L[k] = f.shade * AOL[a];
+      }
+      const tile = tex3[f.slot], out = isW ? wa : op;
+      const order = A[0] + A[2] >= A[1] + A[3] ? ORDER_A : ORDER_B;
+      for (let i = 0; i < 6; i++) {
+        const k = order[i], p = f.c[k];
+        out.push(x + p[0], y + p[1] - (lowTop && p[1] === 1 ? 0.12 : 0), z + p[2], (tile + f.uv[k][0]) / NT, f.uv[k][1], L[k]);
+      }
+    }
+  }
+  for (const [part, arr] of [[ch.op, op], [ch.wa, wa]]) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, part.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
+    part.n = arr.length / 6;
+  }
+  ch.dirty = false;
+}
+function markDirty(x, z) {
+  const cx = x >> 4, cz = z >> 4, lx = x & 15, lz = z & 15;
+  const dxs = [0], dzs = [0];
+  if (lx === 0) dxs.push(-1); if (lx === 15) dxs.push(1);
+  if (lz === 0) dzs.push(-1); if (lz === 15) dzs.push(1);
+  for (const dx of dxs) for (const dz of dzs) {
+    const ncx = cx + dx, ncz = cz + dz;
+    if (ncx >= 0 && ncz >= 0 && ncx < NCX && ncz < NCZ) chunks[ncz * NCX + ncx].dirty = true;
+  }
+}
+
+// ======================= math =======================
+function perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0];
+}
+function viewMatrix(yaw, pitch, e) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const r0 = [cy, 0, -sy], r1 = [sp * sy, cp, sp * cy], r2 = [cp * sy, -sp, cp * cy];
+  const t = r => -(r[0] * e[0] + r[1] * e[1] + r[2] * e[2]);
+  return [r0[0], r1[0], r2[0], 0, r0[1], r1[1], r2[1], 0, r0[2], r1[2], r2[2], 0, t(r0), t(r1), t(r2), 1];
+}
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+
+// ======================= player =======================
+const PW = 0.3, PH = 1.8, EYE = 1.62, REACH = 6;
+const P = { x: 64, y: 30, z: 64, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: -0.2, onGround: false, flying: false };
+const input = { x: 0, z: 0, jump: false, down: false };
+const keys = {};
+const joy = { x: 0, y: 0 };
+
+function collides(x, y, z) {
+  const x0 = Math.floor(x - PW), x1 = Math.floor(x + PW), y0 = Math.floor(y), y1 = Math.floor(y + PH),
+        z0 = Math.floor(z - PW), z1 = Math.floor(z + PW);
+  for (let by = y0; by <= y1; by++) for (let bz = z0; bz <= z1; bz++) for (let bx = x0; bx <= x1; bx++)
+    if (solidAt(bx, by, bz)) return true;
+  return false;
+}
+function moveAxis(axis, d) {
+  if (d === 0) return false;
+  const steps = Math.ceil(Math.abs(d) / 0.4), s = d / steps;
+  for (let i = 0; i < steps; i++) {
+    P[axis] += s;
+    if (!collides(P.x, P.y, P.z)) continue;
+    if (axis === 'y') {
+      if (s < 0) { P.y = Math.floor(P.y) + 1; P.onGround = true; }
+      else P.y = Math.floor(P.y + PH) - PH - 0.001;
+      P.vy = 0;
+    } else {
+      P[axis] = s > 0 ? Math.floor(P[axis] + PW) - PW - 0.001 : Math.floor(P[axis] - PW) + 1 + PW + 0.001;
+      P['v' + axis] = 0;
+    }
+    return true;
+  }
+  return false;
+}
+function spawn() {
+  let best = null;
+  for (let r = 0; r < 40 && !best; r++) for (let a = 0; a < 16 && !best; a++) {
+    const x = Math.floor(WX / 2 + Math.cos(a / 16 * Math.PI * 2) * r), z = Math.floor(WZ / 2 + Math.sin(a / 16 * Math.PI * 2) * r);
+    if (heightMap[z * WX + x] > SEA) best = [x, z];
+  }
+  const [x, z] = best || [WX / 2, WZ / 2];
+  let y = WY - 1; while (y > 0 && !solidAt(x, y - 1, z)) y--;
+  while (collides(x + 0.5, y, z + 0.5) && y < WY) y++;
+  Object.assign(P, { x: x + 0.5, y, z: z + 0.5, vx: 0, vy: 0, vz: 0 });
+}
+
+function update(dt) {
+  input.x = joy.x + (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  input.z = -joy.y + (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  const jump = input.jump || keys.Space, down = input.down || keys.ShiftLeft || keys.ShiftRight;
+  let mx = input.x, mz = input.z;
+  const len = Math.hypot(mx, mz); if (len > 1) { mx /= len; mz /= len; }
+
+  const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
+  const inWater = get(Math.floor(P.x), Math.floor(P.y + 0.4), Math.floor(P.z)) === WATER;
+  const speed = P.flying ? 10 : inWater ? 3 : 4.6;
+  const wx = (-sy * mz + cy * mx) * speed, wz = (-cy * mz - sy * mx) * speed;
+  const accel = P.onGround || P.flying ? 14 : inWater ? 6 : 4;
+  P.vx += (wx - P.vx) * Math.min(1, dt * accel);
+  P.vz += (wz - P.vz) * Math.min(1, dt * accel);
+
+  const wasGround = P.onGround;
+  if (P.flying) P.vy += (((jump ? 1 : 0) - (down ? 1 : 0)) * 8 - P.vy) * Math.min(1, dt * 10);
+  else if (inWater) { P.vy -= 10 * dt; if (jump) P.vy = 3.6; P.vy = Math.max(P.vy, -3.5); }
+  else { P.vy -= 28 * dt; if (jump && wasGround) P.vy = 8.7; P.vy = Math.max(P.vy, -45); }
+
+  P.onGround = false;
+  const hx = moveAxis('x', P.vx * dt), hz = moveAxis('z', P.vz * dt);
+  moveAxis('y', P.vy * dt);
+
+  // auto-jump onto one-block steps (like the phone edition)
+  if ((hx || hz) && wasGround && !P.flying && len > 0.2) {
+    const tx = P.x + wx / speed * 0.4, tz = P.z + wz / speed * 0.4;
+    if (collides(tx, P.y, tz) && !collides(tx, P.y + 1.05, tz) && !collides(P.x, P.y + 1.05, P.z)) P.vy = 8.7;
+  }
+  if (P.y < -20) spawn();
+}
+
+// ======================= interaction =======================
+function raycast() {
+  const ox = P.x, oy = P.y + EYE, oz = P.z;
+  const cp = Math.cos(P.pitch), dx = -Math.sin(P.yaw) * cp, dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * cp;
+  let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+  const tdx = dx ? Math.abs(1 / dx) : Infinity, tdy = dy ? Math.abs(1 / dy) : Infinity, tdz = dz ? Math.abs(1 / dz) : Infinity;
+  let tx = dx ? (dx > 0 ? x + 1 - ox : ox - x) * tdx : Infinity;
+  let ty = dy ? (dy > 0 ? y + 1 - oy : oy - y) * tdy : Infinity;
+  let tz = dz ? (dz > 0 ? z + 1 - oz : oz - z) * tdz : Infinity;
+  let px = x, py = y, pz = z, t = 0;
+  while (t <= REACH) {
+    if (x < 0 || z < 0 || x >= WX || z >= WZ || y < 0 || y >= WY) return null;
+    const b = world[idx(x, y, z)];
+    if (b !== AIR && b !== WATER) return { x, y, z, px, py, pz, b };
+    px = x; py = y; pz = z;
+    if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; }
+    else if (ty < tz) { y += sy; t = ty; ty += tdy; }
+    else { z += sz; t = tz; tz += tdz; }
+  }
+  return null;
+}
+function setBlock(x, y, z, b) {
+  const i = idx(x, y, z);
+  world[i] = b; edits.set(i, b);
+  markDirty(x, z);
+  scheduleSave();
+}
+function breakBlock() {
+  const hit = raycast();
+  if (!hit || hit.b === BEDROCK) return false;
+  // let neighbouring water flow in instead of leaving a dry hole
+  const wet = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([a, b, c]) => get(hit.x + a, hit.y + b, hit.z + c) === WATER);
+  setBlock(hit.x, hit.y, hit.z, wet ? WATER : AIR);
+  buzz(18);
+  return true;
+}
+function placeBlock() {
+  const hit = raycast();
+  if (!hit) return false;
+  const { px, py, pz } = hit;
+  if (px < 0 || pz < 0 || px >= WX || pz >= WZ || py < 1 || py >= WY) return false;
+  const cur = world[idx(px, py, pz)];
+  if (cur !== AIR && cur !== WATER) return false;
+  const b = HOTBAR[sel];
+  if (SOLID[b]) {
+    // don't place inside the player
+    if (px + 1 > P.x - PW && px < P.x + PW && pz + 1 > P.z - PW && pz < P.z + PW && py + 1 > P.y && py < P.y + PH) return false;
+  }
+  setBlock(px, py, pz, b);
+  buzz(10);
+  return true;
+}
+function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+// ======================= saving =======================
+const SAVE_KEY = 'blockcraft-save-v1';
+let saveTimer = 0;
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ seed, edits: [...edits], sel,
+      p: [P.x, P.y, P.z, P.yaw, P.pitch, P.flying ? 1 : 0] }));
+  } catch (e) {}
+}
+function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (d && typeof d.seed === 'number') return d;
+  } catch (e) {}
+  return null;
+}
+
+// ======================= UI =======================
+let sel = 0, playing = false;
+const $ = id => document.getElementById(id);
+const hotbarEl = $('hotbar'), nameEl = $('blockname');
+function blockIcon(b) {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+  const [top, , side] = BLOCKS[b].tex;
+  const face = (t, m, dark) => {
+    x.setTransform(...m);
+    x.drawImage(atlas, t * 16, 0, 16, 16, 0, 0, 16, 16);
+    if (dark) { x.globalCompositeOperation = 'source-atop'; x.fillStyle = `rgba(0,0,0,${dark})`; x.fillRect(0, 0, 16, 16); x.globalCompositeOperation = 'source-over'; }
+  };
+  face(side, [20 / 16, 10 / 16, 0, 22 / 16, 4, 14], 0.22);
+  face(side, [20 / 16, -10 / 16, 0, 22 / 16, 24, 24], 0.4);
+  face(top, [20 / 16, -10 / 16, 20 / 16, 10 / 16, 4, 14], 0);
+  return c;
+}
+HOTBAR.forEach((b, i) => {
+  const s = document.createElement('div');
+  s.className = 'slot'; s.appendChild(blockIcon(b));
+  const pick = e => { e.preventDefault(); e.stopPropagation(); select(i); };
+  s.addEventListener('touchstart', pick, { passive: false });
+  s.addEventListener('mousedown', pick);
+  hotbarEl.appendChild(s);
+});
+let nameTimer = 0;
+function select(i, quiet) {
+  sel = (i + HOTBAR.length) % HOTBAR.length;
+  [...hotbarEl.children].forEach((s, j) => s.classList.toggle('sel', j === sel));
+  if (quiet) return;
+  nameEl.textContent = BLOCKS[HOTBAR[sel]].name;
+  nameEl.classList.add('show'); clearTimeout(nameTimer);
+  nameTimer = setTimeout(() => nameEl.classList.remove('show'), 900);
+  scheduleSave();
+}
+
+function setFlying(on) {
+  P.flying = on; P.vy = 0;
+  $('fly').classList.toggle('on', on);
+  $('down').classList.toggle('hide', !on);
+}
+function holdButton(el, key) {
+  const on = e => { e.preventDefault(); e.stopPropagation(); input[key] = true; el.classList.add('held'); };
+  const off = e => { e.preventDefault(); input[key] = false; el.classList.remove('held'); };
+  el.addEventListener('touchstart', on, { passive: false });
+  el.addEventListener('touchend', off); el.addEventListener('touchcancel', off);
+  el.addEventListener('mousedown', on); el.addEventListener('mouseup', off); el.addEventListener('mouseleave', off);
+}
+holdButton($('jump'), 'jump');
+holdButton($('down'), 'down');
+const tapButton = (el, fn) => {
+  el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+  el.addEventListener('click', fn);
+};
+tapButton($('fly'), () => setFlying(!P.flying));
+tapButton($('pause'), () => showMenu());
+
+// ---- touch: left = joystick, right = look / tap place / hold break
+const layer = $('touch'), stick = $('stick'), knob = $('knob'), cross = $('cross');
+const STICK_R = 50;
+let stickTouch = null;
+const looks = new Map();
+function stickHome() {
+  stick.style.transform = `translate(${Math.max(90, innerWidth * 0.14)}px, ${innerHeight - 110}px)`;
+  knob.style.transform = '';
+}
+layer.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (!playing) return;
+  for (const t of e.changedTouches) {
+    if (t.clientX < innerWidth * 0.42 && !stickTouch) {
+      stickTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+      stick.style.transform = `translate(${t.clientX}px, ${t.clientY}px)`;
+      stick.classList.add('active');
+    } else {
+      const L = { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t0: performance.now(), moved: false, breaking: false, timer: 0, rep: 0 };
+      L.timer = setTimeout(() => {
+        L.breaking = true; cross.classList.add('busy');
+        breakBlock();
+        L.rep = setInterval(breakBlock, 260);
+      }, 380);
+      looks.set(t.identifier, L);
+    }
+  }
+}, { passive: false });
+layer.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (stickTouch && t.identifier === stickTouch.id) {
+      let dx = t.clientX - stickTouch.x, dy = t.clientY - stickTouch.y;
+      const d = Math.hypot(dx, dy);
+      if (d > STICK_R) { dx *= STICK_R / d; dy *= STICK_R / d; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      joy.x = dx / STICK_R; joy.y = dy / STICK_R;
+      continue;
+    }
+    const L = looks.get(t.identifier);
+    if (!L) continue;
+    const dx = t.clientX - L.x, dy = t.clientY - L.y;
+    L.x = t.clientX; L.y = t.clientY;
+    if (!L.moved && Math.hypot(t.clientX - L.sx, t.clientY - L.sy) > 12) {
+      L.moved = true;
+      if (!L.breaking) clearTimeout(L.timer);
+    }
+    if (L.moved) look(dx * 0.0065, dy * 0.0065);
+  }
+}, { passive: false });
+function endTouch(e, cancel) {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (stickTouch && t.identifier === stickTouch.id) {
+      stickTouch = null; joy.x = joy.y = 0;
+      stick.classList.remove('active'); stickHome();
+      continue;
+    }
+    const L = looks.get(t.identifier);
+    if (!L) continue;
+    clearTimeout(L.timer); clearInterval(L.rep);
+    if (!cancel && playing && !L.moved && !L.breaking && performance.now() - L.t0 < 380) placeBlock();
+    looks.delete(t.identifier);
+  }
+  if (![...looks.values()].some(l => l.breaking)) cross.classList.remove('busy');
+}
+layer.addEventListener('touchend', e => endTouch(e, false), { passive: false });
+layer.addEventListener('touchcancel', e => endTouch(e, true), { passive: false });
+
+function look(dyaw, dpitch) {
+  P.yaw -= dyaw;
+  P.pitch = Math.max(-1.55, Math.min(1.55, P.pitch - dpitch));
+}
+
+// ---- mouse & keyboard
+let usingPointer = false;
+layer.addEventListener('mousedown', e => {
+  if (!playing) return;
+  if (document.pointerLockElement !== layer) {
+    try { const r = layer.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) {}
+    usingPointer = true;
+    return;
+  }
+  if (e.button === 0) breakBlock();
+  else if (e.button === 2) placeBlock();
+});
+document.addEventListener('mousemove', e => {
+  if (playing && document.pointerLockElement === layer) look(e.movementX * 0.0025, e.movementY * 0.0025);
+});
+document.addEventListener('pointerlockchange', () => {
+  if (usingPointer && document.pointerLockElement !== layer && playing) showMenu();
+});
+window.addEventListener('wheel', e => { if (playing) select(sel + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (!playing) return;
+  if (e.code === 'KeyF') setFlying(!P.flying);
+  if (/^Digit[1-9]$/.test(e.code)) select(+e.code.slice(5) - 1);
+  if (e.code === 'Digit0') select(9);
+  if (e.code === 'Space') e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// ---- menu
+const menu = $('menu'), status = $('status');
+function showMenu() {
+  playing = false;
+  menu.classList.remove('hide');
+  document.body.classList.add('paused');
+  if (document.pointerLockElement) document.exitPointerLock();
+  save();
+}
+function startPlaying() {
+  menu.classList.add('hide');
+  document.body.classList.remove('paused');
+  playing = true;
+  const el = document.documentElement;
+  if (matchMedia('(pointer:coarse)').matches && !document.fullscreenElement && el.requestFullscreen) {
+    el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+  }
+}
+$('play').addEventListener('click', startPlaying);
+let confirmNew = false, confirmTimer = 0;
+$('newworld').addEventListener('click', () => {
+  const btn = $('newworld');
+  if (!confirmNew) {
+    confirmNew = true; btn.textContent = 'Tap again to replace world';
+    confirmTimer = setTimeout(() => { confirmNew = false; btn.textContent = 'New World'; }, 3000);
+    return;
+  }
+  clearTimeout(confirmTimer); confirmNew = false; btn.textContent = 'New World';
+  newWorld((Math.random() * 1e9) | 0);
+  save();
+  status.textContent = 'New world ready.';
+});
+function newWorld(s, kept) {
+  seed = s; edits = new Map(kept || []);
+  generate();
+  chunks.forEach(c => c.dirty = true);
+  spawn();
+  setFlying(false);
+  P.yaw = 0; P.pitch = -0.2;
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); if (playing) showMenu(); } });
+setInterval(() => { if (playing) save(); }, 5000);
+
+// ======================= render loop =======================
+let dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  canvas.width = Math.round(innerWidth * dpr); canvas.height = Math.round(innerHeight * dpr);
+  if (!stickTouch) stickHome();
+}
+window.addEventListener('resize', resize);
+
+const SKY = [0.557, 0.761, 0.949];
+function render() {
+  // rebuild a few changed chunks per frame
+  let budget = 3;
+  for (const c of chunks) { if (c.dirty && budget-- > 0) buildChunk(c); }
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  const eye = [P.x, P.y + EYE, P.z];
+  const under = get(Math.floor(eye[0]), Math.floor(eye[1]), Math.floor(eye[2])) === WATER;
+  const fogCol = under ? [0.12, 0.26, 0.62] : SKY, fog = under ? [0, 14] : [44, 76];
+  gl.clearColor(fogCol[0], fogCol[1], fogCol[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const proj = perspective(72 * Math.PI / 180, canvas.width / canvas.height, 0.05, 220);
+  const mvp = mul(proj, viewMatrix(P.yaw, P.pitch, eye));
+
+  gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND); gl.depthMask(true);
+  const bp = blockProg;
+  gl.useProgram(bp.p);
+  gl.uniformMatrix4fv(bp.u.uMvp, false, mvp);
+  gl.uniform3fv(bp.u.uCam, eye);
+  gl.uniform2fv(bp.u.uFog, fog);
+  gl.uniform3fv(bp.u.uFogCol, fogCol);
+  gl.uniform1f(bp.u.uAlpha, 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(bp.u.uTex, 0);
+  gl.enableVertexAttribArray(bp.a.aPos); gl.enableVertexAttribArray(bp.a.aUv); gl.enableVertexAttribArray(bp.a.aLight);
+
+  const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+  const visible = chunks.filter(c => {
+    const dx = c.cx * CS + 8 - eye[0], dz = c.cz * CS + 8 - eye[2], d = Math.hypot(dx, dz);
+    if (d > fog[1] + 24) return false;
+    return d < 26 || (dx * fx + dz * fz) / d > -0.35;
+  });
+  const draw = part => {
+    if (!part.n) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, part.buf);
+    gl.vertexAttribPointer(bp.a.aPos, 3, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribPointer(bp.a.aUv, 2, gl.FLOAT, false, 24, 12);
+    gl.vertexAttribPointer(bp.a.aLight, 1, gl.FLOAT, false, 24, 20);
+    gl.drawArrays(gl.TRIANGLES, 0, part.n);
+  };
+  for (const c of visible) draw(c.op);
+
+  // selection outline
+  const hit = playing ? raycast() : null;
+  if (hit) {
+    gl.disableVertexAttribArray(bp.a.aUv); gl.disableVertexAttribArray(bp.a.aLight);
+    gl.useProgram(lineProg.p);
+    gl.uniformMatrix4fv(lineProg.u.uMvp, false, mvp);
+    gl.uniform3f(lineProg.u.uOff, hit.x, hit.y, hit.z);
+    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf);
+    gl.enableVertexAttribArray(lineProg.a.aPos);
+    gl.vertexAttribPointer(lineProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.LINES, 0, 24);
+    gl.useProgram(bp.p);
+    gl.enableVertexAttribArray(bp.a.aUv); gl.enableVertexAttribArray(bp.a.aLight);
+  }
+
+  // water pass
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false); gl.disable(gl.CULL_FACE);
+  gl.uniform1f(bp.u.uAlpha, 0.72);
+  for (const c of visible) draw(c.wa);
+  gl.depthMask(true);
+}
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (playing) update(dt);
+  render();
+}
+
+// ======================= boot =======================
+resize();
+setTimeout(() => {
+  const saved = load();
+  if (saved) {
+    newWorld(saved.seed, saved.edits);
+    if (Array.isArray(saved.p)) {
+      const [x, y, z, yaw, pitch, fly] = saved.p;
+      Object.assign(P, { x, y, z, yaw, pitch });
+      setFlying(!!fly);
+      if (collides(P.x, P.y, P.z)) spawn();
+    }
+    select(saved.sel | 0, true);
+    status.textContent = 'World loaded.';
+  } else {
+    newWorld((Math.random() * 1e9) | 0);
+    select(0, true);
+    status.textContent = '';
+  }
+  for (const c of chunks) buildChunk(c);
+  requestAnimationFrame(frame);
+}, 30);
+</script>
+</body>
+</html>
