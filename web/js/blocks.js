@@ -22,7 +22,8 @@ const T = {};
 T.crack = 32; // 10 stages
 ['stick', 'coal', 'iron', 'diamond', 'apple', 'pork', 'cookedPork', 'flesh'].forEach((n, i) => T[n] = 48 + i);
 T.tools = 56; // 16 tiles: kind * 4 + tier
-['pigSkin', 'pigFace', 'zFace', 'zHeadSide', 'zHair', 'zShirt', 'zPants', 'zSkin', 'arm'].forEach((n, i) => T[n] = 80 + i);
+['pigSkin', 'pigFace', 'zFace', 'zHeadSide', 'zHair', 'zShirt', 'zPants', 'zSkin', 'arm',
+  'vFace', 'vHeadSide', 'vHair', 'vRobe', 'vPants', 'vArms', 'vNose'].forEach((n, i) => T[n] = 80 + i);
 
 // ---------- blocks ----------
 const BLOCKS = [];
@@ -281,6 +282,28 @@ function buildAtlas() {
   paint(T.zPants, () => vary([62, 62, 150], 14));
   paint(T.zSkin, () => vary(GREEN, 16));
   paint(T.arm, (x, y) => vary(y > 12 ? [60, 150, 200] : [205, 152, 116], 10));
+
+  // the homeless villager: tired face, stubble, a patched and worn-out robe
+  const VSKIN = [196, 146, 110];
+  paint(T.vFace, (x, y) => {
+    if (y === 5 && x >= 2 && x <= 13) return [70, 50, 36];                      // one long eyebrow
+    if (y === 7 && (x === 3 || x === 4 || x === 11 || x === 12)) return x === 4 || x === 11 ? [40, 110, 40] : [245, 245, 245];
+    if (y === 8 && (x === 3 || x === 4 || x === 11 || x === 12)) return [150, 100, 76]; // tired eyes
+    if (y >= 12 && r() < 0.35) return [110, 84, 64];                             // stubble
+    return vary(VSKIN, 12);
+  });
+  paint(T.vHeadSide, (x, y) => y < 3 ? vary([96, 70, 44], 14) : vary(VSKIN, 12));
+  paint(T.vHair, () => vary([96, 70, 44], 18));
+  paint(T.vRobe, (x, y) => {
+    if (x >= 3 && x <= 6 && y >= 9 && y <= 12) return vary([92, 110, 70], 16);   // green patch
+    if (x >= 10 && x <= 13 && y >= 3 && y <= 5) return vary([130, 80, 60], 14);  // red patch
+    if ((x === 3 || x === 6) && y >= 9 && y <= 12 && r() < 0.5) return [50, 36, 24]; // stitches
+    if (y === 15 && r() < 0.5) return [0, 0, 0, 0];                              // frayed hem
+    return vary(r() < 0.12 ? [84, 62, 44] : [112, 86, 60], 18);
+  });
+  paint(T.vPants, () => vary([72, 60, 50], 14));
+  paint(T.vArms, (x, y) => (x < 3 || x > 12) ? vary(VSKIN, 12) : vary([104, 80, 56], 16));
+  paint(T.vNose, () => vary([186, 130, 96], 10));
 
   ctx.putImageData(img, 0, 0);
   drawItemSprites(ctx);

@@ -120,6 +120,11 @@ const Sound = (() => {
     pig(pan, v) {
       for (let i = 0; i < 2; i++) tone({ t: i * 0.16, type: 'sawtooth', f0: rnd(260, 320), f1: rnd(170, 210), dur: 0.12, gain: 0.14 * v, lp: 1400, pan });
     },
+    villager(pan, v) { // "hrmm"
+      tone({ type: 'sawtooth', f0: rnd(170, 200), f1: rnd(240, 280), dur: 0.16, gain: 0.16 * v, lp: 900, pan });
+      tone({ t: 0.15, type: 'sawtooth', f0: rnd(240, 270), f1: rnd(150, 180), dur: 0.26, gain: 0.16 * v, lp: 900, pan });
+    },
+    villagerHurt(pan, v) { tone({ type: 'sawtooth', f0: 300, f1: 170, dur: 0.25, gain: 0.2 * v, lp: 1100, pan }); },
     pigHurt(pan, v) { tone({ type: 'sawtooth', f0: 520, f1: 300, dur: 0.22, gain: 0.2 * v, lp: 2000, pan }); },
     poof(pan, v) { noise({ dur: 0.35, freq: 900, q: 0.6, sweep: 300, gain: 0.2 * v, pan }); },
     fire(pan, v) { noise({ dur: 0.3, type: 'lowpass', freq: 900, gain: 0.12 * v, pan }); },

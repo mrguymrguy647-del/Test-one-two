@@ -87,6 +87,7 @@ const mobs = [];
 const MOB_INFO = {
   pig: { hw: 0.45, h: 0.9, health: 10, speed: 1.3, sound: 'pig', hurt: 'pigHurt' },
   zombie: { hw: 0.3, h: 1.95, health: 20, speed: 1.0, sound: 'zombie', hurt: 'zombieHurt' },
+  villager: { hw: 0.3, h: 1.95, health: 20, speed: 0.8, sound: 'villager', hurt: 'villagerHurt' },
 };
 function spawnMob(type, x, y, z) {
   const inf = MOB_INFO[type];
@@ -135,7 +136,7 @@ function updateMobs(dt, G) {
       continue;
     }
     const dx = P.x - m.x, dz = P.z - m.z, dist = Math.hypot(dx, dz) || 0.001, dy = P.y - m.y;
-    if (dist > 80 || m.y < -10) { mobs.splice(i, 1); continue; }
+    if ((dist > 80 && m.type !== 'villager') || m.y < -10) { mobs.splice(i, 1); continue; }
     const inWater = waterAt(m.x, m.y + 0.4, m.z);
     let tx = 0, tz = 0, speed = 0;
     if (m.type === 'zombie' && G.survival && !P.dead && dist < 22 && Math.abs(dy) < 8) {
@@ -197,7 +198,7 @@ function hurtMob(m, dmg, from, G) {
     const kx = m.x - from.x, kz = m.z - from.z, kd = Math.hypot(kx, kz) || 1;
     m.vx = kx / kd * 7; m.vz = kz / kd * 7; m.vy = 5.5;
   }
-  if (m.type === 'pig') m.ai.flee = 5;
+  if (m.type === 'pig' || m.type === 'villager') m.ai.flee = 5;
   G.soundAt(MOB_INFO[m.type].hurt, m.x, m.y + 1, m.z);
   if (m.health <= 0) m.deathT = 0.001;
 }

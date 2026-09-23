@@ -161,6 +161,15 @@ function buildStaticMeshes() {
     { mesh: arm, pivot: [-0.375, 1.375, 0], anim: 'armA' },
     { mesh: arm, pivot: [0.375, 1.375, 0], anim: 'armB' },
   ];
+  const V = T.vHeadSide;
+  MODELS.villager = [
+    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, six(T.vPants), 0, -0.375, 0)), pivot: [-0.125, 0.75, 0], anim: 'legA' },
+    { mesh: makeMesh(boxGeom(0.25, 0.75, 0.25, six(T.vPants), 0, -0.375, 0)), pivot: [0.125, 0.75, 0], anim: 'legB' },
+    { mesh: makeMesh(boxGeom(0.52, 0.85, 0.32, six(T.vRobe))), pivot: [0, 1.1, 0] },
+    { mesh: makeMesh(boxGeom(0.6, 0.24, 0.26, six(T.vArms), 0, 0, -0.26)), pivot: [0, 1.28, 0] },   // folded arms
+    { mesh: makeMesh([...boxGeom(0.5, 0.56, 0.5, [V, V, T.vHair, V, V, T.vFace], 0, 0.28, 0),
+                      ...boxGeom(0.13, 0.24, 0.12, six(T.vNose), 0, 0.12, -0.3)]), pivot: [0, 1.5, 0], anim: 'head' },
+  ];
   MESH.arm = makeMesh(boxGeom(0.24, 0.24, 0.75, six(T.arm), 0, 0, 0));
 
   // selection outline

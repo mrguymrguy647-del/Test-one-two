@@ -20,6 +20,7 @@ engine, and every texture, sound and song is generated in code (no downloads, no
   in wood, stone, iron and diamond (tools wear out)
 - Smelting at a furnace: iron ingots, cooked porkchops, glass, stone and bricks
 - Pigs to hunt for food, apples from leaves, and zombies that come out at night (they burn in the sun)
+- A homeless villager who wanders near your starting point. Tap him while holding food to share it
 - If you die you drop your items and respawn
 
 **Creative mode**
