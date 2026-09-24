@@ -52,6 +52,10 @@
   #overlay dt { color: var(--accent); text-align: right; }
   #overlay dd { margin: 0; }
   #loading { font: 13px var(--mono); color: var(--ink-dim); }
+  #overlay.locked { background: #000; cursor: default; }
+  #overlay.locked dl, #overlay.locked #loading { display: none; }
+  #overlay.locked .sub { color: #c9b98a; }
+  #overlay.locked .go { border-color: transparent; font: 14px var(--mono); letter-spacing: .04em; color: var(--ink-dim); }
   @media (max-height: 460px) { #overlay { gap: 10px; } #overlay dl { font-size: 12px; gap: 3px 14px; } }
 
   /* touch controls (phones) */
@@ -148,7 +152,23 @@
   <div class="btns">
     <button id="dbgFly">Fly</button><button id="dbgView-">View −</button><button id="dbgView+">View +</button>
   </div>
-  <p class="hint">Weather, audio and the director get their own controls here in later phases.</p>
+  <h3>Weather</h3>
+  <div class="btns" id="dbgWeather">
+    <button data-weather="auto" class="on">Sky Mind</button><button data-weather="clear">Clear</button><button data-weather="overcast">Overcast</button>
+    <button data-weather="fog">Fog</button><button data-weather="rain">Rain</button><button data-weather="storm">Storm</button><button data-weather="snow">Snow</button>
+  </div>
+  <h3>Uncanny events</h3>
+  <div class="btns">
+    <button data-event="stillness">Stillness</button><button data-event="slowRain">Slow rain</button><button data-event="frozenRain">Frozen rain</button>
+    <button data-event="lookFog">Fog where you look</button><button data-event="cloudAbove">Cloud above you</button><button data-event="lightning">Lightning</button>
+    <button data-event="silentLightning">Silent lightning</button><button data-event="ghostThunder">Thunder, no flash</button><button data-event="mineMist">Mine mist</button>
+    <button data-event="falseDawn">False dawn</button><button data-event="forbiddenSun">Forbidden sun</button><button data-event="betrayal">House betrayal</button>
+  </div>
+  <h3>Night &amp; the Sky Mind</h3>
+  <div class="btns">
+    <button id="dbgMoonKill">Kill the moon</button><button id="dbgMoonFix">Restore moon</button><button id="dbgAiFast">Sky Mind ×10</button><button id="dbgUnlock">Clear lockout</button>
+  </div>
+  <p class="hint">Weather is silent until Phase 3 (sound). Thunder without a flash only shows up here for now.</p>
 </div>
 
 <script src="three.min.js"></script>
@@ -276,6 +296,44 @@ const World = (() => {
     water: new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide }),
   };
 
+  // ---- shader patches: wind-swayed leaves, rain ripples on water, and "focus" fog that can gather in one direction
+  const U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2() }, uFocusDir: { value: new THREE.Vector3(0, 0, -1) }, uFocusAmt: { value: 0 }, uRain: { value: 0 } };
+  const FOG_FRAG = `#ifdef USE_FOG
+    float fogFactor = smoothstep(fogNear, fogFar, fogDepth);
+    float stFocus = max(dot(normalize(vStW - cameraPosition), uFocusDir), 0.0);
+    fogFactor = clamp(fogFactor + uFocusAmt * smoothstep(0.6, 0.97, stFocus) * smoothstep(2.0, 14.0, fogDepth), 0.0, 1.0);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+  #endif`;
+  const SWAY = `
+    { vec3 stw = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      float ph = stw.x * 0.37 + stw.z * 0.29 + uTime * 1.6;
+      transformed.xz += uWind * sway * (0.55 + 0.45 * sin(ph)) * 0.1;
+      transformed.y += sway * sin(ph * 1.3) * 0.02 * length(uWind); }`;
+  const RIPPLE = `
+    if (uRain > 0.01 && vStUp > 0.5) {
+      vec2 q = vStW.xz * 0.9, cell = floor(q), f = fract(q) - 0.5;
+      float ph = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+      float t = fract(uTime * 0.9 + ph);
+      vec2 jit = vec2(fract(ph * 13.1), fract(ph * 7.7)) - 0.5;
+      float ring = (1.0 - smoothstep(0.0, 0.05, abs(length(f - jit * 0.4) - t * 0.45))) * (1.0 - t);
+      diffuseColor.rgb += ring * uRain * 0.35;
+    }`;
+  function patch(mat, kind) {
+    mat.customProgramCacheKey = () => 'stillness-' + kind;
+    mat.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform float uTime;\nuniform vec2 uWind;' + (kind === 'cutout' ? '\nattribute float sway;' : ''))
+        .replace('#include <begin_vertex>', '#include <begin_vertex>' + (kind === 'cutout' ? SWAY : ''))
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\nvStW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvStUp = normal.y;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform float uTime;\nuniform float uRain;')
+        .replace('#include <fog_fragment>', FOG_FRAG)
+        .replace('#include <map_fragment>', '#include <map_fragment>' + (kind === 'water' ? RIPPLE : ''));
+    };
+  }
+  patch(materials.solid, 'solid'); patch(materials.cutout, 'cutout'); patch(materials.water, 'water');
+
   // ---- terrain
   let seed = 1, n1, n2, n3, n4;
   function setSeed(s) { seed = s; n1 = makeSimplex(s); n2 = makeSimplex(s + 11); n3 = makeSimplex(s + 23); n4 = makeSimplex(s + 37); }
@@ -293,6 +351,7 @@ const World = (() => {
   const key = (cx, cz) => cx + ',' + cz;
   const idx = (x, y, z) => (y * CS + z) * CS + x;
   const group = new THREE.Group();
+  const editsByChunk = new Map();   // chunk key -> Map(block index -> block), re-applied whenever a chunk is generated
   function generate(cx, cz) {
     const data = new Uint8Array(CS * CS * H), x0 = cx * CS, z0 = cz * CS;
     for (let z = 0; z < CS; z++) for (let x = 0; x < CS; x++) {
@@ -331,7 +390,9 @@ const World = (() => {
       for (let y = h + 1; y <= top; y++) set(tx, y, tz, LOG, false);
       set(tx, h, tz, DIRT, false);
     }
-    const c = { cx, cz, data, group: null, dirty: true, edited: false };
+    const ed = editsByChunk.get(key(cx, cz));
+    if (ed) for (const [i, b] of ed) data[i] = b;
+    const c = { cx, cz, data, group: null, dirty: true, edited: !!ed };
     chunks.set(key(cx, cz), c);
     return c;
   }
@@ -357,6 +418,9 @@ const World = (() => {
     if (!c) return false;
     const lx = wx - c.cx * CS, lz = wz - c.cz * CS;
     c.data[idx(lx, wy, lz)] = b; c.dirty = true; c.edited = true;
+    const ck = key(c.cx, c.cz);
+    if (!editsByChunk.has(ck)) editsByChunk.set(ck, new Map());
+    editsByChunk.get(ck).set(idx(lx, wy, lz), b);
     // neighbours share faces and ambient occlusion with this block
     for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
       if ((dx === -1 && lx !== 0) || (dx === 1 && lx !== CS - 1) || (dz === -1 && lz !== 0) || (dz === 1 && lz !== CS - 1)) continue;
@@ -406,7 +470,7 @@ const World = (() => {
     }
     const pb = (x, y, z) => y < 0 ? STONE : y >= H ? AIR : pad[(y * PW + z + 1) * PW + x + 1];
     const bufs = { solid: mk(), cutout: mk(), water: mk() };
-    function mk() { return { pos: [], nor: [], uv: [], col: [], idx: [] }; }
+    function mk() { return { pos: [], nor: [], uv: [], col: [], idx: [], sw: [] }; }
     for (let y = 0; y < H; y++) for (let z = 0; z < CS; z++) for (let x = 0; x < CS; x++) {
       const b = pb(x, y, z);
       if (b === AIR) continue;
@@ -429,6 +493,7 @@ const World = (() => {
           out.nor.push(f.n[0], f.n[1], f.n[2]);
           out.uv.push((t + clamp(f.uv[k][0], 0.002, 0.998)) / NT, clamp(f.uv[k][1], 0.002, 0.998));
           const a = AO[ao[k]]; out.col.push(a, a, a);
+          if (info.kind === 'cutout') out.sw.push(b === LEAVES ? 1 : 0);
         }
         // flip the quad's diagonal so ambient occlusion shades smoothly
         if (ao[0] + ao[2] >= ao[1] + ao[3]) out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -446,6 +511,7 @@ const World = (() => {
       g.setAttribute('normal', new THREE.Float32BufferAttribute(bf.nor, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(bf.uv, 2));
       g.setAttribute('color', new THREE.Float32BufferAttribute(bf.col, 3));
+      if (kind === 'cutout') g.setAttribute('sway', new THREE.Float32BufferAttribute(bf.sw, 1));
       g.setIndex(bf.idx);
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, materials[kind]);
@@ -487,7 +553,7 @@ const World = (() => {
     for (const c of chunks.values()) {
       const d = Math.hypot(c.cx - pcx, c.cz - pcz);
       if (d > R + 2 && c.group) { disposeMesh(c); c.dirty = true; }
-      if (d > R + 4 && !c.edited) chunks.delete(key(c.cx, c.cz));
+      if (d > R + 4) chunks.delete(key(c.cx, c.cz));   // edits live in editsByChunk, so any far chunk can go
     }
   }
   const pendingNear = (px, pz) => {  // how many chunks around the player still need meshing
@@ -496,7 +562,21 @@ const World = (() => {
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) { const c = chunks.get(key(pcx + dx, pcz + dz)); if (!c || c.dirty) n++; }
     return n;
   };
-  return { B, INFO, SOLID, OPAQUE, TILE, NT, atlasCanvas, materials, group, chunks, setSeed, heightAt, get, solid, set, update, pendingNear };
+  // highest block + 1 for each column of an n x n area (rain and snow stop there)
+  function fillTop(ox, oz, n, out) {
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const wx = ox + i, wz = oz + j, c = chunkAt(wx, wz);
+      let top = 0;
+      if (c) { const lx = wx - c.cx * CS, lz = wz - c.cz * CS; for (let y = H - 1; y >= 0; y--) if (c.data[idx(lx, y, lz)] !== AIR) { top = y + 1; break; } }
+      out[j * n + i] = top;
+    }
+  }
+  const exportEdits = () => [...editsByChunk].map(([k, m]) => [k, [].concat(...m)]);
+  function importEdits(list) {
+    editsByChunk.clear();
+    for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); editsByChunk.set(k, m); }
+  }
+  return { B, INFO, SOLID, OPAQUE, TILE, NT, atlasCanvas, materials, group, chunks, U, setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
 })();
 
 /* =====================================================================
@@ -510,6 +590,9 @@ renderer.setPixelRatio(IS_PHONE ? 1 : Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 scene.add(World.group);
+
+// What the weather wants the sky to look like; written by WEATHER, read here every frame.
+const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, falseDawn: 0, forbidden: 0 };
 
 const Sky = (() => {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
@@ -534,13 +617,40 @@ const Sky = (() => {
   const sun = glow('rgba(255,248,226,1)', 'rgba(255,214,150,0.35)', 0.18); sun.scale.set(90, 90, 1);
   const moon = glow('rgba(226,232,244,1)', 'rgba(170,190,230,0.18)', 0.14); moon.scale.set(60, 60, 1);
 
-  const starGeo = new THREE.BufferGeometry(), sp = [], rs = mulberry32(4);
+  // the forbidden sun: a censored disc (black bar + flickering mosaic), drawn normally so black shows
+  const censorCanvas = document.createElement('canvas'); censorCanvas.width = censorCanvas.height = 128;
+  const censorTex = new THREE.CanvasTexture(censorCanvas); censorTex.magFilter = THREE.NearestFilter;
+  const censor = new THREE.Sprite(new THREE.SpriteMaterial({ map: censorTex, depthWrite: false, fog: false, transparent: true }));
+  censor.scale.set(110, 110, 1); censor.visible = false; scene.add(censor);
+  let censorT = 0;
+  function drawCensor() {
+    const x = censorCanvas.getContext('2d');
+    x.clearRect(0, 0, 128, 128);
+    x.fillStyle = '#fff8e8'; x.beginPath(); x.arc(64, 64, 38, 0, Math.PI * 2); x.fill();
+    for (let by = 24; by < 104; by += 10) for (let bx = 24; bx < 104; bx += 10) {
+      if (Math.hypot(bx + 5 - 64, by + 5 - 64) > 40) continue;
+      const g = 60 + Math.floor(Math.random() * 190); x.fillStyle = `rgb(${g},${g},${Math.min(255, g + 10)})`; x.fillRect(bx, by, 10, 10);
+    }
+    x.fillStyle = '#000'; x.fillRect(8, 52 + Math.floor(Math.random() * 3) - 1, 112, 24);
+    censorTex.needsUpdate = true;
+  }
+
+  // stars go out one by one as the moon dies: each star has a rank, and only ranks below uLife shine
+  const starGeo = new THREE.BufferGeometry(), sp = [], rank = [], rs = mulberry32(4);
   for (let i = 0; i < 1400; i++) {
     const u = rs() * 2 - 1, th = rs() * Math.PI * 2, r = Math.sqrt(1 - u * u);
-    sp.push(r * Math.cos(th) * 550, u * 550, r * Math.sin(th) * 550);
+    sp.push(r * Math.cos(th) * 550, u * 550, r * Math.sin(th) * 550); rank.push(rs());
   }
   starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
-  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xe8ecf4, size: 2.2, sizeAttenuation: false, transparent: true, depthWrite: false, fog: false }));
+  starGeo.setAttribute('rank', new THREE.Float32BufferAttribute(rank, 1));
+  const stars = new THREE.Points(starGeo, new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0 }, uLife: { value: 1 }, uSize: { value: 2.2 * renderer.getPixelRatio() } },
+    vertexShader: 'attribute float rank; uniform float uOpacity; uniform float uLife; uniform float uSize; varying float vA;' +
+      'void main(){ vA = uOpacity * step(rank, uLife); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = uSize; }',
+    fragmentShader: 'varying float vA; void main(){ if (vA <= 0.0) discard; gl_FragColor = vec4(0.91, 0.93, 0.96, vA); }',
+    transparent: true, depthWrite: false,
+  }));
+  stars.frustumCulled = false;
   scene.add(stars);
 
   const sunLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -554,6 +664,7 @@ const Sky = (() => {
   const DUSK = { top: C(0x3d4f7a), horizon: C(0xe6a585), bottom: C(0x5a5060) };
   const NIGHT = { top: C(0x05070d), horizon: C(0x121826), bottom: C(0x07090e) };
   const tmp = { top: new THREE.Color(), horizon: new THREE.Color(), bottom: new THREE.Color() };
+  const stormCol = new THREE.Color(), mistCol = new THREE.Color(), sickCol = C(0x9fae86), flashCol = C(0xdfe7ff), white = C(0xffffff);
   let time = 0.06;            // 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight
   const state = { day: 1, sunDir: new THREE.Vector3(), fogColor: new THREE.Color() };
 
@@ -562,36 +673,61 @@ const Sky = (() => {
     const a = time * Math.PI * 2;
     state.sunDir.set(Math.cos(a), Math.sin(a), 0.25).normalize();
     const h = state.sunDir.y;
-    const day = smoothstep(-0.12, 0.25, h), dusk = Math.max(0, 1 - Math.abs(h) / 0.3);
+    const day = smoothstep(-0.12, 0.25, h), dusk = Math.max(0, 1 - Math.abs(h) / 0.3), night = 1 - day;
     state.day = day;
+    const F = SkyFX;
+    // the dying moon darkens the whole night sky; storms grey it; the forbidden sun turns it slightly sick
+    const moonDim = lerp(1, lerp(0.18, 1, F.moonLife), night);
+    stormCol.setRGB(0.43, 0.46, 0.5).multiplyScalar(lerp(0.1, 1, day));
     for (const k of ['top', 'horizon', 'bottom']) {
       tmp[k].copy(NIGHT[k]).lerp(DAY[k], day).lerp(DUSK[k], dusk * 0.7);
+      tmp[k].lerp(DUSK[k], F.falseDawn * 0.6 * night);
+      tmp[k].lerp(stormCol, F.cloudDark * (k === 'top' ? 0.85 : 0.6));
+      if (k === 'horizon') mistCol.copy(tmp.horizon).lerp(white, 0.25 * day);
+    }
+    for (const k of ['top', 'horizon', 'bottom']) {
+      tmp[k].lerp(mistCol, F.mist * (k === 'horizon' ? 0.5 : 0.9));   // fog swallows the whole sky
+      tmp[k].multiplyScalar(moonDim);
+      if (F.forbidden > 0) tmp[k].lerp(sickCol, 0.3 * F.forbidden * day);
+      tmp[k].lerp(flashCol, F.flash * 0.65);
     }
     dome.material.uniforms.top.value.copy(tmp.top);
     dome.material.uniforms.horizon.value.copy(tmp.horizon);
     dome.material.uniforms.bottom.value.copy(tmp.bottom);
     state.fogColor.copy(tmp.horizon);
     scene.fog.color.copy(state.fogColor);
-    scene.fog.far = CFG.VIEW * CFG.CHUNK * 0.95; scene.fog.near = scene.fog.far * 0.45;
+    const reach = CFG.VIEW * CFG.CHUNK;
+    scene.fog.far = Math.max(6, reach * 0.95 * F.fogFarMul);
+    scene.fog.near = Math.min(scene.fog.far - 2, reach * 0.45 * F.fogNearMul);
 
     const cam = camera.position;
     dome.position.copy(cam); stars.position.copy(cam);
     sun.position.copy(cam).addScaledVector(state.sunDir, 500);
     moon.position.copy(cam).addScaledVector(state.sunDir, -500);
-    sun.material.opacity = smoothstep(-0.2, 0.05, h);
-    moon.material.opacity = smoothstep(-0.2, 0.05, -h) * 0.9;
-    stars.material.opacity = (1 - day) * 0.85;
+    const sunUp = smoothstep(-0.2, 0.05, h);
+    const veil = 1 - F.mist * 0.85;
+    sun.material.opacity = sunUp * (1 - F.cloud * 0.8) * (1 - F.forbidden) * veil;
+    censor.visible = F.forbidden > 0.01;
+    if (censor.visible) {
+      censor.position.copy(sun.position); censor.material.opacity = sunUp * F.forbidden;
+      censorT -= dt; if (censorT <= 0) { censorT = 0.12; drawCensor(); }
+    }
+    moon.material.opacity = smoothstep(-0.2, 0.05, -h) * 0.9 * Math.pow(F.moonLife, 0.8) * (1 - F.cloud * 0.75) * veil;
+    stars.material.uniforms.uOpacity.value = night * 0.85 * (1 - F.cloud * 0.9) * (1 - F.falseDawn * 0.85) * veil;
+    stars.material.uniforms.uLife.value = clamp(F.moonLife * 1.25 - 0.15, 0, 1);
     stars.rotation.z = a;
 
-    // sunlight by day, a faint cool moonlight by night
+    // sunlight by day, a faint cool moonlight by night (it dies with the moon)
     const moonUp = -h > 0;
     sunLight.position.copy(cam).addScaledVector(moonUp ? state.sunDir.clone().negate() : state.sunDir, 100);
     sunLight.target.position.copy(cam);
     sunLight.color.setRGB(1, lerp(0.72, 0.98, day), lerp(0.55, 0.92, day));
     if (moonUp) sunLight.color.setRGB(0.62, 0.7, 0.9);
-    sunLight.intensity = moonUp ? 0.22 * smoothstep(0, 0.2, -h) : 0.85 * smoothstep(-0.02, 0.2, h);
-    hemi.intensity = lerp(0.28, 0.62, day);
-    hemi.color.copy(tmp.top).lerp(new THREE.Color(0xffffff), 0.5);
+    sunLight.intensity = moonUp ? 0.22 * smoothstep(0, 0.2, -h) * F.moonLife * (1 - F.cloud * 0.5)
+                                : 0.85 * smoothstep(-0.02, 0.2, h) * F.light;
+    const nightAmbient = lerp(0.04, 0.28, F.moonLife) + F.falseDawn * 0.12;
+    hemi.intensity = lerp(nightAmbient, 0.62 * (0.6 + 0.4 * F.light), day) + F.flash * 0.9;
+    hemi.color.copy(tmp.top).lerp(white, 0.5);
   }
   return { update, state, get time() { return time; }, set time(v) { time = v; } };
 })();
@@ -759,6 +895,7 @@ const Player = (() => {
 
   return {
     p, keys, touch, update, spawn, look,
+    unstuck() { for (let n = 0; n < 64 && hits(p.x, p.y, p.z); n++) p.y += 1; },
     // touch: hold to break, tap to place
     beginBreak() { breakHeld = true; act('break'); actCool = 0.3; },
     endBreak() { breakHeld = false; },
@@ -853,9 +990,481 @@ const Touch = (() => {
 })();
 
 /* =====================================================================
-   WEATHER — Phase 2
+   WEATHER — weather states, the Sky Mind (a weather AI that gives you bad luck),
+   rain/snow, clouds, lightning, the dying moon, false dawn, the forbidden sun,
+   fake safety and betrayal, and the rare uncanny events
    ===================================================================== */
-const Weather = { update() {} };
+const Weather = (() => {
+  const B = World.B, U = World.U;
+  const STATES = {
+    clear:    { cloud: 0.22, cloudDark: 0,    light: 1,    fogNearMul: 1,    fogFarMul: 1,    rain: 0,   snow: 0,    wind: 0.25, lightning: 0 },
+    overcast: { cloud: 0.85, cloudDark: 0.35, light: 0.74, fogNearMul: 0.85, fogFarMul: 0.9,  rain: 0,   snow: 0,    wind: 0.45, lightning: 0 },
+    fog:      { cloud: 0.6,  cloudDark: 0.25, light: 0.82, fogNearMul: 0.06, fogFarMul: 0.3,  rain: 0,   snow: 0,    wind: 0.08, lightning: 0 },
+    rain:     { cloud: 0.97, cloudDark: 0.55, light: 0.6,  fogNearMul: 0.5,  fogFarMul: 0.7,  rain: 0.7, snow: 0,    wind: 0.55, lightning: 0 },
+    storm:    { cloud: 1,    cloudDark: 0.85, light: 0.42, fogNearMul: 0.35, fogFarMul: 0.55, rain: 1,   snow: 0,    wind: 1,    lightning: 1 },
+    snow:     { cloud: 0.92, cloudDark: 0.3,  light: 0.8,  fogNearMul: 0.4,  fogFarMul: 0.62, rain: 0,   snow: 0.85, wind: 0.35, lightning: 0 },
+  };
+  const LABEL = { clear: 'clear', overcast: 'overcast', fog: 'fog', rain: 'rain', storm: 'thunderstorm', snow: 'snow' };
+  const live = Object.assign({}, STATES.clear), target = Object.assign({}, STATES.clear);
+  let state = 'clear', tau = 12, thinkT = 25, auto = true, aiSpeed = 1, coldSpell = false, resumeState = null;
+  let unease = 0;                       // Phase 4: the Director raises this; bad luck and events scale with it
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // ---------------- sensing the player ----------------
+  const ctx = { roofed: false, walls: 0, inMine: false, inHouse: false, exposed: true, tMine: 0, tStill: 0, distHome: 0, sinceLeftHouse: 999 };
+  const DIR8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  let home = { x: 0, z: 0, built: false }, senseT = 0;
+  function sense() {
+    const p = Player.p, ex = Math.floor(p.x), ey = Math.floor(p.y + 1.5), ez = Math.floor(p.z);
+    let roofed = false;
+    for (let y = ey + 1; y <= ey + 12 && !roofed; y++) { const b = World.get(ex, y, ez); roofed = World.OPAQUE[b] === 1 || b === B.LEAVES; }
+    let walls = 0;
+    for (const [dx, dz] of DIR8) for (let d = 1; d <= 6; d++) if (World.OPAQUE[World.get(ex + dx * d, ey, ez + dz * d)]) { walls++; break; }
+    const inMine = roofed && p.y < World.heightAt(ex, ez) - 3;
+    const inHouse = roofed && walls >= 6 && !inMine;
+    // what just changed?
+    if (ctx.inMine && !inMine && ctx.tMine >= 30) mineExit();
+    if (!ctx.inHouse && inHouse) enteredHouse();
+    if (ctx.inHouse && !inHouse) leftHouse();
+    if (!inMine) ctx.tMine = 0;
+    Object.assign(ctx, { roofed, walls, inMine, inHouse, exposed: !inHouse && !inMine });
+    if (inHouse) home = { x: p.x, z: p.z, built: true };
+    ctx.distHome = Math.hypot(p.x - home.x, p.z - home.z);
+  }
+
+  // ---------------- choosing the weather ----------------
+  function choose(name) { return (name === 'rain' || name === 'storm') && (Player.p.y > CFG.SEA + 22 || coldSpell) ? 'snow' : name; }
+  function setTarget(name, t) {
+    state = choose(name);
+    Object.assign(target, STATES[state]);
+    tau = t || rand(10, 18);                 // eases in over roughly 30–55 s
+    Events.emit('weather', { state });
+  }
+  // The Sky Mind: score every weather, then pick one by weighted chance so it never feels scripted.
+  function think() {
+    if (betrayal && betrayal.kind === 'rainInside') return;       // let it rain until the betrayal is over
+    const night = 1 - Sky.state.day, u = 1 + unease;
+    const w = { clear: 3, overcast: 2, fog: 0.7 + night * 0.8, rain: 1.1, storm: 0.25 + night * 0.25, snow: coldSpell ? 1.5 : 0.25 };
+    if (ctx.exposed && night > 0.5 && ctx.distHome > 30) {          // far from home at night: the sky turns on you
+      const f = Math.min(3, ctx.distHome / 50) * u; w.storm += f; w.rain += f * 0.6; w.fog += f * 0.4;
+    }
+    if (ctx.sinceLeftHouse < 90) { w.rain += 1.5 * u; w.overcast += 1; }   // you just stepped outside
+    if (ctx.inHouse && protect) { w.clear += 3; w.rain *= 0.2; w.storm *= 0.1; }   // fake safety
+    w[state] *= 0.6;                                                     // don't repeat forever
+    let total = 0; for (const k in w) total += w[k];
+    let r = Math.random() * total;
+    for (const k in w) { r -= w[k]; if (r <= 0) { if (choose(k) !== state) setTarget(k); return; } }
+  }
+  function mineExit() {            // you were down there a while... the world changed while you were gone
+    if (Math.random() < Math.min(0.95, 0.7 * (1 + unease))) { setTarget('fog', 4); Events.emit('uncanny', { name: 'mineMist' }); }
+  }
+
+  // ---------------- fake safety and betrayal ----------------
+  let trust = 0, protect = true, betrayal = null, betrayT = 20, nightInsideT = 0, moonBetrayed = false;
+  function enteredHouse() {
+    if (protect && (state === 'rain' || state === 'storm')) { resumeState = state; setTarget('overcast', 6); }   // the storm calms at your door
+  }
+  function leftHouse() {
+    ctx.sinceLeftHouse = 0;
+    if (resumeState) { setTarget(resumeState, 6); resumeState = null; }                                        // ...and waits for you
+  }
+  function betray(kind) {
+    const kinds = ['rainInside', 'fogInside', 'lightningDoor'];
+    if (Sky.state.day < 0.4) kinds.push('moonInside');
+    kind = kind || kinds[Math.floor(Math.random() * kinds.length)];
+    trust = 0; protect = false; resumeState = null;
+    betrayal = { kind, t: 0, dur: kind === 'lightningDoor' ? 1.5 : rand(70, 120) };
+    if (kind === 'rainInside' && state !== 'rain' && state !== 'storm') setTarget('rain', 3);
+    if (kind === 'lightningDoor') strike(rand(4, 7), false);
+    if (kind === 'moonInside') moonBetrayed = true;
+    Events.emit('betrayal', { kind });
+  }
+
+  // ---------------- the night ----------------
+  let moonLife = 1, fd = { phase: 0, t: 0 }, fdUsed = false, fdAmt = 0, days = 0, lastT = Sky.time;
+  function newDay() {
+    days++; fdUsed = false; moonBetrayed = false;
+    if (nightInsideT > 60 && protect) trust = Math.min(1, trust + 0.25);       // surviving a night inside builds trust
+    nightInsideT = 0; protect = true; coldSpell = Math.random() < 0.12;
+    if (Math.random() < Math.min(0.9, (1 / 6) * (1 + unease))) forb.on = true;  // the forbidden sun
+    Events.emit('dawn', { days });
+  }
+
+  // ---------------- the forbidden sun ----------------
+  const STARE_KICK = 7;
+  const forb = { on: false, amt: 0, stare: 0, kickT: 0 };
+  const post = { amt: 0, black: 0 };
+  const fwd = new THREE.Vector3();
+  function sunBlocked() {
+    const o = camera.position, d = Sky.state.sunDir;
+    for (let t = 1; t < 60; t += 0.6) if (World.OPAQUE[World.get(Math.floor(o.x + d.x * t), Math.floor(o.y + d.y * t), Math.floor(o.z + d.z * t))]) return true;
+    return false;
+  }
+
+  // ---------------- rain and snow: GPU particles in a box that follows the camera ----------------
+  const RN = 32, roofData = new Uint8Array(RN * RN), roofTex = new THREE.DataTexture(roofData, RN, RN, THREE.LuminanceFormat);
+  roofTex.magFilter = roofTex.minFilter = THREE.NearestFilter; roofTex.needsUpdate = true;
+  const roofO = new THREE.Vector2(1e6, 1e6);
+  let roofDirty = true, roofT = 0;
+  Events.on('break', () => { roofDirty = true; }); Events.on('place', () => { roofDirty = true; });
+  function updateRoof() {
+    const ox = Math.floor(Player.p.x) - RN / 2, oz = Math.floor(Player.p.z) - RN / 2;
+    if (!roofDirty && Math.abs(ox - roofO.x) < 3 && Math.abs(oz - roofO.y) < 3) return;
+    roofO.set(ox, oz); World.fillTop(ox, oz, RN, roofData); roofTex.needsUpdate = true; roofDirty = false;
+  }
+  const PRECIP_VS = `
+    attribute float rank; attribute float spd;
+    uniform vec3 uCam; uniform float uFall; uniform vec2 uDrift; uniform float uAmount; uniform float uTime; uniform float uScale; uniform float uSize; uniform float uSnow;
+    uniform vec3 uBox; uniform float uNear;
+    varying vec3 vW; varying float vA;
+    void main() {
+      vec3 BOX = uBox;
+      vec3 p = position * BOX;
+      p.y -= uFall * spd;
+      p.xz += uDrift * spd;
+      if (uSnow > 0.5) { p.x += sin(uTime * 0.9 + position.y * 50.0) * 0.6; p.z += cos(uTime * 0.7 + position.x * 40.0) * 0.6; }
+      vec3 o = uCam - BOX * 0.5;
+      p = o + mod(p - o, BOX);
+      vW = p;
+      vec4 mv = viewMatrix * vec4(p, 1.0);
+      float d = -mv.z;
+      vA = (rank < uAmount ? 1.0 : 0.0) * smoothstep(uNear * 0.25, uNear, d) * (1.0 - smoothstep(BOX.x * 0.375, BOX.x * 0.5, length(p.xz - uCam.xz)));
+      gl_Position = vA > 0.0 ? projectionMatrix * mv : vec4(2.0, 2.0, 2.0, 1.0);
+      gl_PointSize = clamp(uSize * uScale / max(d, 0.1), 1.0, 64.0);
+    }`;
+  const PRECIP_FS = `
+    uniform sampler2D uRoof; uniform vec2 uRoofO; uniform float uIgnoreRoof; uniform vec3 uColor; uniform float uAlpha; uniform float uSlant; uniform float uSnow;
+    varying vec3 vW; varying float vA;
+    void main() {
+      if (vA <= 0.0) discard;
+      vec2 ruv = (vW.xz - uRoofO) / 32.0;
+      if (uIgnoreRoof < 0.5 && ruv.x > 0.0 && ruv.x < 1.0 && ruv.y > 0.0 && ruv.y < 1.0 && vW.y < texture2D(uRoof, ruv).r * 255.0) discard;
+      vec2 c = gl_PointCoord - 0.5;
+      float a;
+      if (uSnow > 0.5) a = 1.0 - smoothstep(0.12, 0.5, length(c));
+      else a = (1.0 - smoothstep(0.02, 0.07, abs(c.x + c.y * uSlant))) * (1.0 - smoothstep(0.3, 0.5, abs(c.y)));
+      gl_FragColor = vec4(uColor, a * vA * uAlpha);
+    }`;
+  function makePrecip(snow) {
+    const n = IS_PHONE ? (snow ? 1100 : 1500) : (snow ? 3500 : 6000);
+    const r = mulberry32(snow ? 77 : 66), pos = new Float32Array(n * 3), rk = new Float32Array(n), sp = new Float32Array(n);
+    for (let i = 0; i < n; i++) { pos[i * 3] = r(); pos[i * 3 + 1] = r(); pos[i * 3 + 2] = r(); rk[i] = r(); sp[i] = snow ? 0.6 + r() * 0.8 : 0.85 + r() * 0.3; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('rank', new THREE.BufferAttribute(rk, 1));
+    g.setAttribute('spd', new THREE.BufferAttribute(sp, 1));
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uCam: { value: new THREE.Vector3() }, uFall: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uAmount: { value: 0 }, uTime: { value: 0 },
+        uScale: { value: 300 }, uSize: { value: snow ? 0.2 : 0.55 }, uSnow: { value: snow ? 1 : 0 }, uSlant: { value: 0 },
+        uRoof: { value: roofTex }, uRoofO: { value: roofO }, uIgnoreRoof: { value: 0 }, uBox: { value: new THREE.Vector3(32, 24, 32) }, uNear: { value: 2.5 },
+        uColor: { value: new THREE.Color(snow ? 0xf4f6fa : 0xaebdcc) }, uAlpha: { value: snow ? 0.9 : 0.55 },
+      },
+      vertexShader: PRECIP_VS, fragmentShader: PRECIP_FS, transparent: true, depthWrite: false,
+    });
+    const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.renderOrder = 2; pts.visible = false;
+    scene.add(pts);
+    return pts;
+  }
+  const rain = makePrecip(false), snowP = makePrecip(true);
+  const tmpV = new THREE.Vector2();
+  function pointScale() { renderer.getDrawingBufferSize(tmpV); return tmpV.y * 0.5 / Math.tan(camera.fov * Math.PI / 360); }
+  let fallRain = 0, fallSnow = 0, particleTime = 0;
+  const driftRain = new THREE.Vector2(), driftSnow = new THREE.Vector2();
+
+  // ---------------- clouds: a blocky layer high above, and one small cloud that likes you ----------------
+  const clouds = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.ShaderMaterial({
+    uniforms: { uCover: { value: 0.2 }, uDark: { value: 0 }, uDay: { value: 1 }, uOff: { value: new THREE.Vector2() }, uCam: { value: new THREE.Vector3() }, uFlash: { value: 0 }, uMoon: { value: 1 }, uMist: { value: 0 } },
+    vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `precision highp float;
+      uniform float uCover; uniform float uDark; uniform float uDay; uniform vec2 uOff; uniform vec3 uCam; uniform float uFlash; uniform float uMoon; uniform float uMist; varying vec3 vW;
+      float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        vec2 p = (vW.xz + uOff) / 14.0;
+        float n = h(floor(p)) * 0.55 + h(floor(p / 3.0) + 17.0) * 0.45;
+        float a = step(1.0 - uCover, n) * (1.0 - smoothstep(180.0, 420.0, distance(vW.xz, uCam.xz))) * 0.88 * (1.0 - uMist * 0.9);
+        if (a < 0.01) discard;
+        vec3 col = mix(vec3(1.0), vec3(0.42, 0.44, 0.48), uDark) * mix(0.06 * mix(0.12, 1.0, uMoon), 1.0, uDay) + uFlash * 0.6;
+        gl_FragColor = vec4(col, a);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  clouds.rotation.x = -Math.PI / 2; clouds.renderOrder = 3; scene.add(clouds);
+  const cloudOff = new THREE.Vector2();
+  const buddyMat = new THREE.MeshLambertMaterial({ color: 0xf0f2f4, transparent: true, opacity: 0, depthWrite: false });
+  const buddy = new THREE.Group();
+  for (const [x, y, z, w, h, d] of [[0, 0, 0, 6, 1.6, 4], [1.5, 1, 0.5, 3.5, 1.4, 3], [-2, 0.4, -0.8, 3, 1.2, 2.6]]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), buddyMat); m.position.set(x, y, z); buddy.add(m);
+  }
+  buddy.visible = false; scene.add(buddy);
+
+  // ---------------- lightning ----------------
+  let flash = 0, flashT = 1, flashStr = 0;
+  const bolts = [];
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0xeef3ff, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  function strike(dist, silent, angle) {
+    const p = Player.p, a = angle === undefined ? Math.random() * Math.PI * 2 : angle;
+    const x = p.x + Math.cos(a) * dist, z = p.z + Math.sin(a) * dist, ground = World.heightAt(Math.floor(x), Math.floor(z)) + 1;
+    const pts = []; let px = x, pz = z;
+    for (let y = ground + 70; y > ground; y -= rand(3, 7)) { pts.push([px, y, pz]); px += rand(-2.5, 2.5); pz += rand(-2.5, 2.5); }
+    pts.push([x, ground, z]);
+    const pos = [], w = 0.35;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const A = pts[i], Bp = pts[i + 1];
+      for (const [ox, oz] of [[w, 0], [0, w]]) pos.push(A[0] - ox, A[1], A[2] - oz, A[0] + ox, A[1], A[2] + oz, Bp[0] + ox, Bp[1], Bp[2] + oz,
+                                                      A[0] - ox, A[1], A[2] - oz, Bp[0] + ox, Bp[1], Bp[2] + oz, Bp[0] - ox, Bp[1], Bp[2] - oz);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const mesh = new THREE.Mesh(g, boltMat.clone()); scene.add(mesh);
+    bolts.push({ mesh, life: 0.4 });
+    flashT = 0; flashStr = clamp(1.4 - dist / 120, 0.35, 1);
+    Events.emit('lightning', { dist, silent: !!silent });
+    if (!silent) Events.emit('thunder', { delay: dist / 343, dist });
+  }
+
+  // ---------------- uncanny events (rare, never two at once) ----------------
+  let ev = null, nextEventT = rand(150, 280), timeScale = 1, windMul = 1, windAngle = Math.random() * Math.PI * 2, focusAmt = 0, fogCreep = 0;
+  const EV = {
+    slowRain:        { dur: 14,  ok: () => live.rain + live.snow > 0.3 },
+    frozenRain:      { dur: 1.2, ok: () => live.rain + live.snow > 0.3 },
+    lookFog:         { dur: 28,  ok: () => ctx.exposed },
+    cloudAbove:      { dur: 80,  ok: () => ctx.exposed },
+    silentLightning: { dur: 0.5, ok: () => live.cloud > 0.6, start: () => strike(rand(40, 100), true) },
+    ghostThunder:    { dur: 0.5, ok: () => live.cloud > 0.5, start: () => Events.emit('thunder', { delay: 0.1, dist: 90, ghost: true }) },
+    stillness:       { dur: 20,  ok: () => true, start: () => Events.emit('stillness', { on: true }), end: () => Events.emit('stillness', { on: false }) },
+  };
+  function startEvent(name) {
+    if (ev && EV[ev.name].end) EV[ev.name].end();
+    ev = { name, t: 0, dur: EV[name].dur };
+    if (EV[name].start) EV[name].start();
+    Events.emit('uncanny', { name });
+  }
+
+  // ---------------- the frame ----------------
+  const tmpDir = new THREE.Vector3();
+  function update(dt) {
+    const p = Player.p, aiDt = dt * aiSpeed, day = Sky.state.day, night = 1 - day, u = 1 + unease;
+    // sensing
+    senseT -= dt; if (senseT <= 0) { senseT = 0.5; sense(); }
+    if (ctx.inMine) ctx.tMine += dt;
+    ctx.sinceLeftHouse += dt;
+    ctx.tStill = ctx.exposed && Math.hypot(p.vx, p.vz) < 0.3 ? ctx.tStill + dt : 0;
+    // a new day?
+    if (Sky.time < lastT - 0.5) newDay();
+    lastT = Sky.time;
+
+    // the Sky Mind decides
+    if (auto && dt > 0) { thinkT -= aiDt; if (thinkT <= 0) { thinkT = rand(20, 40); think(); } }
+    const k = Math.min(1, aiDt / tau);
+    for (const key in live) live[key] += (target[key] - live[key]) * k;
+
+    // fake safety: trust grows while you shelter; one day the house stops protecting you
+    if (ctx.inHouse && protect) {
+      trust = Math.min(1, trust + aiDt / 300);
+      if (trust >= 0.6) { betrayT -= aiDt; if (betrayT <= 0) { betrayT = 20; if (Math.random() < 0.12 * u) betray(); } }
+    }
+    if (ctx.inHouse && night > 0.6) nightInsideT += dt;
+    if (betrayal) { betrayal.t += dt; if (betrayal.t > betrayal.dur) betrayal = null; }
+    fogCreep += ((betrayal && betrayal.kind === 'fogInside' ? 1 : 0) - fogCreep) * Math.min(1, dt / 8);
+
+    // the dying moon
+    if (night > 0.5) {
+      if (ctx.exposed || (ctx.inHouse && (!protect || moonBetrayed))) moonLife -= dt / 210;
+      else if (ctx.inHouse) moonLife += dt / 90;
+    } else moonLife += dt / 25;
+    moonLife = clamp(moonLife, 0, 1);
+
+    // false dawn: late at night the sky starts to warm... then changes its mind
+    if (!fd.phase && !fdUsed && Sky.time > 0.86 && Sky.time < 0.93 && dt > 0) { fdUsed = true; if (Math.random() < 0.35 * u) fd = { phase: 1, t: 0 }; }
+    if (fd.phase) {
+      fd.t += dt;
+      if (fd.phase === 1) { fdAmt = smoothstep(0, 40, fd.t); if (fd.t > 40) fd = { phase: 2, t: 0 }; }
+      else if (fd.phase === 2) { fdAmt = 1; if (fd.t > 6) fd = { phase: 3, t: 0 }; }
+      else { fdAmt = 1 - smoothstep(0, 50, fd.t); if (fd.t > 50) fd = { phase: 0, t: 0 }; }
+    } else fdAmt = Math.max(0, fdAmt - dt * 0.05);
+
+    // the forbidden sun: don't look at it
+    if (forb.on && Sky.time > 0.2 && Sky.time < 0.9) forb.on = false;
+    forb.amt += ((forb.on ? 1 : 0) - forb.amt) * Math.min(1, dt * 1.5);
+    if (forb.on && Player.locked && dt > 0 && Sky.state.sunDir.y > -0.03) {
+      fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      const staring = fwd.dot(Sky.state.sunDir) > 0.978 && !sunBlocked();
+      forb.stare = staring ? forb.stare + dt : Math.max(0, forb.stare - dt * 0.8);
+    } else if (!forb.kickT) forb.stare = Math.max(0, forb.stare - dt);
+    post.amt = smoothstep(0.3, STARE_KICK, forb.stare);
+    if (forb.stare >= STARE_KICK && !forb.kickT) forb.kickT = 0.001;
+    if (forb.kickT) {
+      forb.kickT += dt || 0.016; post.amt = 1; post.black = smoothstep(0, 0.8, forb.kickT);
+      if (forb.kickT > 0.9) { forb.on = false; forb.amt = 0; forb.stare = 0; forb.kickT = 0; post.amt = 0; post.black = 0; Events.emit('kick', { reason: 'sun' }); }
+    }
+
+    // uncanny events
+    if (!ev && dt > 0) {
+      nextEventT -= aiDt * u;
+      if (nextEventT <= 0) {
+        nextEventT = rand(150, 300);
+        const ok = Object.keys(EV).filter(n => EV[n].ok());
+        if (ok.length) startEvent(ok[Math.floor(Math.random() * ok.length)]);
+      }
+      if (ctx.tStill > 45 && Math.random() < dt * 0.02 * u) startEvent('stillness');
+    }
+    let evAmt = 0;
+    if (ev) {
+      ev.t += dt;
+      evAmt = ev.dur > 4 ? smoothstep(0, 2, ev.t) * (1 - smoothstep(ev.dur - 2, ev.dur, ev.t)) : 1;
+      if (ev.t >= ev.dur) { if (EV[ev.name].end) EV[ev.name].end(); ev = null; }
+    }
+    const evName = ev ? ev.name : '';
+    const frozen = evName === 'frozenRain' || evName === 'stillness';
+    if (frozen) timeScale = 0; else timeScale += ((evName === 'slowRain' ? 0.35 : 1) - timeScale) * Math.min(1, dt * 2.5);
+    windMul += ((frozen ? 0 : 1) - windMul) * Math.min(1, dt * 3);
+
+    // fog that gathers where you look (event), or in the direction of your home when you're lost
+    let focusTarget = 0;
+    if (evName === 'lookFog') { fwd.set(0, 0, -1).applyQuaternion(camera.quaternion); U.uFocusDir.value.copy(fwd); focusTarget = 0.85 * evAmt; }
+    else if (home.built && ctx.exposed && ctx.distHome > 40) {
+      U.uFocusDir.value.set(home.x - p.x, 0, home.z - p.z).normalize(); focusTarget = 0.75;
+    }
+    focusAmt += (focusTarget - focusAmt) * Math.min(1, dt / 4);
+    U.uFocusAmt.value = focusAmt;
+
+    // wind
+    windAngle += dt * 0.01;
+    const gust = 0.8 + 0.2 * Math.sin(particleTime * 0.7) * Math.sin(particleTime * 0.23 + 1);
+    const wind = live.wind * windMul * gust;
+    U.uWind.value.set(Math.cos(windAngle), Math.sin(windAngle)).multiplyScalar(wind);
+    U.uTime.value += dt * windMul;
+    U.uRain.value = live.rain;
+
+    // lightning in storms
+    if (live.lightning > 0.5 && dt > 0 && Math.random() < dt * 0.09 * live.lightning) strike(rand(30, 160), false);
+    flashT += dt;
+    flash = flashStr * (flashT < 0.08 ? 1 : flashT < 0.14 ? 0.25 : flashT < 0.22 ? 0.8 : Math.max(0, 0.8 - (flashT - 0.22) * 3.5));
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i]; b.life -= dt;
+      b.mesh.material.opacity = b.life > 0.25 || (b.life > 0.08 && b.life < 0.16) ? 1 : 0.25;
+      if (b.life <= 0) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose(); bolts.splice(i, 1); }
+    }
+
+    // particles
+    roofT -= dt; if (roofT <= 0) { roofT = 0.25; updateRoof(); }
+    const rainInside = betrayal && betrayal.kind === 'rainInside';
+    const rainAmt = Math.max(live.rain, rainInside ? 0.8 : 0);
+    particleTime += dt * timeScale;
+    fallRain += dt * 11 * timeScale; fallSnow += dt * 1.6 * timeScale;
+    tmpV.copy(U.uWind.value);
+    driftRain.addScaledVector(tmpV, dt * 2.5 * timeScale); driftSnow.addScaledVector(tmpV, dt * 2 * timeScale);
+    const scale = pointScale();
+    for (const [pts, amt, fall, drift] of [[rain, rainAmt, fallRain, driftRain], [snowP, live.snow, fallSnow, driftSnow]]) {
+      pts.visible = amt > 0.01;
+      const m = pts.material.uniforms;
+      m.uCam.value.copy(camera.position); m.uAmount.value = amt; m.uFall.value = fall; m.uDrift.value.copy(drift);
+      m.uTime.value = particleTime; m.uScale.value = scale; m.uSlant.value = wind * 0.35; m.uIgnoreRoof.value = rainInside ? 1 : 0;
+      // rain inside the house: squeeze every drop into a small box around you so the room is full of it
+      if (rainInside) { m.uBox.value.set(8, 6, 8); m.uNear.value = 0.9; } else { m.uBox.value.set(32, 24, 32); m.uNear.value = 2.5; }
+    }
+
+    // clouds
+    const fogNear = lerp(live.fogNearMul, 0.03, fogCreep), mist = clamp((0.6 - fogNear) / 0.5, 0, 1);
+    cloudOff.addScaledVector(U.uWind.value, dt * 3 * timeScale);
+    clouds.position.set(camera.position.x, 110, camera.position.z);
+    const cu = clouds.material.uniforms;
+    cu.uCover.value = live.cloud; cu.uDark.value = live.cloudDark; cu.uDay.value = Math.max(day, fdAmt * 0.4); cu.uOff.value.copy(cloudOff);
+    cu.uCam.value.copy(camera.position); cu.uFlash.value = flash; cu.uMoon.value = moonLife; cu.uMist.value = mist;
+    buddy.visible = evName === 'cloudAbove';
+    if (buddy.visible) {
+      buddyMat.opacity = 0.92 * evAmt;
+      buddy.position.set(p.x, Math.max(World.heightAt(Math.floor(p.x), Math.floor(p.z)) + 16, p.y + 12), p.z);
+    }
+
+    // hand everything to the sky
+    Object.assign(SkyFX, {
+      mist,
+      cloud: live.cloud, cloudDark: live.cloudDark, light: live.light, flash, moonLife, falseDawn: fdAmt, forbidden: forb.amt,
+      fogNearMul: lerp(live.fogNearMul, 0.03, fogCreep), fogFarMul: lerp(live.fogFarMul, 0.16, fogCreep),
+    });
+  }
+
+  // ---------------- debug + saving ----------------
+  function trigger(name) {
+    if (name === 'mineMist') { setTarget('fog', 4); Events.emit('uncanny', { name }); }
+    else if (name === 'betrayal') betray();
+    else if (name === 'falseDawn') { if (Sky.state.day > 0.3 || Sky.time < 0.6) Sky.time = 0.87; lastT = Sky.time; fdUsed = true; fd = { phase: 1, t: 0 }; }
+    else if (name === 'forbiddenSun') { Sky.time = 0.03; lastT = Sky.time; forb.on = true; }
+    else if (name === 'lightning') strike(rand(25, 60), false);
+    else if (EV[name]) {
+      if ((name === 'slowRain' || name === 'frozenRain') && live.rain + live.snow < 0.3) { setTarget('rain', 1); Object.assign(live, target); }
+      startEvent(name);
+    }
+  }
+  function info() {
+    const where = ctx.inMine ? 'in a mine' : ctx.inHouse ? 'inside a house' : ctx.roofed ? 'under cover' : 'outside';
+    return `weather    ${LABEL[state]}${auto ? '' : ' (forced)'}  rain ${live.rain.toFixed(2)} snow ${live.snow.toFixed(2)}\n` +
+      `clouds     ${live.cloud.toFixed(2)}  fog ×${SkyFX.fogFarMul.toFixed(2)}  wind ${U.uWind.value.length().toFixed(2)}\n` +
+      `you are    ${where} (walls ${ctx.walls}/8)\n` +
+      `home       ${ctx.distHome.toFixed(0)} m away${home.built ? '' : ' (spawn)'}\n` +
+      `moon life  ${moonLife.toFixed(2)}   trust ${trust.toFixed(2)}${protect ? '' : ' (betrayed)'}\n` +
+      `event      ${ev ? ev.name + ' ' + ev.t.toFixed(0) + '/' + ev.dur + 's' : '—'}   next ~${Math.max(0, nextEventT).toFixed(0)}s\n` +
+      `false dawn ${['—', 'rising', 'holding', 'fading'][fd.phase]}   sun ${forb.on ? 'FORBIDDEN, stare ' + forb.stare.toFixed(1) + 's' : 'normal'}\n` +
+      `sky mind   next choice ${Math.max(0, thinkT).toFixed(0)}s${betrayal ? '   betrayal: ' + betrayal.kind : ''}`;
+  }
+  function exportState() { return { state, moonLife, trust, protect, home, days, cold: coldSpell }; }
+  function importState(s, p) {
+    home = { x: p.x, z: p.z, built: false };
+    if (!s) return;
+    if (typeof s.moonLife === 'number') moonLife = s.moonLife;
+    trust = s.trust || 0; protect = s.protect !== false; days = s.days || 0; coldSpell = !!s.cold;
+    if (s.home) home = s.home;
+    if (STATES[s.state]) { setTarget(s.state, 1); Object.assign(live, target); }
+  }
+  return {
+    update, trigger, info, exportState, importState, post, ctx,
+    force(name) { auto = false; setTarget(name, 5); },
+    auto() { auto = true; thinkT = 0; },
+    killMoon() { moonLife = 0.03; }, restoreMoon() { moonLife = 1; },
+    setAiSpeed(v) { aiSpeed = v; },
+    get unease() { return unease; }, set unease(v) { unease = v; },
+  };
+})();
+
+/* =====================================================================
+   POST — screen distortion, only switched on while you stare at the forbidden sun
+   ===================================================================== */
+const Post = (() => {
+  let rt = null;
+  const size = new THREE.Vector2(), pscene = new THREE.Scene(), pcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, uAmt: { value: 0 }, uBlack: { value: 0 }, uTime: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmt; uniform float uBlack; uniform float uTime; varying vec2 vUv;
+      float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        float a = uAmt;
+        vec2 uv = vUv;
+        uv.x += sin(uv.y * 40.0 + uTime * 7.0) * 0.012 * a + (h(vec2(floor(uv.y * 60.0), floor(uTime * 20.0))) - 0.5) * 0.08 * a * a;
+        uv.y += cos(uv.x * 30.0 + uTime * 5.0) * 0.008 * a;
+        float m = step(0.72, h(floor(uv * vec2(16.0, 9.0)) + floor(uTime * 8.0))) * smoothstep(0.45, 1.0, a);
+        if (m > 0.5) uv = (floor(uv * 48.0) + 0.5) / 48.0;
+        vec2 off = vec2(0.007, 0.0) * a;
+        vec3 c = vec3(texture2D(tDiffuse, uv + off).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - off).b);
+        c = mix(c, vec3(dot(c, vec3(0.3, 0.59, 0.11))), a * 0.6);
+        c += (h(uv * vec2(400.0, 300.0) + uTime) - 0.5) * 0.28 * a;
+        c *= mix(1.0, smoothstep(0.95, 0.25, length(vUv - 0.5)), a);
+        gl_FragColor = vec4(c * (1.0 - uBlack), 1.0);
+      }`,
+    depthTest: false, depthWrite: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false; pscene.add(quad);
+  function render(amt, black, t) {
+    if (amt < 0.005 && black < 0.005) { renderer.render(scene, camera); return; }
+    renderer.getDrawingBufferSize(size);
+    if (!rt || rt.width !== size.x || rt.height !== size.y) { if (rt) rt.dispose(); rt = new THREE.WebGLRenderTarget(size.x, size.y); }
+    renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null);
+    const u = mat.uniforms; u.tDiffuse.value = rt.texture; u.uAmt.value = amt; u.uBlack.value = black; u.uTime.value = t;
+    renderer.render(pscene, pcam);
+  }
+  return { render };
+})();
 
 /* =====================================================================
    AUDIO — Phase 3
@@ -886,6 +1495,16 @@ const Debug = (() => {
     Player.p.fly = !Player.p.fly; flyBtn.classList.toggle('on', Player.p.fly);
     document.getElementById('downBtn').classList.toggle('hide', !Player.p.fly);
   });
+  el.querySelectorAll('[data-weather]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.weather === 'auto') Weather.auto(); else Weather.force(b.dataset.weather);
+    el.querySelectorAll('[data-weather]').forEach(o => o.classList.toggle('on', o === b));
+  }));
+  el.querySelectorAll('[data-event]').forEach(b => b.addEventListener('click', () => Weather.trigger(b.dataset.event)));
+  document.getElementById('dbgMoonKill').addEventListener('click', () => Weather.killMoon());
+  document.getElementById('dbgMoonFix').addEventListener('click', () => Weather.restoreMoon());
+  const aiBtn = document.getElementById('dbgAiFast');
+  aiBtn.addEventListener('click', () => { const on = !aiBtn.classList.contains('on'); aiBtn.classList.toggle('on', on); Weather.setAiSpeed(on ? 10 : 1); });
+  document.getElementById('dbgUnlock').addEventListener('click', () => { Save.lockUntil = 0; Save.write(); });
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
   document.getElementById('dbgView+').addEventListener('click', () => { CFG.VIEW = Math.min(12, CFG.VIEW + 1); });
   // clicks and touches inside the menu must not reach the game
@@ -911,24 +1530,49 @@ const Debug = (() => {
       `time       ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}  (${t.toFixed(3)})\n` +
       `daylight   ${Sky.state.day.toFixed(2)}\n` +
       `looking at ${tg ? World.INFO[tg.b].name + ' ' + tg.x + ',' + tg.y + ',' + tg.z : '—'}\n` +
-      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}`;
+      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() +
+      (Save.locked() ? `\nlocked out ${Math.ceil((Save.lockUntil - Date.now()) / 1000)}s` : '');
   }
   return { update, get timeSpeed() { return timeSpeed; } };
+})();
+
+/* =====================================================================
+   SAVE — world, player, time, weather and the lockout, kept in localStorage
+   ===================================================================== */
+const Save = (() => {
+  const KEY = 'stillness-save-v1';
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+  let lockUntil = data && data.lockUntil || 0;
+  function write() {
+    try {
+      const p = Player.p;
+      localStorage.setItem(KEY, JSON.stringify({ v: 1, seed: World.getSeed(), edits: World.exportEdits(),
+        p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }, time: Sky.time, weather: Weather.exportState(), lockUntil }));
+    } catch (e) {}
+  }
+  return { data, write, locked: () => Date.now() < lockUntil, get lockUntil() { return lockUntil; }, set lockUntil(v) { lockUntil = v; } };
 })();
 
 /* =====================================================================
    MAIN — start screen, pointer lock (desktop) or touch (phones), game loop
    ===================================================================== */
 const overlay = document.getElementById('overlay'), goEl = document.getElementById('go'), loadingEl = document.getElementById('loading');
-World.setSeed((Math.random() * 1e9) | 0);
-Player.spawn();
+const saved = Save.data;
+World.setSeed(saved && saved.seed || (Math.random() * 1e9) | 0);
+if (saved && saved.p) {
+  World.importEdits(saved.edits);
+  Object.assign(Player.p, saved.p);
+  if (typeof saved.time === 'number') Sky.time = saved.time;
+} else Player.spawn();
+Weather.importState(saved && saved.weather, Player.p);
 World.update(Player.p.x, Player.p.z);
 
 let started = false;
 function setTouchMode(on) {
   touchMode = on;
   document.body.classList.toggle('touch', on);
-  goEl.textContent = (on ? 'Tap' : 'Click') + (started ? ' to continue' : ' to begin');
+  if (!Save.locked()) goEl.textContent = (on ? 'Tap' : 'Click') + (started ? ' to continue' : ' to begin');
 }
 setTouchMode(touchMode);
 // the first real touch switches to touch controls; a real mouse click (on a computer) switches back
@@ -941,10 +1585,10 @@ function setPlaying(on) {
   document.body.classList.toggle('playing', on);
   if (on) started = true;
   setTouchMode(touchMode);
-  if (!on) Touch.release();
+  if (!on) { Touch.release(); Save.write(); }
 }
 function begin() {
-  if (Player.locked) return;
+  if (Player.locked || Save.locked()) return;
   GameAudio.start();   // browsers only allow sound after a click or tap
   if (!touchMode) {
     // computers: capture the mouse; if the browser refuses, play with touch-style controls instead
@@ -967,7 +1611,44 @@ overlay.addEventListener('touchend', e => { e.preventDefault(); setTouchMode(tru
 document.addEventListener('pointerlockerror', () => { setTouchMode(true); setPlaying(true); });
 document.addEventListener('pointerlockchange', () => { if (!touchMode) setPlaying(document.pointerLockElement === renderer.domElement); });
 document.getElementById('pauseBtn').addEventListener('touchstart', e => { e.preventDefault(); setPlaying(false); }, { passive: false });
-document.addEventListener('visibilitychange', () => { if (document.hidden && touchMode) setPlaying(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { Save.write(); if (touchMode) setPlaying(false); } });
+
+// ---- the forbidden sun locks you out of your world for 24 real minutes
+const subEl = overlay.querySelector('.sub');
+let lockTimer = 0;
+function showLock() {
+  overlay.classList.add('locked');
+  subEl.textContent = 'You looked at the sun.';
+  clearInterval(lockTimer);
+  const tick = () => {
+    const left = Save.lockUntil - Date.now();
+    if (left <= 0) {
+      clearInterval(lockTimer);
+      overlay.classList.remove('locked'); subEl.textContent = 'Everything is fine.';
+      Sky.time = 0.3;                    // the morning is over; as if nothing happened
+      setTouchMode(touchMode);
+      return;
+    }
+    const m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
+    goEl.textContent = `Your world is closed. Come back in ${m}:${String(sec).padStart(2, '0')}`;
+  };
+  tick(); lockTimer = setInterval(tick, 1000);
+}
+Events.on('kick', () => {
+  Save.lockUntil = Date.now() + 24 * 60 * 1000;
+  if (document.pointerLockElement) document.exitPointerLock();
+  setPlaying(false);
+  showLock();
+});
+if (Save.locked()) showLock();
+// hidden developer door: hold the title for 2.5 s to open the debug menu (phones have no F3 key on this screen)
+{
+  const h1 = overlay.querySelector('h1'); let pressT = 0;
+  const down = () => { clearTimeout(pressT); pressT = setTimeout(() => document.getElementById('debug').classList.toggle('hide'), 2500); };
+  const up = () => clearTimeout(pressT);
+  h1.addEventListener('touchstart', down, { passive: true }); h1.addEventListener('touchend', up);
+  h1.addEventListener('mousedown', down); h1.addEventListener('mouseup', up);
+}
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -979,20 +1660,24 @@ function frame() {
   requestAnimationFrame(frame);
   try { step(); } catch (e) { if (frameErrors++ < 3) showError('Error: ' + (e && e.message || e)); console.error(e); }
 }
+let unstuckDone = false, saveT = 0;
 function step() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  const gdt = Player.locked ? dt : 0;          // the world holds still while paused
   const p = Player.p;
   World.update(p.x, p.z);
   const waiting = World.pendingNear(p.x, p.z);
   loadingEl.textContent = waiting ? 'Growing the world…' : '';
+  if (!waiting && !unstuckDone) { unstuckDone = true; Player.unstuck(); }
   if (!waiting || Player.locked) Player.update(dt);
   else { camera.position.set(p.x, p.y + p.eye, p.z); camera.rotation.set(p.pitch, p.yaw, 0); }
-  Sky.update(dt, Debug.timeSpeed);
-  Weather.update(dt);
-  GameAudio.update(dt);
-  Director.update(dt);
+  Sky.update(dt, Player.locked ? Debug.timeSpeed : 0);
+  Weather.update(gdt);
+  GameAudio.update(gdt);
+  Director.update(gdt);
   Debug.update(dt);
-  renderer.render(scene, camera);
+  Post.render(Weather.post.amt, Weather.post.black, clock.elapsedTime);
+  saveT += gdt; if (saveT > 10) { saveT = 0; Save.write(); }
 }
 frame();
 </script>
