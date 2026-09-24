@@ -17,8 +17,10 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1014; color: var(--ink); font-family: var(--font); touch-action: none; }
-  @media (pointer: fine) { .touchonly { display: none !important; } }
-  @media (pointer: coarse) { .mouseonly { display: none !important; } }
+  body:not(.touch) .touchonly { display: none !important; }
+  body.touch .mouseonly { display: none !important; }
+  #err { position: fixed; left: 50%; top: calc(8px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 9; max-width: min(620px, 92vw);
+    padding: 8px 12px; background: #3a1512; border: 1px solid #c0584a; border-radius: 6px; color: #ffd9d2; font: 12px/1.4 var(--mono); white-space: pre-wrap; }
   canvas { display: block; }
   .hide { display: none !important; }
 
@@ -83,6 +85,20 @@
 </style>
 </head>
 <body>
+<script>
+  // guess the input type straight away; the first real touch or mouse click can still switch it
+  if (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0 || 'ontouchstart' in window) document.body.classList.add('touch');
+  // show errors on screen, so problems on a phone can be read and reported
+  window.showError = function (msg) {
+    var el = document.getElementById('err');
+    if (!el) { el = document.createElement('div'); el.id = 'err'; document.body.appendChild(el); }
+    el.textContent = (el.textContent ? el.textContent + '\n' : '') + msg;
+  };
+  window.addEventListener('error', function (e) {
+    if (e.message) window.showError('Error: ' + e.message + (e.lineno ? ' (line ' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('load', function () { if (!window.THREE) window.showError('Could not load the 3D engine (three.min.js).'); });
+</script>
 <div id="touch" class="touchonly"></div>
 <div id="cross"></div>
 <div id="stick" class="hud touchonly"><div id="knob"></div></div>
@@ -135,19 +151,21 @@
   <p class="hint">Weather, audio and the director get their own controls here in later phases.</p>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.THREE || document.write('<script src="three.min.js"><\/script>');</script>
+<script src="three.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');</script>
 <script>
 'use strict';
 /* =====================================================================
    CONFIG
    ===================================================================== */
-const IS_TOUCH = matchMedia('(pointer: coarse)').matches;   // phones and tablets
+// phones get lighter settings; touch mode (controls) can change while playing
+const IS_PHONE = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 900);
+let touchMode = document.body.classList.contains('touch');
 const CFG = {
   CHUNK: 16,            // chunk width/depth in blocks
   HEIGHT: 64,           // world height
   SEA: 22,              // sea level
-  VIEW: IS_TOUCH ? 4 : 6, // view distance in chunks (radius); shorter on phones
+  VIEW: IS_PHONE ? 4 : 6, // view distance in chunks (radius); shorter on phones
   DAY_LENGTH: 600,      // seconds for a full day/night cycle (10 minutes)
   GEN_PER_FRAME: 3,     // chunk terrain generations per frame
   MESH_PER_FRAME: 2,    // chunk meshes built per frame
@@ -488,7 +506,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 1200);
 camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(IS_TOUCH ? 1 : Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(IS_PHONE ? 1 : Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 scene.add(World.group);
@@ -696,9 +714,9 @@ const Player = (() => {
   addEventListener('keyup', e => { keys[e.code] = false; });
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; breakHeld = placeHeld = false; });
   function look(dyaw, dpitch) { p.yaw -= dyaw; p.pitch = clamp(p.pitch - dpitch, -1.55, 1.55); }
-  addEventListener('mousemove', e => { if (locked && !IS_TOUCH) look(e.movementX * 0.0023, e.movementY * 0.0023); });
+  addEventListener('mousemove', e => { if (locked && !touchMode) look(e.movementX * 0.0023, e.movementY * 0.0023); });
   addEventListener('mousedown', e => {
-    if (!locked || IS_TOUCH) return;
+    if (!locked || touchMode) return;
     if (e.button === 0) { breakHeld = true; act('break'); actCool = 0.3; }
     if (e.button === 2) { placeHeld = true; act('place'); actCool = 0.3; }
   });
@@ -906,35 +924,62 @@ World.setSeed((Math.random() * 1e9) | 0);
 Player.spawn();
 World.update(Player.p.x, Player.p.z);
 
-if (IS_TOUCH) goEl.textContent = 'Tap to begin';
+let started = false;
+function setTouchMode(on) {
+  touchMode = on;
+  document.body.classList.toggle('touch', on);
+  goEl.textContent = (on ? 'Tap' : 'Click') + (started ? ' to continue' : ' to begin');
+}
+setTouchMode(touchMode);
+// the first real touch switches to touch controls; a real mouse click (on a computer) switches back
+addEventListener('touchstart', () => { if (!touchMode) setTouchMode(true); }, { capture: true, passive: true });
+addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && touchMode && !IS_PHONE) setTouchMode(false); }, true);
 
 function setPlaying(on) {
   Player.locked = on;
   overlay.classList.toggle('hide', on);
   document.body.classList.toggle('playing', on);
-  goEl.textContent = IS_TOUCH ? 'Tap to continue' : 'Click to continue';
+  if (on) started = true;
+  setTouchMode(touchMode);
   if (!on) Touch.release();
 }
-overlay.addEventListener('click', () => {
+function begin() {
+  if (Player.locked) return;
   GameAudio.start();   // browsers only allow sound after a click or tap
-  if (!IS_TOUCH) { renderer.domElement.requestPointerLock(); return; }
-  const el = document.documentElement;
-  if (el.requestFullscreen && !document.fullscreenElement) {
-    el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+  if (!touchMode) {
+    // computers: capture the mouse; if the browser refuses, play with touch-style controls instead
+    try {
+      const r = renderer.domElement.requestPointerLock();
+      if (r && r.catch) r.catch(() => { setTouchMode(true); setPlaying(true); });
+    } catch (e) { setTouchMode(true); setPlaying(true); }
+    return;
   }
+  const el = document.documentElement;
+  try {
+    if (el.requestFullscreen && !document.fullscreenElement) {
+      el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+    }
+  } catch (e) {}
   setPlaying(true);
-});
-document.addEventListener('pointerlockchange', () => { if (!IS_TOUCH) setPlaying(document.pointerLockElement === renderer.domElement); });
+}
+overlay.addEventListener('click', begin);
+overlay.addEventListener('touchend', e => { e.preventDefault(); setTouchMode(true); begin(); }, { passive: false });
+document.addEventListener('pointerlockerror', () => { setTouchMode(true); setPlaying(true); });
+document.addEventListener('pointerlockchange', () => { if (!touchMode) setPlaying(document.pointerLockElement === renderer.domElement); });
 document.getElementById('pauseBtn').addEventListener('touchstart', e => { e.preventDefault(); setPlaying(false); }, { passive: false });
-document.addEventListener('visibilitychange', () => { if (document.hidden && IS_TOUCH) setPlaying(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && touchMode) setPlaying(false); });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 
 const clock = new THREE.Clock();
+let frameErrors = 0;
 function frame() {
   requestAnimationFrame(frame);
+  try { step(); } catch (e) { if (frameErrors++ < 3) showError('Error: ' + (e && e.message || e)); console.error(e); }
+}
+function step() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const p = Player.p;
   World.update(p.x, p.z);
