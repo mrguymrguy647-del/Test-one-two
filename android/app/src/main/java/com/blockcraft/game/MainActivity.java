@@ -11,7 +11,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-/** Hosts BlockCraft: Stillness (assets/stillness/index.html) full screen in a WebView. Works fully offline. */
+/** Hosts BlockCraft: Stillness (assets/index.html) full screen in a WebView. Works fully offline. */
 public class MainActivity extends Activity {
     private WebView webView;
 
@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            webView.loadUrl("file:///android_asset/stillness/index.html");
+            webView.loadUrl("file:///android_asset/index.html");
         }
         hideSystemBars();
     }

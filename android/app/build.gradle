@@ -14,7 +14,7 @@ android {
         versionName '3.0'
     }
 
-    // The game itself lives in ../../web so the browser version and the app share the same files.
+    // The game (web/index.html) is packed into the app so it runs offline.
     sourceSets {
         main {
             assets.srcDirs = ['../../web']
