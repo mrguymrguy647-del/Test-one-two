@@ -67,7 +67,6 @@
   #stick.active { opacity: .85; transition: none; }
   #knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(238, 240, 236, .7); }
   body:not(.playing) .hud { visibility: hidden; }
-  #back { color: var(--ink-dim); font-size: 14px; }
 
   /* F3 debug menu */
   #debug { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); width: min(290px, 62vw); z-index: 6; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px;
@@ -116,7 +115,6 @@
     <dt>F3</dt><dd>debug menu</dd>
   </dl>
   <div id="loading">Growing the world…</div>
-  <a id="back" class="hide" href="../index.html">← Back to BlockCraft</a>
 </div>
 
 <div id="debug" class="hide">
@@ -909,8 +907,6 @@ Player.spawn();
 World.update(Player.p.x, Player.p.z);
 
 if (IS_TOUCH) goEl.textContent = 'Tap to begin';
-if (/android_asset\//.test(location.href)) document.getElementById('back').classList.remove('hide');   // inside the BlockCraft app
-document.getElementById('back').addEventListener('click', e => e.stopPropagation());
 
 function setPlaying(on) {
   Player.locked = on;

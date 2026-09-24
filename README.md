@@ -53,8 +53,8 @@ the top corner, and a name tag with speech bubbles floats over his head.
 
 ## BlockCraft: Stillness (in progress)
 
-A new, calmer game built with Three.js, reachable from the **Stillness** button on the BlockCraft title
-screen. It's being built in phases: the world and movement are done; weather, music and the uncanny
+A new, calmer game built with Three.js. **The Android app now opens straight into Stillness** (the app is
+called "Stillness"); the older BlockCraft stays in `web/` and still plays in a browser. It's being built in phases: the world and movement are done; weather, music and the uncanny
 director come next. It uses the same phone controls as BlockCraft (and WASD/mouse on a computer), and
 bundles Three.js so it works offline inside the app. The F3 button opens a debug menu.
 
