@@ -51,6 +51,13 @@ the top corner, and a name tag with speech bubbles floats over his head.
 - Settings for music volume, sound volume, look speed, brightness and view distance
 - Your world saves automatically
 
+## BlockCraft: Stillness (in progress)
+
+A new, calmer game built with Three.js, reachable from the **Stillness** button on the BlockCraft title
+screen. It's being built in phases: the world and movement are done; weather, music and the uncanny
+director come next. It uses the same phone controls as BlockCraft (and WASD/mouse on a computer), and
+bundles Three.js so it works offline inside the app. The F3 button opens a debug menu.
+
 ## Controls
 
 | Phone | Action |
@@ -120,6 +127,7 @@ web/js/render.js    WebGL renderer (world, sky, clouds, mobs, items, hand)
 web/js/audio.js     Synthesized sound effects and generative music
 web/js/entities.js  Physics, mobs, dropped items and particles
 web/js/villager.js  The homeless villager: needs, pathfinding, behaviour and his HUD
+web/stillness/      BlockCraft: Stillness, the new uncanny weather game (in progress, uses Three.js)
 web/js/game.js      Survival rules, inventory, crafting, controls, menus, saving, main loop
 android/            Android app that shows the game full screen in a WebView
 .github/workflows/  CI that builds the APK

@@ -61,6 +61,14 @@ public class MainActivity extends Activity {
         if (hasFocus) hideSystemBars();
     }
 
+    // the back button returns from Stillness to BlockCraft instead of closing the app
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        if (webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);

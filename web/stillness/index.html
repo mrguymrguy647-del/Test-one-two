@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>BlockCraft: Stillness</title>
 <style>
   :root {
@@ -15,8 +15,10 @@
     --font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1014; color: var(--ink); font-family: var(--font); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1014; color: var(--ink); font-family: var(--font); touch-action: none; }
+  @media (pointer: fine) { .touchonly { display: none !important; } }
+  @media (pointer: coarse) { .mouseonly { display: none !important; } }
   canvas { display: block; }
   .hide { display: none !important; }
 
@@ -25,11 +27,11 @@
   #cross::before, #cross::after { content: ""; position: absolute; background: #fff; }
   #cross::before { left: 8px; top: 0; width: 2px; height: 18px; }
   #cross::after { top: 8px; left: 0; height: 2px; width: 18px; }
-  #hotbar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px;
+  #hotbar { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 4px; padding: 5px;
     background: var(--veil); border: 1px solid var(--line); border-radius: 6px; }
-  .slot { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border: 2px solid transparent; border-radius: 4px; }
+  .slot { position: relative; width: min(44px, 9vw, 12vh); height: min(44px, 9vw, 12vh); display: grid; place-items: center; border: 2px solid transparent; border-radius: 4px; }
   .slot.sel { border-color: var(--accent); background: rgba(217, 210, 180, .14); }
-  .slot canvas { width: 34px; height: 34px; image-rendering: pixelated; }
+  .slot canvas { width: 78%; height: 78%; image-rendering: pixelated; }
   .slot span { position: absolute; left: 3px; top: 1px; font: 10px/1 var(--mono); color: var(--ink-dim); }
   #blockname { position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%); font-size: 15px; letter-spacing: .04em;
     color: var(--ink); text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity .6s; pointer-events: none; }
@@ -43,13 +45,32 @@
   #overlay .sub { margin: -8px 0 0; font-style: italic; color: var(--ink-dim); font-size: 17px; }
   #overlay .go { margin-top: 6px; padding: 10px 22px; border: 1px solid var(--line); border-radius: 999px; font-size: 16px; letter-spacing: .08em; }
   #overlay .go:hover { background: rgba(255, 255, 255, .06); }
+  #overlay { z-index: 5; }
   #overlay dl { display: grid; grid-template-columns: auto auto; gap: 5px 16px; margin: 8px 0 0; font: 13px/1.35 var(--mono); color: var(--ink-dim); text-align: left; }
   #overlay dt { color: var(--accent); text-align: right; }
   #overlay dd { margin: 0; }
   #loading { font: 13px var(--mono); color: var(--ink-dim); }
+  @media (max-height: 460px) { #overlay { gap: 10px; } #overlay dl { font-size: 12px; gap: 3px 14px; } }
+
+  /* touch controls (phones) */
+  #touch { position: fixed; inset: 0; }
+  .tbtn { position: fixed; display: grid; place-items: center; border-radius: 50%; background: var(--veil); border: 1px solid var(--line);
+    color: var(--ink); font: 12px var(--mono); letter-spacing: .06em; padding: 0; z-index: 3; }
+  .tbtn svg { width: 44%; height: 44%; fill: var(--ink); }
+  .tbtn.held { background: rgba(238, 240, 236, .28); }
+  #jumpBtn { right: calc(26px + env(safe-area-inset-right, 0px)); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); width: 74px; height: 74px; }
+  #downBtn { right: calc(110px + env(safe-area-inset-right, 0px)); bottom: calc(74px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; }
+  #pauseBtn { left: calc(14px + env(safe-area-inset-left, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #dbgBtn { right: calc(14px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #stick { position: fixed; left: 0; top: 0; width: 128px; height: 128px; margin: -64px 0 0 -64px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--veil); opacity: .4; pointer-events: none; transition: opacity .2s; z-index: 2; }
+  #stick.active { opacity: .85; transition: none; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(238, 240, 236, .7); }
+  body:not(.playing) .hud { visibility: hidden; }
+  #back { color: var(--ink-dim); font-size: 14px; }
 
   /* F3 debug menu */
-  #debug { position: fixed; top: 10px; left: 10px; width: 290px; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px;
+  #debug { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); width: min(290px, 62vw); z-index: 6; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px;
     background: var(--veil-strong); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.45 var(--mono); color: var(--ink); }
   #debug h2 { margin: 0 0 6px; font: 600 12px var(--mono); color: var(--accent); letter-spacing: .08em; text-transform: uppercase; }
   #debug h3 { margin: 10px 0 4px; font: 600 11px var(--mono); color: var(--ink-dim); letter-spacing: .08em; text-transform: uppercase; }
@@ -63,7 +84,13 @@
 </style>
 </head>
 <body>
+<div id="touch" class="touchonly"></div>
 <div id="cross"></div>
+<div id="stick" class="hud touchonly"><div id="knob"></div></div>
+<button id="jumpBtn" class="tbtn hud touchonly" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 5l8 9h-5v6H9v-6H4z"/></svg></button>
+<button id="downBtn" class="tbtn hud touchonly hide" aria-label="Fly down"><svg viewBox="0 0 24 24"><path d="M12 19l-8-9h5V4h6v6h5z"/></svg></button>
+<button id="pauseBtn" class="tbtn hud touchonly" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+<button id="dbgBtn" class="tbtn hud touchonly" aria-label="Debug menu">F3</button>
 <div id="hotbar"></div>
 <div id="blockname"></div>
 
@@ -71,7 +98,14 @@
   <h1>BlockCraft: <em>Stillness</em></h1>
   <p class="sub">Everything is fine.</p>
   <div class="go" id="go">Click to begin</div>
-  <dl>
+  <dl class="touchonly">
+    <dt>Left thumb</dt><dd>walk (push to the edge to run)</dd>
+    <dt>Right thumb</dt><dd>look around</dd>
+    <dt>Tap</dt><dd>place block</dd>
+    <dt>Hold</dt><dd>break blocks</dd>
+    <dt>F3 button</dt><dd>debug menu</dd>
+  </dl>
+  <dl class="mouseonly">
     <dt>WASD</dt><dd>walk</dd>
     <dt>Mouse</dt><dd>look</dd>
     <dt>Space</dt><dd>jump / swim</dd>
@@ -82,6 +116,7 @@
     <dt>F3</dt><dd>debug menu</dd>
   </dl>
   <div id="loading">Growing the world…</div>
+  <a id="back" class="hide" href="../index.html">← Back to BlockCraft</a>
 </div>
 
 <div id="debug" class="hide">
@@ -103,16 +138,18 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE || document.write('<script src="three.min.js"><\/script>');</script>
 <script>
 'use strict';
 /* =====================================================================
    CONFIG
    ===================================================================== */
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches;   // phones and tablets
 const CFG = {
   CHUNK: 16,            // chunk width/depth in blocks
   HEIGHT: 64,           // world height
   SEA: 22,              // sea level
-  VIEW: 6,              // view distance in chunks (radius)
+  VIEW: IS_TOUCH ? 4 : 6, // view distance in chunks (radius); shorter on phones
   DAY_LENGTH: 600,      // seconds for a full day/night cycle (10 minutes)
   GEN_PER_FRAME: 3,     // chunk terrain generations per frame
   MESH_PER_FRAME: 2,    // chunk meshes built per frame
@@ -453,7 +490,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 1200);
 camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(IS_TOUCH ? 1 : Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 scene.add(World.group);
@@ -549,6 +586,7 @@ const Sky = (() => {
 const Player = (() => {
   const p = { x: 0, y: 40, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hw: 0.3, h: 1.8, eye: 1.62, onGround: false, fly: false, inWater: false };
   const keys = {};
+  const touch = { mx: 0, mz: 0, run: false, jump: false, down: false };   // filled in by the touch controls
   let locked = false, selected = 0, breakHeld = false, placeHeld = false, actCool = 0;
   const HOTBAR = [World.B.GRASS, World.B.DIRT, World.B.STONE, World.B.SAND, World.B.LOG, World.B.PLANKS, World.B.LEAVES, World.B.GLASS];
 
@@ -581,23 +619,24 @@ const Player = (() => {
   }
 
   function update(dt) {
-    const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
-    const len = Math.hypot(f, s) || 1;
+    const f = clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) + touch.mz, -1, 1), s = clamp((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + touch.mx, -1, 1);
+    const run = keys.ShiftLeft || touch.run, jump = keys.Space || touch.jump, down = keys.ShiftLeft || touch.down;
+    const len = Math.max(1, Math.hypot(f, s));
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     p.inWater = World.get(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z)) === World.B.WATER;
-    const speed = p.fly ? (keys.ShiftLeft ? 9 : 14) : p.inWater ? 2.8 : keys.ShiftLeft ? 6.2 : 4.3;
+    const speed = p.fly ? 12 : p.inWater ? 2.8 : run ? 6.2 : 4.3;
     const wx = (-sy * f + cy * s) / len * speed, wz = (-cy * f - sy * s) / len * speed;
     const acc = p.onGround || p.fly ? 14 : p.inWater ? 5 : 3.5;
     p.vx += (wx - p.vx) * Math.min(1, dt * acc); p.vz += (wz - p.vz) * Math.min(1, dt * acc);
     const wasGround = p.onGround;
-    if (p.fly) p.vy += (((keys.Space ? 1 : 0) - (keys.ShiftLeft ? 1 : 0)) * 9 - p.vy) * Math.min(1, dt * 10);
-    else if (p.inWater) { p.vy -= 12 * dt; if (keys.Space) p.vy = Math.min(p.vy + 40 * dt, 3.4); p.vy = Math.max(p.vy, -4); }
-    else { p.vy -= 27 * dt; if (keys.Space && wasGround) p.vy = 8.6; p.vy = Math.max(p.vy, -48); }
+    if (p.fly) p.vy += (((jump ? 1 : 0) - (down ? 1 : 0)) * 9 - p.vy) * Math.min(1, dt * 10);
+    else if (p.inWater) { p.vy -= 12 * dt; if (jump) p.vy = Math.min(p.vy + 40 * dt, 3.4); p.vy = Math.max(p.vy, -4); }
+    else { p.vy -= 27 * dt; if (jump && wasGround) p.vy = 8.6; p.vy = Math.max(p.vy, -48); }
     p.onGround = false;
     const blocked = move('x', p.vx * dt) | move('z', p.vz * dt);
     move('y', p.vy * dt);
     // step up single blocks automatically while walking into them
-    if (blocked && wasGround && !p.fly && (f || s)) {
+    if (blocked && wasGround && !p.fly && Math.hypot(f, s) > 0.2) {
       const tx = p.x + wx / speed * 0.4, tz = p.z + wz / speed * 0.4;
       if (hits(tx, p.y, tz) && !hits(tx, p.y + 1.05, tz) && !hits(p.x, p.y + 1.05, p.z)) p.vy = 8.6;
     }
@@ -658,13 +697,10 @@ const Player = (() => {
   });
   addEventListener('keyup', e => { keys[e.code] = false; });
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; breakHeld = placeHeld = false; });
-  addEventListener('mousemove', e => {
-    if (!locked) return;
-    p.yaw -= e.movementX * 0.0023;
-    p.pitch = clamp(p.pitch - e.movementY * 0.0023, -1.55, 1.55);
-  });
+  function look(dyaw, dpitch) { p.yaw -= dyaw; p.pitch = clamp(p.pitch - dpitch, -1.55, 1.55); }
+  addEventListener('mousemove', e => { if (locked && !IS_TOUCH) look(e.movementX * 0.0023, e.movementY * 0.0023); });
   addEventListener('mousedown', e => {
-    if (!locked) return;
+    if (!locked || IS_TOUCH) return;
     if (e.button === 0) { breakHeld = true; act('break'); actCool = 0.3; }
     if (e.button === 2) { placeHeld = true; act('place'); actCool = 0.3; }
   });
@@ -693,6 +729,9 @@ const Player = (() => {
     const s = document.createElement('div'); s.className = 'slot';
     const n = document.createElement('span'); n.textContent = i + 1;
     s.append(icon(b), n); bar.appendChild(s);
+    const pick = e => { e.preventDefault(); e.stopPropagation(); select(i); };
+    s.addEventListener('touchstart', pick, { passive: false });
+    s.addEventListener('mousedown', pick);
   });
   function select(i) {
     selected = (i + HOTBAR.length) % HOTBAR.length;
@@ -703,7 +742,11 @@ const Player = (() => {
   select(0);
 
   return {
-    p, keys, update, spawn,
+    p, keys, touch, update, spawn, look,
+    // touch: hold to break, tap to place
+    beginBreak() { breakHeld = true; act('break'); actCool = 0.3; },
+    endBreak() { breakHeld = false; },
+    tap() { updateHighlight(); act('place'); },
     get locked() { return locked; }, set locked(v) { locked = v; if (!v) breakHeld = placeHeld = false; },
     get target() { return target; },
   };
@@ -715,6 +758,82 @@ const Player = (() => {
 const Events = (() => {
   const subs = {};
   return { on(n, f) { (subs[n] = subs[n] || []).push(f); }, emit(n, d) { (subs[n] || []).forEach(f => f(d)); } };
+})();
+
+/* =====================================================================
+   TOUCH CONTROLS — left thumb joystick, right thumb look, tap / hold
+   ===================================================================== */
+const Touch = (() => {
+  const layer = document.getElementById('touch'), stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  const R = 52, LOOK = 0.0062;
+  let stickId = null, sx = 0, sy = 0;
+  const looks = new Map();
+  function home() {
+    stick.style.transform = `translate(${Math.max(96, innerWidth * 0.14)}px, ${innerHeight - 118}px)`;
+    knob.style.transform = '';
+  }
+  function resetStick() { stickId = null; Object.assign(Player.touch, { mx: 0, mz: 0, run: false }); stick.classList.remove('active'); home(); }
+  layer.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (!Player.locked) return;
+    for (const t of e.changedTouches) {
+      if (t.clientX < innerWidth * 0.42 && stickId === null) {
+        stickId = t.identifier; sx = t.clientX; sy = t.clientY;
+        stick.style.transform = `translate(${sx}px, ${sy}px)`; stick.classList.add('active');
+      } else {
+        const L = { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t0: performance.now(), moved: false, holding: false };
+        L.timer = setTimeout(() => { L.holding = true; Player.beginBreak(); }, 280);
+        looks.set(t.identifier, L);
+      }
+    }
+  }, { passive: false });
+  layer.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) {
+        let dx = t.clientX - sx, dy = t.clientY - sy; const d = Math.hypot(dx, dy);
+        if (d > R) { dx *= R / d; dy *= R / d; }
+        knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        Object.assign(Player.touch, { mx: dx / R, mz: -dy / R, run: d > R * 0.95 && dy < -R * 0.6 });
+        continue;
+      }
+      const L = looks.get(t.identifier);
+      if (!L) continue;
+      const dx = t.clientX - L.x, dy = t.clientY - L.y;
+      L.x = t.clientX; L.y = t.clientY;
+      if (!L.moved && Math.hypot(t.clientX - L.sx, t.clientY - L.sy) > 10) { L.moved = true; if (!L.holding) clearTimeout(L.timer); }
+      if (L.moved) Player.look(dx * LOOK, dy * LOOK);
+    }
+  }, { passive: false });
+  function end(e, cancelled) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) { resetStick(); continue; }
+      const L = looks.get(t.identifier);
+      if (!L) continue;
+      clearTimeout(L.timer);
+      if (L.holding) Player.endBreak();
+      else if (!cancelled && !L.moved && performance.now() - L.t0 < 280 && Player.locked) Player.tap();
+      looks.delete(t.identifier);
+    }
+  }
+  layer.addEventListener('touchend', e => end(e, false), { passive: false });
+  layer.addEventListener('touchcancel', e => end(e, true), { passive: false });
+  const hold = (id, key) => {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', e => { e.preventDefault(); Player.touch[key] = true; el.classList.add('held'); }, { passive: false });
+    const off = e => { e.preventDefault(); Player.touch[key] = false; el.classList.remove('held'); };
+    el.addEventListener('touchend', off); el.addEventListener('touchcancel', off);
+  };
+  hold('jumpBtn', 'jump'); hold('downBtn', 'down');
+  function release() {
+    for (const L of looks.values()) clearTimeout(L.timer);
+    looks.clear(); resetStick(); Player.endBreak();
+    Object.assign(Player.touch, { jump: false, down: false });
+  }
+  addEventListener('resize', () => { if (stickId === null) home(); });
+  home();
+  return { release };
 })();
 
 /* =====================================================================
@@ -739,18 +858,25 @@ const Debug = (() => {
   const el = document.getElementById('debug'), info = document.getElementById('dbgInfo');
   let timeSpeed = 1, fps = 60, acc = 0, frames = 0;
   addEventListener('keydown', e => { if (e.code === 'F3') { e.preventDefault(); el.classList.toggle('hide'); } });
+  const dbgBtn = document.getElementById('dbgBtn');
+  dbgBtn.addEventListener('touchstart', e => { e.preventDefault(); el.classList.toggle('hide'); }, { passive: false });
   el.querySelectorAll('[data-time]').forEach(b => b.addEventListener('click', () => { Sky.time = +b.dataset.time; }));
   el.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
     timeSpeed = +b.dataset.speed;
     el.querySelectorAll('[data-speed]').forEach(o => o.classList.toggle('on', o === b));
   }));
   const flyBtn = document.getElementById('dbgFly');
-  flyBtn.addEventListener('click', () => { Player.p.fly = !Player.p.fly; flyBtn.classList.toggle('on', Player.p.fly); });
+  flyBtn.addEventListener('click', () => {
+    Player.p.fly = !Player.p.fly; flyBtn.classList.toggle('on', Player.p.fly);
+    document.getElementById('downBtn').classList.toggle('hide', !Player.p.fly);
+  });
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
   document.getElementById('dbgView+').addEventListener('click', () => { CFG.VIEW = Math.min(12, CFG.VIEW + 1); });
-  // clicks inside the menu must not grab the mouse
+  // clicks and touches inside the menu must not reach the game
   el.addEventListener('mousedown', e => e.stopPropagation());
   el.addEventListener('click', e => e.stopPropagation());
+  el.addEventListener('touchstart', e => e.stopPropagation());
+  el.style.touchAction = 'pan-y';
 
   function update(dt) {
     acc += dt; frames++;
@@ -775,22 +901,36 @@ const Debug = (() => {
 })();
 
 /* =====================================================================
-   MAIN — start screen, pointer lock, game loop
+   MAIN — start screen, pointer lock (desktop) or touch (phones), game loop
    ===================================================================== */
 const overlay = document.getElementById('overlay'), goEl = document.getElementById('go'), loadingEl = document.getElementById('loading');
 World.setSeed((Math.random() * 1e9) | 0);
 Player.spawn();
 World.update(Player.p.x, Player.p.z);
 
+if (IS_TOUCH) goEl.textContent = 'Tap to begin';
+if (/android_asset\//.test(location.href)) document.getElementById('back').classList.remove('hide');   // inside the BlockCraft app
+document.getElementById('back').addEventListener('click', e => e.stopPropagation());
+
+function setPlaying(on) {
+  Player.locked = on;
+  overlay.classList.toggle('hide', on);
+  document.body.classList.toggle('playing', on);
+  goEl.textContent = IS_TOUCH ? 'Tap to continue' : 'Click to continue';
+  if (!on) Touch.release();
+}
 overlay.addEventListener('click', () => {
-  renderer.domElement.requestPointerLock();
-  GameAudio.start();   // browsers only allow sound after a click
+  GameAudio.start();   // browsers only allow sound after a click or tap
+  if (!IS_TOUCH) { renderer.domElement.requestPointerLock(); return; }
+  const el = document.documentElement;
+  if (el.requestFullscreen && !document.fullscreenElement) {
+    el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+  }
+  setPlaying(true);
 });
-document.addEventListener('pointerlockchange', () => {
-  Player.locked = document.pointerLockElement === renderer.domElement;
-  overlay.classList.toggle('hide', Player.locked);
-  goEl.textContent = 'Click to continue';
-});
+document.addEventListener('pointerlockchange', () => { if (!IS_TOUCH) setPlaying(document.pointerLockElement === renderer.domElement); });
+document.getElementById('pauseBtn').addEventListener('touchstart', e => { e.preventDefault(); setPlaying(false); }, { passive: false });
+document.addEventListener('visibilitychange', () => { if (document.hidden && IS_TOUCH) setPlaying(false); });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);

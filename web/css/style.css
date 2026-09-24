@@ -123,6 +123,9 @@ body.paused #hud, body.paused #cross { visibility: hidden; }
 .mc.go { background: var(--grass); box-shadow: inset 2px 2px 0 var(--grass-hi), inset -2px -3px 0 var(--grass-lo); }
 .mc:disabled { opacity: .5; cursor: default; }
 .mc.small { padding: 8px 12px; font-size: 14px; }
+a.mc { display: block; text-align: center; text-decoration: none; }
+.mc.still { background: #3c4652; box-shadow: inset 2px 2px 0 #5d6a78, inset -2px -3px 0 #262d35; }
+.mc.still small { font-size: 12px; opacity: .8; }
 .mc:focus-visible, .mode:focus-visible, .slot:focus-visible, .recipe:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .help { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; padding: 10px 14px; font-size: 14px; background: rgba(0, 0, 0, .45); max-width: 560px; }
 .help div { display: contents; }
