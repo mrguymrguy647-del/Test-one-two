@@ -20,3 +20,5 @@ made into a seamless loop. Those edited versions keep the license of their origi
 | `bird1` | [freesound 32479](http://www.freesound.org/people/reinsamba/sounds/32479/) (robin), via the ambience mod | reinsamba | CC BY |
 | `bird2` | [freesound 42382](http://www.freesound.org/people/UncleSigmund/sounds/42382/) (blue jay), via the ambience mod | UncleSigmund | CC0 |
 | `bird3` | [Best Cardinal Bird](http://soundbible.com/1515-Best-Cardinal-Bird.html), via the ambience mod | PsychoBird | CC BY 3.0 |
+| `cow1`, `sheep1`, `pig1`, `pig_hurt1`, `chicken1`–`chicken3` | Freesound recordings via the Minetest [mobs_animal mod](https://github.com/minetest-mirrors/mobs_animal) | (see the mod's license.txt) | CC0 |
+| `hit1` | [freesound 566436](https://freesound.org/people/Merrick079/sounds/566436/), via [mobs_redo](https://github.com/minetest-mirrors/mobs_redo) | Merrick079 | CC0 |
