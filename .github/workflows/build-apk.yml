@@ -31,21 +31,26 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk BlockCraft.apk
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk StainlessCraft.apk
+          cp StainlessCraft.apk BlockCraft.apk   # the old download link keeps working
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BlockCraft-apk
-          path: BlockCraft.apk
+          name: StainlessCraft-apk
+          path: StainlessCraft.apk
 
       # Publish to a release so the APK can be downloaded straight from a phone.
       - name: Publish to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: BlockCraft APK (latest build)
+          name: Stainless Craft APK (latest build)
           prerelease: true
-          files: BlockCraft.apk
+          files: |
+            StainlessCraft.apk
+            BlockCraft.apk
           body: |
-            Latest BlockCraft build from `${{ github.ref_name }}` (${{ github.sha }}).
-            Download **BlockCraft.apk** on your Android phone and open it to install.
+            Latest Stainless Craft build from `${{ github.ref_name }}` (${{ github.sha }}).
+            Download **StainlessCraft.apk** on your Android phone and open it to install.
+            (BlockCraft.apk is the same file, kept so old links still work.)

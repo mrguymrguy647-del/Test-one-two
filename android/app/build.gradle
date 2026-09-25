@@ -10,8 +10,8 @@ android {
         applicationId 'com.blockcraft.game'
         minSdk 21
         targetSdk 34
-        versionCode 7
-        versionName '6.1'
+        versionCode 8
+        versionName '7.0'
     }
 
     // The game (web/index.html) is packed into the app so it runs offline.

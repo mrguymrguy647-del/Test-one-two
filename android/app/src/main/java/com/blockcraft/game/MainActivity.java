@@ -11,7 +11,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-/** Hosts BlockCraft: Stillness (assets/index.html) full screen in a WebView. Works fully offline. */
+/** Hosts Stainless Craft (assets/index.html) full screen in a WebView. Works fully offline. */
 public class MainActivity extends Activity {
     private WebView webView;
 
@@ -61,12 +61,13 @@ public class MainActivity extends Activity {
         if (hasFocus) hideSystemBars();
     }
 
-    // the back button returns from Stillness to BlockCraft instead of closing the app
+    // the back button pauses the game or steps back through the menus; on the main menu it closes the app
     @SuppressWarnings("deprecation")
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        webView.evaluateJavascript("window.androidBack ? String(window.androidBack()) : 'false'", value -> {
+            if (!"\"true\"".equals(value)) finish();
+        });
     }
 
     @Override

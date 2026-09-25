@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>BlockCraft: Stillness</title>
+<title>Stainless Craft</title>
 <style>
   :root {
     --ink: #eef0ec;
@@ -39,31 +39,82 @@
     color: var(--ink); text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity .6s; pointer-events: none; }
   #blockname.show { opacity: 1; transition: none; }
 
-  /* start / pause overlay */
-  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-    padding: 24px; text-align: center; background: radial-gradient(ellipse at center, rgba(14,17,20,.45), var(--veil-strong)); cursor: pointer; }
-  #overlay h1 { margin: 0; font-weight: 400; font-size: clamp(34px, 6vw, 64px); letter-spacing: .02em; }
-  #overlay h1 em { font-style: italic; color: var(--accent); }
-  #overlay .sub { margin: -8px 0 0; font-style: italic; color: var(--ink-dim); font-size: 17px; }
-  #overlay .go { margin-top: 6px; padding: 10px 22px; border: 1px solid var(--line); border-radius: 999px; font-size: 16px; letter-spacing: .08em; }
-  #overlay .go:hover { background: rgba(255, 255, 255, .06); }
-  #overlay { z-index: 5; }
+  /* menus */
+  #overlay { position: fixed; inset: 0; z-index: 5; background: radial-gradient(ellipse at center, rgba(8, 10, 12, .3), rgba(6, 7, 9, .86)); }
+  #overlay.dark { background: #000; }
+  #overlay.dead { background: radial-gradient(ellipse at center, rgba(90, 8, 8, .35), rgba(24, 0, 0, .9)); }
+  .scr { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px)); }
+  .scr.top { justify-content: flex-start; }
+  #title { margin: 0; font-weight: 400; font-size: clamp(34px, 7.5vw, 78px); letter-spacing: .14em; line-height: 1; cursor: default; }
+  #title em { font-style: normal; color: var(--accent); }
+  .tag { margin: -4px 0 4px; font-style: italic; color: var(--ink-dim); font-size: clamp(15px, 2.2vw, 20px); letter-spacing: .08em; }
+  .menu { display: flex; flex-direction: column; gap: 8px; width: min(300px, 80vw); }
+  #overlay button { font: 16px var(--font); color: var(--ink); background: rgba(0, 0, 0, .35); border: 1px solid var(--line); border-radius: 6px; padding: 9px 14px; cursor: pointer; }
+  #overlay button:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+  #overlay button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #overlay button:disabled { opacity: .45; cursor: default; }
+  #overlay button.big { font-size: 19px; padding: 11px 14px; }
+  #overlay button.accent { border-color: var(--accent); color: var(--accent); }
+  #overlay button.danger { border-color: #c0584a; color: #ffb4a8; }
+  #mPlay { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  #mPlay small { font: 11px var(--mono); color: var(--ink-dim); letter-spacing: .02em; }
+  .note { margin: 0; font: 13px/1.4 var(--mono); color: var(--ink-dim); min-height: 1em; }
+  .ver { position: absolute; left: calc(14px + env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); margin: 0; font: 11px var(--mono); color: var(--ink-dim); opacity: .6; }
+  .big { margin: 0; font-weight: 400; font-size: clamp(28px, 5vw, 44px); }
+  #scrLock .big { color: #c9b98a; }
+  .scr header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; width: min(680px, 100%); }
+  .scr header h2 { margin: 0; font-weight: 400; font-size: 24px; }
+  .scr header > :first-child { justify-self: start; }
+  .scr header > :last-child { justify-self: end; }
+  .scroll { overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .list { width: min(680px, 100%); flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 2px 2px 10px; }
+  .wrow { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(0, 0, 0, .32); cursor: pointer; flex: none; }
+  .wrow.cur { border-color: var(--accent); }
+  .wrow.dead { opacity: .55; cursor: default; }
+  .wrow .wi { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wrow .wi b { font: 400 18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wrow .wi span { font: 12px var(--mono); color: var(--ink-dim); }
+  .badge { font: 11px var(--mono); padding: 3px 7px; border-radius: 3px; border: 1px solid var(--line); color: var(--ink-dim); white-space: nowrap; }
+  .badge.survival { color: var(--accent); border-color: rgba(217, 210, 180, .5); }
+  .badge.hardcore { color: #ffb4a8; border-color: #c0584a; }
+  #overlay .wrow .del { font: 12px var(--mono); padding: 7px 10px; color: var(--ink-dim); }
+  .field { display: flex; align-items: center; gap: 10px; font: 13px var(--mono); color: var(--ink-dim); flex: none; }
+  .field input { flex: 1; min-width: 0; font: 17px var(--font); color: var(--ink); background: rgba(0, 0, 0, .45); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px;
+    user-select: text; -webkit-user-select: text; }
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; flex: none; }
+  #overlay .modes button { text-align: left; display: flex; flex-direction: column; gap: 4px; }
+  #overlay .modes button.on { border-color: var(--accent); background: rgba(217, 210, 180, .14); }
+  .modes b { font-weight: 400; font-size: 18px; }
+  .modes span { font: 12px/1.35 var(--mono); color: var(--ink-dim); }
+  #nCreate { flex: none; }
+  .srow { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(0, 0, 0, .32); flex: none; }
+  .srow > span { flex: 1; font-size: 17px; }
+  .srow small { display: block; font: 11px var(--mono); color: var(--ink-dim); }
+  .srow > b { min-width: 76px; text-align: center; font: 14px var(--mono); }
+  #overlay .srow button { min-width: 44px; font: 15px var(--mono); padding: 7px 10px; }
+  .credits p { margin: 0; font: 13px/1.5 var(--mono); color: var(--ink-dim); max-width: 72ch; }
+  .credits b { color: var(--ink); font-weight: 400; font-family: var(--font); font-size: 16px; }
+  #confirm { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .6); z-index: 2; }
+  #confirm .panel { background: #111418; border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; width: min(380px, 90vw); }
+  #confirm p { margin: 0 0 14px; font-size: 18px; }
+  #confirm .row { display: flex; gap: 10px; justify-content: flex-end; }
+  #overlay .go { margin-top: 6px; padding: 10px 22px; border: 1px solid var(--line); border-radius: 999px; font-size: 16px; letter-spacing: .08em; cursor: pointer; }
   #overlay dl { display: grid; grid-template-columns: auto auto; gap: 5px 16px; margin: 8px 0 0; font: 13px/1.35 var(--mono); color: var(--ink-dim); text-align: left; }
   #overlay dt { color: var(--accent); text-align: right; }
   #overlay dd { margin: 0; }
-  #loading { font: 13px var(--mono); color: var(--ink-dim); }
-  #opts { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 8px; }
-  #opts button { font: 12px var(--mono); color: var(--ink-dim); background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; }
-  #credits { position: absolute; inset: 0; background: #0b0d10; padding: 20px 24px; overflow-y: auto; font: 13px/1.5 var(--mono); color: var(--ink-dim); text-align: left; }
-  #credits h2 { font: 400 20px var(--font); color: var(--ink); margin: 0 0 8px; }
-  #credits p { margin: 0 0 8px; max-width: 70ch; }
-  #credits .close { color: var(--accent); }
-  #overlay.locked #opts { display: none; }
-  #overlay.locked { background: #000; cursor: default; }
-  #overlay.locked dl, #overlay.locked #loading { display: none; }
-  #overlay.locked .sub { color: #c9b98a; }
-  #overlay.locked .go { border-color: transparent; font: 14px var(--mono); letter-spacing: .04em; color: var(--ink-dim); }
-  @media (max-height: 460px) { #overlay { gap: 10px; } #overlay dl { font-size: 12px; gap: 3px 14px; } }
+  @media (max-width: 600px) { .modes { grid-template-columns: 1fr; } }
+  @media (max-height: 460px) {
+    .scr { gap: 8px; }
+    #title { font-size: clamp(30px, 6.5vw, 58px); }
+    .tag { margin-bottom: 0; }
+    .menu { gap: 6px; }
+    #overlay button { padding: 7px 12px; font-size: 15px; }
+    #overlay button.big { font-size: 17px; padding: 8px 12px; }
+    #overlay dl { font-size: 12px; gap: 3px 14px; }
+    .modes span { font-size: 11px; }
+  }
 
   /* touch controls (phones) */
   #touch { position: fixed; inset: 0; }
@@ -80,21 +131,50 @@
   #stick.active { opacity: .85; transition: none; }
   #knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(238, 240, 236, .7); }
   body:not(.playing) .hud { visibility: hidden; }
+  body:not(.playing) #hotbar, body:not(.playing) #cross, body:not(.playing) #blockname { visibility: hidden; }
   #bagBtn { right: calc(66px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
   #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px;
     font: 14px var(--mono); color: var(--ink); text-shadow: 0 1px 3px #000; pointer-events: none; z-index: 4; }
   #toast div { transition: opacity .8s; }
   #toast div.out { opacity: 0; }
   #bag { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .45); z-index: 5; }
-  #bag .panel { background: var(--veil-strong); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; max-width: calc(100vw - 32px); }
-  #bag h2 { margin: 0 0 8px; font: 400 20px var(--font); color: var(--ink); }
-  #bag .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .bslot { display: grid; grid-template-columns: 30px auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 5px 8px;
+  #bag .panel { display: flex; flex-direction: column; background: var(--veil-strong); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+    width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 28px); }
+  #bag header { display: flex; align-items: center; justify-content: space-between; }
+  #bag h2 { margin: 0; font: 400 20px var(--font); color: var(--ink); }
+  #bag h3 { margin: 10px 0 5px; font: 600 11px var(--mono); color: var(--ink-dim); letter-spacing: .08em; text-transform: uppercase; }
+  #bag h3 small { margin-left: 8px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--accent); }
+  #bag .bagBody { min-height: 0; }
+  #bag .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  #bag button { font: 13px var(--mono); color: var(--ink); background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+  #bag button:disabled { opacity: .4; cursor: default; }
+  #bagClose { width: 36px; height: 32px; font-size: 16px; }
+  .bslot { display: grid; grid-template-columns: 30px auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 5px 8px; text-align: left;
     border: 1px solid var(--line); border-radius: 5px; font: 12px var(--mono); color: var(--ink-dim); }
+  #bag button.bslot { background: rgba(217, 210, 180, .08); }
   .bslot canvas { grid-row: span 2; width: 30px; height: 30px; image-rendering: pixelated; }
   .bslot b { font: 600 15px var(--mono); color: var(--ink); }
   .bslot.empty { opacity: .4; }
-  #bag p { margin: 8px 0 0; font: 12px var(--mono); color: var(--ink-dim); }
+  #bag .craft { padding: 9px 8px; }
+  /* creative: fly; survival: health, hunger and air; how many blocks you have */
+  #flyBtn { right: calc(38px + env(safe-area-inset-right, 0px)); bottom: calc(180px + env(safe-area-inset-bottom, 0px)); width: 50px; height: 50px; }
+  #flyBtn.on { background: rgba(217, 210, 180, .35); border-color: var(--accent); }
+  body:not(.mode-creative) #flyBtn { display: none !important; }
+  body.lefty #jumpBtn { right: auto; left: calc(26px + env(safe-area-inset-left, 0px)); }
+  body.lefty #downBtn { right: auto; left: calc(110px + env(safe-area-inset-left, 0px)); }
+  body.lefty #flyBtn { right: auto; left: calc(38px + env(safe-area-inset-left, 0px)); }
+  #vitals { position: fixed; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: flex-end; gap: 22px; pointer-events: none; z-index: 2; }
+  #vitals canvas { width: 198px; height: 18px; image-rendering: pixelated; }
+  #vitals .vright { display: flex; flex-direction: column; gap: 3px; }
+  #vitals.low #vHearts { animation: lowhp .5s steps(2) infinite; }
+  @keyframes lowhp { 50% { transform: translateY(-2px); } }
+  #hurt { position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(170, 0, 0, .6)); }
+  #hurt.on { animation: hurt .7s ease-out; }
+  @keyframes hurt { from { opacity: 1; } to { opacity: 0; } }
+  #fps { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); font: 12px var(--mono); color: var(--ink); text-shadow: 0 1px 2px #000; pointer-events: none; z-index: 3; }
+  .slot .cnt { position: absolute; right: 3px; bottom: 1px; font: 600 11px/1 var(--mono); color: var(--ink); text-shadow: 0 1px 2px #000; }
+  .slot.none canvas { opacity: .3; }
+  @media (max-height: 460px) { #vitals canvas { width: 158px; height: 14px; } #vitals { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); } }
 
   /* F3 debug menu */
   #debug { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); width: min(290px, 62vw); z-index: 6; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px;
@@ -134,46 +214,114 @@
 <button id="dbgBtn" class="tbtn hud touchonly" aria-label="Debug menu">F3</button>
 <button id="bagBtn" class="tbtn hud touchonly" aria-label="Bag"><svg viewBox="0 0 24 24"><path d="M9 6a3 3 0 0 1 6 0h3l2 14H4L6 6zm2 0h2a1 1 0 0 0-2 0z"/></svg></button>
 <div id="toast" class="hud"></div>
-<div id="bag" class="hide"><div class="panel"><h2>Bag</h2><div class="grid"></div><p>Tap to close · E on a keyboard</p></div></div>
+<div id="bag" class="hide"><div class="panel"><header><h2>Bag</h2><button id="bagClose" aria-label="Close the bag">✕</button></header><div class="bagBody scroll"></div></div></div>
+<button id="flyBtn" class="tbtn hud touchonly" aria-label="Fly"><svg viewBox="0 0 24 24"><path d="M12 2l6 7h-4v5h-4V9H6zM4 17c3-2 5-2 8 0s5 2 8 0v3c-3 2-5 2-8 0s-5-2-8 0z"/></svg></button>
+<div id="vitals" class="hud hide"><canvas id="vHearts" width="99" height="8"></canvas><div class="vright"><canvas id="vAir" width="99" height="8"></canvas><canvas id="vFood" width="99" height="8"></canvas></div></div>
+<div id="hurt"></div>
+<div id="fps" class="hud hide"></div>
 <div id="hotbar"></div>
 <div id="blockname"></div>
 
 <div id="overlay">
-  <h1>BlockCraft: <em>Stillness</em></h1>
-  <p class="sub">Everything is fine.</p>
-  <div class="go" id="go">Click to begin</div>
-  <dl class="touchonly">
-    <dt>Left thumb</dt><dd>walk (push to the edge to run)</dd>
-    <dt>Right thumb</dt><dd>look around</dd>
-    <dt>Tap</dt><dd>place block · shear · milk</dd>
-    <dt>Hold</dt><dd>break blocks · hit animals</dd>
-    <dt>F3 button</dt><dd>debug menu</dd>
-  </dl>
-  <dl class="mouseonly">
-    <dt>WASD</dt><dd>walk</dd>
-    <dt>Mouse</dt><dd>look</dd>
-    <dt>Space</dt><dd>jump / swim</dd>
-    <dt>Shift</dt><dd>run</dd>
-    <dt>Left click</dt><dd>break block</dd>
-    <dt>Right click</dt><dd>place block · shear · milk</dd>
-    <dt>E</dt><dd>bag</dd>
-    <dt>1–8 / wheel</dt><dd>choose block</dd>
-    <dt>F3</dt><dd>debug menu</dd>
-  </dl>
-  <div id="loading">Growing the world…</div>
-  <div id="opts"><button id="optMusic">Music: on</button><button id="optSound">Sound: on</button><button id="optCredits">Credits</button></div>
-  <div id="credits" class="hide">
-    <h2>Sound credits</h2>
-    <p>Piano: Salamander Grand Piano by Alexander Holm (CC BY 3.0).</p>
-    <p>Footsteps, digging and placing: Minetest Game contributors (CC BY-SA 3.0, CC BY 3.0, CC0).</p>
-    <p>Thunder: hantorio, juskiddink, IllusiaProductions on Freesound, via the Minetest lightning mod (CC BY-SA).</p>
-    <p>Rain: Arctura (CC BY 3.0) and Q.K. (CC0). Wind: InspectorJ (CC BY 3.0). Via the regional_weather mod.</p>
-    <p>Crickets, owl: Mike Koenig (CC BY 3.0). Birds: reinsamba, PsychoBird (CC BY), UncleSigmund (CC0).
-       Water drops: kddekadenz (CC0). Via the Minetest ambience mod.</p>
-    <p>Animals and hits: Freesound recordings via the Minetest mobs_animal and mobs_redo mods (CC0).</p>
-    <p>Sounds were trimmed, made mono and levelled for the game. Full list: CREDITS.md.</p>
-    <p class="close">Tap to close</p>
-  </div>
+  <section id="scrMain" class="scr">
+    <h1 id="title">STAINLESS <em>CRAFT</em></h1>
+    <p class="tag" id="tagline">the fear of unknown</p>
+    <div class="menu">
+      <button id="mPlay" class="big"><span>Play</span><small id="mPlayWorld"></small></button>
+      <button id="mWorlds">Worlds</button>
+      <button id="mSettings">Settings</button>
+      <button id="mCredits">Credits</button>
+    </div>
+    <p class="note" id="loading"></p>
+    <p class="ver" id="ver"></p>
+  </section>
+
+  <section id="scrWorlds" class="scr top hide">
+    <header><button data-back>‹ Back</button><h2>Worlds</h2><button id="wNew" class="accent">+ New world</button></header>
+    <div class="list scroll" id="wList"></div>
+  </section>
+
+  <section id="scrNew" class="scr top hide">
+    <header><button data-back>‹ Back</button><h2>New world</h2><span></span></header>
+    <div class="list scroll">
+      <label class="field"><span>Name</span><input id="nName" maxlength="24" autocomplete="off" spellcheck="false"></label>
+      <div class="modes">
+        <button data-mode="creative"><b>Creative</b><span>Unlimited blocks. Fly. Nothing can hurt you.</span></button>
+        <button data-mode="survival"><b>Survival</b><span>Health and hunger. Mine what you build. When you die, you come back.</span></button>
+        <button data-mode="hardcore"><b>Hardcore</b><span>One life. When you die, the world is gone.</span></button>
+      </div>
+      <label class="field"><span>Seed</span><input id="nSeed" maxlength="32" autocomplete="off" spellcheck="false" placeholder="empty for a random world"></label>
+      <button id="nCreate" class="big accent">Create world</button>
+    </div>
+  </section>
+
+  <section id="scrSettings" class="scr top hide">
+    <header><button data-back>‹ Back</button><h2>Settings</h2><button id="sReset">Reset</button></header>
+    <div class="list scroll" id="sList"></div>
+  </section>
+
+  <section id="scrCredits" class="scr top hide">
+    <header><button data-back>‹ Back</button><h2>Credits</h2><span></span></header>
+    <div class="list scroll credits">
+      <p><b>Stainless Craft</b>, made with Three.js. Every texture is painted in code.</p>
+      <p>Piano: Salamander Grand Piano by Alexander Holm (CC BY 3.0).</p>
+      <p>Footsteps, digging and placing: Minetest Game contributors (CC BY-SA 3.0, CC BY 3.0, CC0).</p>
+      <p>Thunder: hantorio, juskiddink, IllusiaProductions on Freesound, via the Minetest lightning mod (CC BY-SA).</p>
+      <p>Rain: Arctura (CC BY 3.0) and Q.K. (CC0). Wind: InspectorJ (CC BY 3.0). Via the regional_weather mod.</p>
+      <p>Crickets, owl: Mike Koenig (CC BY 3.0). Birds: reinsamba, PsychoBird (CC BY), UncleSigmund (CC0).
+         Water drops: kddekadenz (CC0). Via the Minetest ambience mod.</p>
+      <p>Animals and hits: Freesound recordings via the Minetest mobs_animal and mobs_redo mods (CC0).</p>
+      <p>Sounds were trimmed, made mono and levelled for the game. Full list: CREDITS.md.</p>
+    </div>
+  </section>
+
+  <section id="scrPause" class="scr hide">
+    <h2 class="big">Paused</h2>
+    <p class="note" id="pWorld"></p>
+    <div class="menu">
+      <button id="pResume" class="big">Resume</button>
+      <button id="pSettings">Settings</button>
+      <button id="pQuit">Save &amp; quit</button>
+    </div>
+  </section>
+
+  <section id="scrEnter" class="scr hide">
+    <h2 class="big" id="eName"></h2>
+    <p class="note" id="eMode"></p>
+    <div class="go" id="go">Growing the world…</div>
+    <dl class="touchonly">
+      <dt>Left thumb</dt><dd>walk (push to the edge to run)</dd>
+      <dt>Right thumb</dt><dd>look around</dd>
+      <dt>Tap</dt><dd>place block · shear · milk</dd>
+      <dt>Hold</dt><dd>mine blocks · hit animals</dd>
+      <dt>Bag button</dt><dd>your things · eat · make</dd>
+    </dl>
+    <dl class="mouseonly">
+      <dt>WASD</dt><dd>walk</dd>
+      <dt>Mouse</dt><dd>look</dd>
+      <dt>Space</dt><dd>jump / swim (twice: fly, in creative)</dd>
+      <dt>Shift</dt><dd>run</dd>
+      <dt>Left click</dt><dd>mine block · hit animal</dd>
+      <dt>Right click</dt><dd>place block · shear · milk</dd>
+      <dt>E</dt><dd>bag</dd>
+      <dt>1–9 / wheel</dt><dd>choose block</dd>
+    </dl>
+  </section>
+
+  <section id="scrLock" class="scr hide">
+    <p class="big">You looked at the sun.</p>
+    <p class="note" id="lockText"></p>
+    <div class="menu"><button id="lockMenu" class="hide">Main menu</button></div>
+  </section>
+
+  <section id="scrDead" class="scr hide">
+    <h2 class="big">You died</h2>
+    <p class="note" id="deadWhy"></p>
+    <p class="note" id="deadDays"></p>
+    <div class="menu"><button id="dRespawn" class="big">Respawn</button><button id="dMenu">Main menu</button></div>
+  </section>
+
+  <div id="confirm" class="hide"><div class="panel"><p id="cText"></p><div class="row"><button id="cNo">Cancel</button><button id="cYes" class="danger">Delete</button></div></div></div>
 </div>
 
 <div id="debug" class="hide">
@@ -222,6 +370,11 @@
     <button data-creep="stare">The stare</button><button data-creep="freeze">Still in the rain</button><button data-creep="extra">One more</button>
     <button data-creep="follow">Followers</button><button data-creep="window">At your window</button><button data-creep="upright">The upright one</button><button data-creep="empty">Empty field</button>
   </div>
+  <h3>Game mode &amp; survival</h3>
+  <div class="btns">
+    <button data-gmode="creative">Creative</button><button data-gmode="survival">Survival</button><button data-gmode="hardcore">Hardcore</button>
+    <button id="dbgHeal">Heal</button><button id="dbgHurt">Hurt</button><button id="dbgHungry">Hungry</button><button id="dbgBlocks">Give blocks</button>
+  </div>
 </div>
 
 <script src="three.min.js"></script>
@@ -245,6 +398,33 @@ const CFG = {
   MESH_PER_FRAME: 2,    // chunk meshes built per frame
   REACH: 6,
 };
+
+const GAME_VERSION = '7.0';
+// the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
+const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
+const survivalMode = () => GAME.mode !== 'creative';
+
+/* =====================================================================
+   SETTINGS — kept on this device, the same for every world
+   ===================================================================== */
+const Settings = (() => {
+  const KEY = 'stainless-settings';
+  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, lefty: false, fps: false, debug: true };
+  const v = Object.assign({}, DEF);
+  try {
+    const old = JSON.parse(localStorage.getItem('stillness-audio') || 'null');   // Phase 3's music/sound switches
+    if (old) { if (old.music === false) v.music = 0; if (old.sound === false) v.sound = 0; }
+    Object.assign(v, JSON.parse(localStorage.getItem(KEY) || '{}'));
+  } catch (e) {}
+  const subs = [];
+  function set(k, val) {
+    v[k] = val;
+    try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {}
+    for (const f of subs) f(k, val);
+  }
+  return { v, DEF, set, on(f) { subs.push(f); }, reset() { for (const k in DEF) set(k, DEF[k]); } };
+})();
+CFG.VIEW = Settings.v.view;
 
 /* =====================================================================
    UTIL — seeded random + simplex noise
@@ -809,7 +989,7 @@ const Player = (() => {
   const keys = {};
   const touch = { mx: 0, mz: 0, run: false, jump: false, down: false };   // filled in by the touch controls
   let locked = false, selected = 0, breakHeld = false, placeHeld = false, actCool = 0;
-  const HOTBAR = [World.B.GRASS, World.B.DIRT, World.B.STONE, World.B.SAND, World.B.LOG, World.B.PLANKS, World.B.LEAVES, World.B.GLASS];
+  const HOTBAR = [World.B.GRASS, World.B.DIRT, World.B.STONE, World.B.SAND, World.B.GRAVEL, World.B.LOG, World.B.PLANKS, World.B.LEAVES, World.B.GLASS];
 
   // ---- collision against the voxel grid, one axis at a time
   function hits(x, y, z) {
@@ -840,8 +1020,9 @@ const Player = (() => {
   }
 
   function update(dt) {
-    const f = clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) + touch.mz, -1, 1), s = clamp((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + touch.mx, -1, 1);
-    const run = keys.ShiftLeft || touch.run, jump = keys.Space || touch.jump, down = keys.ShiftLeft || touch.down;
+    const on = locked && !Vitals.dead;       // on the menu (or dead) your hands are off the controls
+    const f = on ? clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) + touch.mz, -1, 1) : 0, s = on ? clamp((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + touch.mx, -1, 1) : 0;
+    const run = on && (keys.ShiftLeft || touch.run), jump = on && (keys.Space || touch.jump), down = on && (keys.ShiftLeft || touch.down);
     const len = Math.max(1, Math.hypot(f, s));
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     p.inWater = World.get(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z)) === World.B.WATER;
@@ -861,16 +1042,64 @@ const Player = (() => {
       const tx = p.x + wx / speed * 0.4, tz = p.z + wz / speed * 0.4;
       if (hits(tx, p.y, tz) && !hits(tx, p.y + 1.05, tz) && !hits(p.x, p.y + 1.05, p.z)) p.vy = 8.6;
     }
-    if (p.y < -30) spawn();
+    if (p.y < -30) { if (!survivalMode()) spawn(); else { Vitals.damage(99, 'void'); if (p.y < -60) { p.y = -60; p.vy = 0; } } }
 
     camera.position.set(p.x, p.y + p.eye, p.z);
     camera.rotation.set(p.pitch, p.yaw, 0);
 
-    // block interaction (hold to repeat)
+    // block interaction (hold to repeat). In survival, blocks take time to mine
     actCool -= dt;
-    if (actCool <= 0 && (breakHeld || placeHeld)) { act(breakHeld ? 'break' : 'place'); actCool = 0.22; }
+    if (on && breakHeld && survivalMode()) mine(dt);
+    else {
+      if (mining) mineStop();
+      if (on && actCool <= 0 && (breakHeld || placeHeld)) { act(breakHeld ? 'break' : 'place'); actCool = 0.22; }
+    }
     updateHighlight();
   }
+
+  // ---- survival: mining by hand takes a moment; cracks show how far along you are
+  const HARD = { [World.B.GRASS]: 0.9, [World.B.DIRT]: 0.75, [World.B.SAND]: 0.75, [World.B.GRAVEL]: 0.9, [World.B.LEAVES]: 0.35,
+                 [World.B.LOG]: 2.2, [World.B.PLANKS]: 2, [World.B.STONE]: 3, [World.B.GLASS]: 0.45 };
+  const crackTex = [];
+  {
+    const r = mulberry32(99), lines = [];
+    for (let n = 0; n < 7; n++) {
+      const line = []; let x = 2 + r() * 12, y = 2 + r() * 12, a = r() * 6.28;
+      for (let i = 0; i < 14; i++) { line.push([x | 0, y | 0]); a += (r() - 0.5) * 1.3; x = clamp(x + Math.cos(a) * 0.9, 0, 15); y = clamp(y + Math.sin(a) * 0.9, 0, 15); }
+      lines.push(line);
+    }
+    for (let st = 0; st < 8; st++) {
+      const c = document.createElement('canvas'); c.width = c.height = 16;
+      const x = c.getContext('2d'); x.fillStyle = 'rgba(0, 0, 0, .62)';
+      for (const line of lines) for (let i = 0; i < Math.ceil(line.length * (st + 1) / 8); i++) x.fillRect(line[i][0], line[i][1], 1, 1);
+      const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; crackTex.push(t);
+    }
+  }
+  const crackMat = new THREE.MeshBasicMaterial({ map: crackTex[0], transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const crack = new THREE.Mesh(new THREE.BoxGeometry(1.002, 1.002, 1.002), crackMat); crack.visible = false; scene.add(crack);
+  let mining = null;
+  function mineStop() { mining = null; crack.visible = false; }
+  function mine(dt) {
+    if (hook && hook('aim', target ? target.t : CFG.REACH)) {      // an animal in the way: hit it instead
+      mineStop();
+      if (actCool <= 0) { act('break'); actCool = 0.22; }
+      return;
+    }
+    if (!target) { mineStop(); return; }
+    if (!mining || mining.x !== target.x || mining.y !== target.y || mining.z !== target.z) mining = { x: target.x, y: target.y, z: target.z, b: target.b, t: 0, dig: 0 };
+    mining.t += dt; mining.dig -= dt;
+    if (mining.dig <= 0) { mining.dig = 0.25; Events.emit('dig', mining); }
+    const f = mining.t / (HARD[mining.b] || 1);
+    if (f >= 1) {
+      const t = target; mineStop();
+      World.set(t.x, t.y, t.z, World.B.AIR); Events.emit('break', t);
+      Inventory.dropBlock(t.b, t.x + 0.5, t.y + 0.5, t.z + 0.5);
+      return;
+    }
+    crackMat.map = crackTex[Math.min(7, Math.floor(f * 8))];
+    crack.position.set(mining.x + 0.5, mining.y + 0.5, mining.z + 0.5); crack.visible = true;
+  }
+  function startBreak() { breakHeld = true; if (!survivalMode()) { act('break'); actCool = 0.3; } }
 
   // ---- looking at blocks: voxel ray march (DDA)
   function raycast() {
@@ -899,7 +1128,7 @@ const Player = (() => {
     outline.visible = !!target;
     if (target) outline.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
   }
-  let hook = null;     // the animals get the first look at what you're aiming at
+  let hook = null, warnT = 0, lastSpace = 0;     // the animals get the first look at what you're aiming at
   function act(kind) {
     if (hook && hook(kind, target ? target.t : CFG.REACH)) return;
     if (!target) return;
@@ -909,22 +1138,31 @@ const Player = (() => {
     if (inside && World.SOLID[b]) return;
     const cur = World.get(px, py, pz);
     if (cur !== World.B.AIR && cur !== World.B.WATER) return;
-    if (World.set(px, py, pz, b)) Events.emit('place', { x: px, y: py, z: pz, b });
+    if (survivalMode() && !Inventory.has(b)) {
+      if (performance.now() - warnT > 1500) { warnT = performance.now(); Inventory.toast('No ' + World.INFO[b].name.toLowerCase() + ' left'); }
+      return;
+    }
+    if (World.set(px, py, pz, b)) { if (survivalMode()) Inventory.take(b, 1); Events.emit('place', { x: px, y: py, z: pz, b }); }
   }
 
   // ---- input
   addEventListener('keydown', e => {
+    if (e.target && e.target.tagName === 'INPUT') return;
     keys[e.code] = true;
-    if (/^Digit[1-8]$/.test(e.code)) select(+e.code.slice(5) - 1);
-    if (e.code === 'Space' && locked) e.preventDefault();
+    if (/^Digit[1-9]$/.test(e.code)) select(+e.code.slice(5) - 1);
+    if (e.code === 'Space' && locked) {
+      e.preventDefault();
+      // creative: Space twice quickly to fly (and again to land)
+      if (!e.repeat && GAME.mode === 'creative') { const now = performance.now(); if (now - lastSpace < 300) { p.fly = !p.fly; lastSpace = 0; } else lastSpace = now; }
+    }
   });
   addEventListener('keyup', e => { keys[e.code] = false; });
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; breakHeld = placeHeld = false; });
   function look(dyaw, dpitch) { p.yaw -= dyaw; p.pitch = clamp(p.pitch - dpitch, -1.55, 1.55); }
-  addEventListener('mousemove', e => { if (locked && !touchMode) look(e.movementX * 0.0023, e.movementY * 0.0023); });
+  addEventListener('mousemove', e => { if (locked && !touchMode && document.pointerLockElement) look(e.movementX * 0.0023 * Settings.v.sens, e.movementY * 0.0023 * Settings.v.sens); });
   addEventListener('mousedown', e => {
     if (!locked || touchMode) return;
-    if (e.button === 0) { breakHeld = true; act('break'); actCool = 0.3; }
+    if (e.button === 0) startBreak();
     if (e.button === 2) { placeHeld = true; act('place'); actCool = 0.3; }
   });
   addEventListener('mouseup', e => { if (e.button === 0) breakHeld = false; if (e.button === 2) placeHeld = false; });
@@ -965,10 +1203,10 @@ const Player = (() => {
   select(0);
 
   return {
-    p, keys, touch, update, spawn, look, setHook(f) { hook = f; },
+    p, keys, touch, update, spawn, look, setHook(f) { hook = f; }, HOTBAR, icon,
     unstuck() { for (let n = 0; n < 64 && hits(p.x, p.y, p.z); n++) p.y += 1; },
     // touch: hold to break, tap to place
-    beginBreak() { breakHeld = true; act('break'); actCool = 0.3; },
+    beginBreak: startBreak,
     endBreak() { breakHeld = false; },
     tap() { updateHighlight(); act('place'); },
     get locked() { return locked; }, set locked(v) { locked = v; if (!v) breakHeld = placeHeld = false; },
@@ -993,7 +1231,8 @@ const Touch = (() => {
   let stickId = null, sx = 0, sy = 0;
   const looks = new Map();
   function home() {
-    stick.style.transform = `translate(${Math.max(96, innerWidth * 0.14)}px, ${innerHeight - 118}px)`;
+    const x = Math.max(96, innerWidth * 0.14);
+    stick.style.transform = `translate(${Settings.v.lefty ? innerWidth - x : x}px, ${innerHeight - 118}px)`;
     knob.style.transform = '';
   }
   function resetStick() { stickId = null; Object.assign(Player.touch, { mx: 0, mz: 0, run: false }); stick.classList.remove('active'); home(); }
@@ -1001,7 +1240,7 @@ const Touch = (() => {
     e.preventDefault();
     if (!Player.locked) return;
     for (const t of e.changedTouches) {
-      if (t.clientX < innerWidth * 0.42 && stickId === null) {
+      if ((Settings.v.lefty ? t.clientX > innerWidth * 0.58 : t.clientX < innerWidth * 0.42) && stickId === null) {
         stickId = t.identifier; sx = t.clientX; sy = t.clientY;
         stick.style.transform = `translate(${sx}px, ${sy}px)`; stick.classList.add('active');
       } else {
@@ -1026,7 +1265,7 @@ const Touch = (() => {
       const dx = t.clientX - L.x, dy = t.clientY - L.y;
       L.x = t.clientX; L.y = t.clientY;
       if (!L.moved && Math.hypot(t.clientX - L.sx, t.clientY - L.sy) > 10) { L.moved = true; if (!L.holding) clearTimeout(L.timer); }
-      if (L.moved) Player.look(dx * LOOK, dy * LOOK);
+      if (L.moved) Player.look(dx * LOOK * Settings.v.sens, dy * LOOK * Settings.v.sens);
     }
   }, { passive: false });
   function end(e, cancelled) {
@@ -1057,7 +1296,7 @@ const Touch = (() => {
   }
   addEventListener('resize', () => { if (stickId === null) home(); });
   home();
-  return { release };
+  return { release, home() { if (stickId === null) home(); } };
 })();
 
 /* =====================================================================
@@ -1555,9 +1794,6 @@ const GameAudio = (() => {
   const B = World.B, rand = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
   let ac = null, ready = false, loaded = 0, total = 0;
   const buf = {};
-  const opts = { music: true, sound: true };
-  try { Object.assign(opts, JSON.parse(localStorage.getItem('stillness-audio') || '{}')); } catch (e) {}
-  const saveOpts = () => { try { localStorage.setItem('stillness-audio', JSON.stringify(opts)); } catch (e) {} };
 
   // ---------------- the mixer ----------------
   // your own sounds (sfx) ─────────────────────────────┐
@@ -1575,14 +1811,14 @@ const GameAudio = (() => {
   function gainNode(v, to) { const g = ac.createGain(); g.gain.value = v; if (to) g.connect(to); return g; }
   function build() {
     const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(ac.destination);
-    master = gainNode(opts.sound ? 0.9 : 0, comp);
+    master = gainNode(Settings.v.sound * 0.9, comp);
     still = gainNode(1, master);                         // silenced by "stillness" and the forbidden sun
     muffle = ac.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 18000; muffle.Q.value = 0.4; muffle.connect(still);
     world = gainNode(1, muffle);
     sfx = gainNode(1, master);
     cave = ac.createConvolver(); cave.buffer = impulse(3.2, 3.5, 0.5); cave.connect(still);
     caveIn = gainNode(0, cave); sfx.connect(caveIn); world.connect(caveIn);
-    musicOut = gainNode(opts.music ? 1 : 0, still);
+    musicOut = gainNode(Settings.v.music, still);
     music = gainNode(0.55, musicOut);
     hall = ac.createConvolver(); hall.buffer = impulse(3.8, 4, 0.35); hall.connect(musicOut);
     music.connect(gainNode(0.32, hall));
@@ -1730,6 +1966,7 @@ const GameAudio = (() => {
     if (!ac) return;
     playVar(t.b === B.STONE || t.b === B.GLASS ? 'place_hard' : 'place', { gain: 0.5, rate: rand(0.92, 1.08) });
   });
+  Events.on('dig', t => { if (ac) playVar(DIG[t.b] || 'dig_crumbly', { gain: 0.28, rate: rand(0.9, 1.1) }); });   // survival: mining
 
   // ---------------- the piano: music composed live ----------------
   // A real grand piano (sampled every minor third) played by a slow, sparse composer that picks its
@@ -1843,10 +2080,7 @@ const GameAudio = (() => {
     }
     if (ac.state !== 'running') ac.resume();
   }
-  function setOpt(k, v) {
-    opts[k] = v; saveOpts();
-    if (ac) { if (k === 'music') musicOut.gain.value = v ? 1 : 0; else master.gain.value = v ? 0.9 : 0; }
-  }
+  function setVolume(music, sound) { if (ac) { musicOut.gain.value = music; master.gain.value = sound * 0.9; } }
   let meter = null, mdata = null;
   function level() {   // loudness of what you hear, in dB (debug menu)
     if (!ac) return -99;
@@ -1860,7 +2094,7 @@ const GameAudio = (() => {
     const l = level();
     return `audio      ${ac.state}, ${loaded}/${total} sounds, level ${l.rms.toFixed(0)} dB (peak ${l.peak.toFixed(0)})\n` +
       `recent     ${recent.join(' ')}\n` +
-      `music      ${opts.music ? '' : '(off) '}${piece ? piece.mode + ' ' + Math.floor((ac.currentTime - piece.start) / piece.end * 100) + '%' : 'next ~' + Math.max(0, musicT).toFixed(0) + 's'}`;
+      `music      ${Settings.v.music ? '' : '(off) '}${piece ? piece.mode + ' ' + Math.floor((ac.currentTime - piece.start) / piece.end * 100) + '%' : 'next ~' + Math.max(0, musicT).toFixed(0) + 's'}`;
   }
   // an animal somewhere in the world: from its direction, quieter and duller with distance
   function animal(name, x, z, gain, rate) {
@@ -1878,7 +2112,9 @@ const GameAudio = (() => {
   }
   return {
     animal, pop, hit() { play('hit1', { gain: 0.5, rate: rand(0.9, 1.1) }); },
-    start, update, info, level, opts, setOpt, stopMusic,
+    hurt() { play('hit1', { gain: 0.6, rate: rand(0.68, 0.78), lp: 2600 }); },
+    eat() { if (ac) for (let i = 0; i < 3; i++) play(i % 2 ? 'dig_snappy1' : 'dig_crumbly1', { gain: 0.22, rate: rand(1.3, 1.6), at: ac.currentTime + i * 0.17 }); },
+    start, update, info, level, setVolume, stopMusic,
     playMusic() { if (ac) { musicT = 0; piece = null; } },
     set wrongChance(v) { wrongChance = v; },
     get ready() { return ready; },
@@ -1886,13 +2122,10 @@ const GameAudio = (() => {
 })();
 
 /* =====================================================================
-   ANIMALS — cows, sheep, pigs, chickens, the deer; dropped items and the bag
+   INVENTORY — your things (and, in survival, your blocks), dropped items, the bag
    ===================================================================== */
-const Animals = (() => {
-  const B = World.B, rand = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
-  const wrap = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
-  const CAP = IS_PHONE ? 16 : 28;
-
+const Inventory = (() => {
+  const B = World.B;
   // ---------------- items and their icons (pixel art painted in code) ----------------
   const ITEMS = {
     beef: 'Raw beef', leather: 'Leather', milk: 'Bucket of milk', wool: 'Wool', mutton: 'Raw mutton',
@@ -1936,51 +2169,160 @@ const Animals = (() => {
     icons[k] = { canvas: cv, mat: new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 }) };
   }
 
-  // ---------------- the bag (inventory) and "+1 Wool" notes ----------------
-  const inv = {};
-  const bagEl = document.getElementById('bag'), gridEl = bagEl.querySelector('.grid'), toastEl = document.getElementById('toast');
-  const slots = {};
-  for (const k in ITEMS) {
-    const s = document.createElement('div'); s.className = 'bslot';
-    const c = document.createElement('canvas'); c.width = c.height = 16; c.getContext('2d').drawImage(icons[k].canvas, 0, 0);
-    const n = document.createElement('b'), l = document.createElement('span'); l.textContent = ITEMS[k];
-    s.append(c, n, l); gridEl.appendChild(s); slots[k] = { s, n };
+  // blocks use the hotbar's little 3D icons (made on first use)
+  function iconOf(k) {
+    if (!icons[k]) {
+      const cv = Player.icon(k), tex = new THREE.CanvasTexture(cv); tex.magFilter = tex.minFilter = THREE.NearestFilter;
+      icons[k] = { canvas: cv, mat: new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.3 }) };
+    }
+    return icons[k];
   }
-  function refreshBag() { for (const k in ITEMS) { const c = inv[k] || 0; slots[k].n.textContent = c; slots[k].s.classList.toggle('empty', !c); } }
-  function toggleBag(show) { bagEl.classList.toggle('hide', show === undefined ? !bagEl.classList.contains('hide') : !show); refreshBag(); }
-  const bagBtn = document.getElementById('bagBtn');
-  bagBtn.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleBag(); }, { passive: false });
-  bagEl.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleBag(false); }, { passive: false });
-  bagEl.addEventListener('mousedown', e => { e.stopPropagation(); toggleBag(false); });
-  addEventListener('keydown', e => { if (e.code === 'KeyE' && Player.locked) toggleBag(); });
+  const FOOD = { beef: 3, pork: 3, mutton: 2, chicken: 2, milk: 2 };
+  const RECIPES = [
+    { make: [B.PLANKS, 4], need: [[B.LOG, 1]], label: '1 Log → 4 Planks' },
+    { make: [B.GLASS, 1], need: [[B.SAND, 4]], label: '4 Sand → 1 Glass' },
+  ];
+
+  // a "thing" is an item name ('wool') or a block id (3); they are counted separately
+  const items = {}, blocks = {};
+  const isBlock = k => typeof k === 'number';
+  const store = k => isBlock(k) ? blocks : items;
+  const count = k => store(k)[k] || 0;
+  const nameOf = k => isBlock(k) ? World.INFO[k].name : ITEMS[k];
+
+  // ---------------- "+1 Wool" notes ----------------
+  const toastEl = document.getElementById('toast');
   function toast(text) {
     const d = document.createElement('div'); d.textContent = text; toastEl.appendChild(d);
     setTimeout(() => d.classList.add('out'), 1400); setTimeout(() => d.remove(), 2200);
     while (toastEl.children.length > 4) toastEl.firstChild.remove();
   }
-  function give(item, n) {
-    inv[item] = (inv[item] || 0) + n;
-    toast(`+${n} ${ITEMS[item]}`); GameAudio.pop();
-    if (!bagEl.classList.contains('hide')) refreshBag();
+  function give(k, n, quiet) {
+    store(k)[k] = count(k) + n;
+    if (!quiet) { toast(`+${n} ${nameOf(k)}`); GameAudio.pop(); }
+    changed();
+  }
+  function take(k, n) {
+    if (count(k) < n) return false;
+    store(k)[k] = count(k) - n; changed(); return true;
+  }
+  function changed() { refreshHotbar(); if (open) renderBag(); }
+
+  // ---------------- the hotbar shows how many blocks you have (survival) ----------------
+  function refreshHotbar() {
+    const slots = document.querySelectorAll('#hotbar .slot'), creative = !survivalMode();
+    Player.HOTBAR.forEach((b, i) => {
+      const s = slots[i]; if (!s) return;
+      let c = s.querySelector('.cnt');
+      if (!c) { c = document.createElement('b'); c.className = 'cnt'; s.appendChild(c); }
+      c.textContent = creative ? '' : count(b);
+      s.classList.toggle('none', !creative && !count(b));
+    });
   }
 
-  // ---------------- dropped items: they pop out, then fly into your pocket ----------------
-  const drops = [];
-  function drop(item, x, y, z) {
-    if (drops.length > 60) { scene.remove(drops[0].sprite); drops.shift(); }
-    const sprite = new THREE.Sprite(icons[item].mat); sprite.scale.set(0.38, 0.38, 1); scene.add(sprite);
-    const a = Math.random() * Math.PI * 2;
-    drops.push({ item, sprite, x, y: y + 0.5, z, vx: Math.cos(a) * 1.6, vz: Math.sin(a) * 1.6, vy: 4.5, t: 0, ground: false });
+  // ---------------- the bag ----------------
+  const bagEl = document.getElementById('bag'), bodyEl = bagEl.querySelector('.bagBody');
+  let open = false;
+  function slotEl(k, onTap) {
+    const s = document.createElement(onTap ? 'button' : 'div'); s.className = 'bslot' + (count(k) ? '' : ' empty');
+    const src = iconOf(k).canvas, c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0);
+    const n = document.createElement('b'); n.textContent = count(k);
+    const l = document.createElement('span'); l.textContent = nameOf(k);
+    s.append(c, n, l);
+    if (onTap) s.addEventListener('click', e => { e.stopPropagation(); onTap(k); });
+    return s;
   }
-  function updateDrops(dt) {
+  function section(title, note) {
+    const h = document.createElement('h3'); h.textContent = title;
+    if (note) { const sm = document.createElement('small'); sm.textContent = note; h.appendChild(sm); }
+    const g = document.createElement('div'); g.className = 'grid';
+    bodyEl.append(h, g);
+    return g;
+  }
+  function renderBag() {
+    const top = bodyEl.scrollTop;
+    bodyEl.textContent = '';
+    const surv = survivalMode();
+    let g = section('Food', surv ? 'tap to eat' : '');
+    for (const k of ['beef', 'pork', 'mutton', 'chicken', 'milk']) g.appendChild(slotEl(k, surv ? eat : null));
+    g = section('Things');
+    for (const k of ['leather', 'wool', 'feather', 'egg']) g.appendChild(slotEl(k));
+    if (surv) {
+      g = section('Blocks');
+      for (const b of Player.HOTBAR) g.appendChild(slotEl(b));
+      g = section('Make');
+      for (const r of RECIPES) {
+        const btn = document.createElement('button'); btn.className = 'craft'; btn.textContent = r.label;
+        btn.disabled = !r.need.every(([k, n]) => count(k) >= n);
+        btn.addEventListener('click', e => { e.stopPropagation(); craft(r); });
+        g.appendChild(btn);
+      }
+    }
+    bodyEl.scrollTop = top;
+  }
+  // on a computer the mouse is set free while the bag is open (fromUser: opened or closed by the player)
+  function toggleBag(show, fromUser) {
+    const was = open;
+    open = show === undefined ? !open : !!show;
+    bagEl.classList.toggle('hide', !open);
+    if (open) renderBag();
+    if (fromUser && !touchMode && was !== open) {
+      try { if (open) document.exitPointerLock(); else if (Player.locked) relock(); } catch (e) {}
+    }
+  }
+  let relock = () => {};
+  const bagBtn = document.getElementById('bagBtn');
+  bagBtn.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleBag(undefined, true); }, { passive: false });
+  document.getElementById('bagClose').addEventListener('click', e => { e.stopPropagation(); toggleBag(false, true); });
+  bagEl.addEventListener('click', e => { if (e.target === bagEl) toggleBag(false, true); });
+  bagEl.addEventListener('mousedown', e => e.stopPropagation());
+  bagEl.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+  bagEl.style.touchAction = 'pan-y';
+  addEventListener('keydown', e => {
+    if (e.target && e.target.tagName === 'INPUT') return;
+    if (e.code === 'KeyE' && Player.locked) toggleBag(undefined, true);
+    else if (e.code === 'Escape' && open) toggleBag(false, true);
+  });
+
+  function eat(k) {
+    if (!count(k)) return;
+    if (!Vitals.hungry()) { toast('You are not hungry'); return; }
+    take(k, 1);
+    Vitals.feed(FOOD[k], k);
+    GameAudio.eat();
+  }
+  function craft(r) {
+    if (!r.need.every(([k, n]) => count(k) >= n)) return;
+    for (const [k, n] of r.need) store(k)[k] = count(k) - n;
+    give(r.make[0], r.make[1]);
+  }
+
+  // ---------------- dropped things: they pop out, then fly into your pocket ----------------
+  const drops = [];
+  function drop(k, x, y, z, n) {
+    if (drops.length > 60) { scene.remove(drops[0].sprite); drops.shift(); }
+    const sprite = new THREE.Sprite(iconOf(k).mat), sz = isBlock(k) ? 0.3 : 0.38; sprite.scale.set(sz, sz, 1); scene.add(sprite);
+    const a = Math.random() * Math.PI * 2;
+    drops.push({ k, n: n || 1, sprite, x, y: y + 0.5, z, vx: Math.cos(a) * 1.6, vz: Math.sin(a) * 1.6, vy: 4.5, t: 0, ground: false });
+  }
+  function dropBlock(b, x, y, z) { if (b !== B.GLASS) drop(b, x, y - 0.4, z); }   // glass shatters
+  function dropAll(x, y, z) {   // when you die, everything you carry falls where you stood
+    for (const k in items) if (items[k] > 0) drop(k, x, y, z, items[k]);
+    for (const k in blocks) if (blocks[k] > 0) drop(+k, x, y, z, blocks[k]);
+    for (const k in items) delete items[k];
+    for (const k in blocks) delete blocks[k];
+    changed();
+  }
+  function update(dt) {
+    if (!dt) return;
     const P = Player.p, light = 0.3 + 0.7 * Sky.state.day;
     for (const k in icons) icons[k].mat.color.setScalar(light);
     for (let i = drops.length - 1; i >= 0; i--) {
       const d = drops[i]; d.t += dt;
       const dx = P.x - d.x, dy = P.y + 0.9 - d.y, dz = P.z - d.z, dist = Math.hypot(dx, dy, dz);
-      if (d.t > 0.6 && dist < 2.6) {                             // fly to you
+      if (d.t > 0.6 && dist < 2.6 && !Vitals.dead) {            // fly to you
         const k = Math.min(1, dt * 12); d.x += dx * k; d.y += dy * k; d.z += dz * k;
-        if (dist < 0.45) { give(d.item, 1); scene.remove(d.sprite); drops.splice(i, 1); continue; }
+        if (dist < 0.45) { give(d.k, d.n); scene.remove(d.sprite); drops.splice(i, 1); continue; }
       } else if (!d.ground) {
         d.vy -= 20 * dt; d.x += d.vx * dt; d.z += d.vz * dt; d.vx *= 0.96; d.vz *= 0.96;
         const ny = d.y + d.vy * dt;
@@ -1991,6 +2333,34 @@ const Animals = (() => {
       d.sprite.position.set(d.x, d.y + (d.ground ? Math.sin(d.t * 2.5) * 0.06 : 0), d.z);
     }
   }
+
+  // ---------------- save ----------------
+  function reset() { for (const k in items) delete items[k]; for (const k in blocks) delete blocks[k]; changed(); }
+  function exportState() { return { items, blocks }; }
+  function importState(s) {
+    reset();
+    if (!s) return;
+    Object.assign(items, s.items || {});
+    for (const k in s.blocks || {}) blocks[+k] = s.blocks[k];
+    changed();
+  }
+  return {
+    toast, give, take, count, has: k => count(k) > 0, drop, dropBlock, dropAll, update, reset, exportState, importState, refreshHotbar, toggleBag,
+    get isOpen() { return open; }, set relock(f) { relock = f; }, dropCount: () => drops.length, ITEMS,
+    giveAll() { for (const k in ITEMS) give(k, 1); },
+    giveBlocks() { for (const b of Player.HOTBAR) give(b, 64, true); toast('+64 of every block'); },
+  };
+})();
+
+/* =====================================================================
+   ANIMALS — cows, sheep, pigs, chickens, the deer; dropped items and the bag
+   ===================================================================== */
+const Animals = (() => {
+  const B = World.B, rand = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+  const wrap = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  const CAP = IS_PHONE ? 16 : 28;
+
+  const { give, drop, toast } = Inventory;   // items, dropped things and the bag live in INVENTORY
 
   // ---------------- models: boxes with textures painted in code ----------------
   // Every part keeps the same pixel size (DENS pixels per metre), so nothing looks stretched; a face is one small
@@ -2690,6 +3060,7 @@ const Animals = (() => {
   function interact(kind, blockDist) {
     const a = aimed(Math.min(CFG.REACH, blockDist + 0.3));
     if (!a) return false;
+    if (kind === 'aim') return true;
     if (kind === 'break') { if (hitCool <= 0) { hitCool = 0.4; hit(a); } return true; }
     // tap: shear or milk
     if (a.special) return true;
@@ -3035,7 +3406,7 @@ const Animals = (() => {
     deer.checkT -= dt; if (deer.checkT <= 0) { deer.checkT = 5; if (!deer.a) deerCheck(); }
     const dA = deer.a;
     deer.luck += ((dA && Math.hypot(dA.x - P.x, dA.z - P.z) < 60 ? 1.5 : 0) - deer.luck) * Math.min(1, dt / (dA ? 6 : 60));
-    Weather.unease = deer.luck;                          // Phase 5's director will add its own unease here
+    Weather.unease = deer.luck + (GAME.mode === 'hardcore' ? 0.3 : 0);                          // Phase 5's director will add its own unease here
     // thunder: they jump when the sound reaches them, some more than others, and a little less every time
     thunderCalm = Math.max(0, thunderCalm - dt / 240);
     for (let i = thunderQ.length - 1; i >= 0; i--) {
@@ -3080,16 +3451,14 @@ const Animals = (() => {
     }
     if (!stillness) separate(dt);
     updatePuffs(dt);
-    updateDrops(dt);
   }
 
   // ---------------- save ----------------
-  function exportState() { return { herds: herdState, inv, deer: { seen: deer.seen, hits: deer.hits, regions: deer.regions } }; }
+  function exportState() { return { herds: herdState, deer: { seen: deer.seen, hits: deer.hits, regions: deer.regions } }; }
   function importState(s) {
     today = Weather.exportState().days;
     if (!s) return;
     herdState = s.herds || {};
-    Object.assign(inv, s.inv || {});
     if (s.deer) { deer.seen = s.deer.seen || 0; deer.hits = s.deer.hits || 0; deer.regions = s.deer.regions || {}; }
   }
   Player.setHook(interact);
@@ -3101,13 +3470,13 @@ const Animals = (() => {
   function info() {
     const herds = loaded.size, d = deer.a ? `deer ${Math.hypot(deer.a.x - Player.p.x, deer.a.z - Player.p.z).toFixed(0)} m` : 'no deer', n = nearest();
     const k = v => Math.min(9, v * 10 | 0), q = n && n.per;
-    return `animals    ${animals.length} in ${herds} herds, ${drops.length} items  ${d}, luck ${deer.luck.toFixed(2)}\n` +
+    return `animals    ${animals.length} in ${herds} herds, ${Inventory.dropCount()} items  ${d}, luck ${deer.luck.toFixed(2)}\n` +
       (n ? `nearest    ${LOOKS[n.kind][n.variant] ? LOOKS[n.kind][n.variant] + ' ' : ''}${n.kind}: ${n.ai.creep ? 'watching you' : n.ai.mode}${n.ai.fear > 0.05 ? ', fear ' + n.ai.fear.toFixed(1) : ''}, ${Math.hypot(n.x - Player.p.x, n.z - Player.p.z).toFixed(0)} m\n` +
            `nature     bold ${k(q.bold)} curious ${k(q.curious)} lazy ${k(q.lazy)} social ${k(q.social)} jumpy ${k(q.jumpy)}\n` : '') +
       `creepy     next ~${Math.max(0, creepT).toFixed(0)}s${stareT ? '  STARE' : ''}${follow ? '  FOLLOWED' : ''}${rainFreeze ? '  rain-freeze' : ''}${stillness ? '  STILL' : ''}`;
   }
   return {
-    update, info, exportState, importState, give, toggleBag, animals,
+    update, info, exportState, importState, animals,
     // debug helpers
     spawnNear(kind) {
       const P = Player.p, x = P.x - Math.sin(P.yaw) * 4, z = P.z - Math.cos(P.yaw) * 4, y = groundSpot(x, z, P.y);
@@ -3128,7 +3497,122 @@ const Animals = (() => {
       else setMode(a, name);
     },
     setMode, spawnAt(kind, x, y, z, o) { return spawn(kind, x, y, z, o); },
-    giveAll() { for (const k in ITEMS) give(k, 1); },
+  };
+})();
+
+/* =====================================================================
+   SURVIVAL — health, hunger and air (survival and hardcore), getting hurt, dying
+   ===================================================================== */
+const Vitals = (() => {
+  const B = World.B;
+  let hp = 20, food = 20, air = 10, ex = 0, poison = 0, regenT = 0, starveT = 0, airT = 0, peak = null, wasGround = true, dead = false, cause = '';
+  const el = document.getElementById('vitals'), hurtEl = document.getElementById('hurt');
+  const cv = { hp: document.getElementById('vHearts'), food: document.getElementById('vFood'), air: document.getElementById('vAir') };
+
+  // ---------------- the bars: 10 little pixel icons, each worth 2 points ----------------
+  const HEART = ['.XX...XX.', 'XWXX.XXXX', 'XWXXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '...XXX...', '....X....'];
+  const LEG = ['.....XXX.', '....XXXXX', '...XXXXXX', '...XXXXX.', '..XXXX...', '.WX......', 'W.W......', '.W.......'];
+  const BUBBLE = ['..XXX..', '.X...X.', 'X.W...X', 'X.....X', 'X.....X', '.X...X.', '..XXX..'];
+  const C = {
+    heart: { X: '#d0302a', W: '#ffb3a8' }, food: { X: '#a8662e', W: '#efe6d6' }, sick: { X: '#6f8f2e', W: '#d8e8b0' },
+    air: { X: '#8fc3ee', W: '#ffffff' }, empty: { X: 'rgba(12,6,6,.72)', W: 'rgba(12,6,6,.72)' },
+  };
+  function icon(x, rows, ox, colors, half) {
+    rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = r[i]; if (c === '.' || (half && i > 4)) continue; x.fillStyle = colors[c]; x.fillRect(ox + i, j, 1, 1); } });
+  }
+  function bar(canvas, rows, value, full, empty, flip) {
+    const x = canvas.getContext('2d'); x.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 10; i++) {
+      const ox = (flip ? 9 - i : i) * 10, v = value - i * 2;
+      if (empty) icon(x, rows, ox, empty);
+      if (v >= 2) icon(x, rows, ox, full); else if (v >= 1) icon(x, rows, ox, full, true);
+    }
+  }
+  let drawn = '';
+  function draw() {
+    const show = survivalMode() && !GAME.dead;
+    el.classList.toggle('hide', !show);
+    if (!show) return;
+    const a = Math.ceil(air), key = hp + '|' + food + '|' + a + '|' + (poison > 0);
+    if (key === drawn) return;
+    drawn = key;
+    bar(cv.hp, HEART, hp, C.heart, C.empty);
+    bar(cv.food, LEG, food, poison > 0 ? C.sick : C.food, C.empty, true);
+    cv.air.style.visibility = a < 10 ? 'visible' : 'hidden';
+    bar(cv.air, BUBBLE, a * 2, C.air, null, true);
+    el.classList.toggle('low', hp <= 4);
+  }
+
+  // ---------------- getting hurt ----------------
+  function damage(n, why) {
+    if (!survivalMode() || dead || n <= 0 || !Player.locked) return;
+    hp = Math.max(0, hp - n);
+    hurtEl.classList.remove('on'); void hurtEl.offsetWidth; hurtEl.classList.add('on');   // restart the red flash
+    GameAudio.hurt();
+    Events.emit('hurt', { n, why });
+    draw();
+    if (hp <= 0) die(why);
+  }
+  function die(why) {
+    dead = true; cause = why;
+    const P = Player.p;
+    Inventory.dropAll(P.x, P.y + 0.3, P.z);
+    Events.emit('death', { why, mode: GAME.mode });
+  }
+
+  function update(dt) {
+    if (!dt || dead || !survivalMode()) { draw(); return; }
+    const P = Player.p;
+    // falling: the higher you fall from, the more it hurts (water breaks the fall)
+    if (P.fly || P.inWater) peak = null;
+    else if (!P.onGround) peak = peak === null ? P.y : Math.max(peak, P.y);
+    else if (peak !== null) { const d = peak - P.y; peak = null; if (d > 3.5) damage(Math.round(d - 3), 'fall'); }
+    // air: under water you can hold your breath for 15 seconds
+    const head = World.get(Math.floor(P.x), Math.floor(P.y + P.eye), Math.floor(P.z)) === B.WATER;
+    if (head) {
+      airT += dt;
+      if (air > 0) { if (airT >= 1.5) { airT = 0; air = Math.max(0, Math.ceil(air) - 1); } }
+      else if (airT >= 1) { airT = 0; damage(2, 'drown'); }
+    } else { airT = 0; air = Math.min(10, air + dt * 4); }
+    // hunger: everything you do makes you hungrier (running most of all)
+    const sp = Math.hypot(P.vx, P.vz);
+    let rate = 0.008 + (sp > 0.5 ? (sp > 5 ? 0.07 : 0.018) : 0);
+    if (poison > 0) { poison -= dt; rate += 0.08; }
+    if (GAME.mode === 'hardcore') rate *= 1.25;
+    if (wasGround && !P.onGround && P.vy > 5) ex += 0.08;                     // a jump
+    wasGround = P.onGround;
+    ex += rate * dt;
+    while (ex >= 1) { ex -= 1; food = Math.max(0, food - 1); }
+    // a full stomach heals you; an empty one hurts (in hardcore, until you die)
+    if (food >= 18 && hp < 20) { regenT += dt; if (regenT >= 4) { regenT = 0; hp++; ex += 0.6; } } else regenT = 0;
+    if (food <= 0) { starveT += dt; if (starveT >= 4) { starveT = 0; if (hp > (GAME.mode === 'hardcore' ? 0 : 1)) damage(1, 'starve'); } } else starveT = 0;
+    draw();
+  }
+
+  function feed(n, k) {
+    food = Math.min(20, food + n);
+    if (k === 'milk') poison = 0;
+    else if (k === 'chicken' && Math.random() < 0.3) { poison = 25; Inventory.toast('That chicken was bad'); }
+    draw();
+  }
+  function reset() { hp = 20; food = 20; air = 10; ex = 0; poison = 0; regenT = starveT = airT = 0; peak = null; dead = false; cause = ''; drawn = ''; draw(); }
+  function exportState() { return { hp, food, air, ex, poison }; }
+  function importState(s) {
+    reset();
+    if (!s) return;
+    hp = clamp(s.hp || 20, 1, 20); food = clamp(typeof s.food === 'number' ? s.food : 20, 0, 20);
+    air = clamp(typeof s.air === 'number' ? s.air : 10, 0, 10); ex = s.ex || 0; poison = s.poison || 0;
+    drawn = ''; draw();
+  }
+  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.' };
+  return {
+    update, damage, feed, reset, respawn: reset, exportState, importState, draw,
+    hungry: () => food < 20,
+    get dead() { return dead; }, get cause() { return WHY[cause] || 'You died.'; },
+    get hp() { return hp; }, get food() { return food; }, get air() { return air; },
+    // debug
+    heal() { hp = 20; food = 20; poison = 0; drawn = ''; draw(); },
+    setFood(v) { food = v; drawn = ''; draw(); },
   };
 })();
 
@@ -3171,7 +3655,14 @@ const Debug = (() => {
   el.querySelectorAll('[data-creep]').forEach(b => b.addEventListener('click', () => Animals.creep(b.dataset.creep)));
   el.querySelectorAll('[data-mood]').forEach(b => b.addEventListener('click', () => Animals.mood(b.dataset.mood)));
   document.getElementById('dbgDeer').addEventListener('click', () => Animals.spawnDeer());
-  document.getElementById('dbgItems').addEventListener('click', () => Animals.giveAll());
+  document.getElementById('dbgItems').addEventListener('click', () => Inventory.giveAll());
+  el.querySelectorAll('[data-gmode]').forEach(b => b.addEventListener('click', () => {
+    GAME.mode = b.dataset.gmode; if (!GAME.temp) Worlds.update(GAME.id, { mode: GAME.mode }); applyMode();
+  }));
+  document.getElementById('dbgHeal').addEventListener('click', () => Vitals.heal());
+  document.getElementById('dbgHurt').addEventListener('click', () => Vitals.damage(4, 'fall'));
+  document.getElementById('dbgHungry').addEventListener('click', () => Vitals.setFood(2));
+  document.getElementById('dbgBlocks').addEventListener('click', () => Inventory.giveBlocks());
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
   document.getElementById('dbgView+').addEventListener('click', () => { CFG.VIEW = Math.min(12, CFG.VIEW + 1); });
   // clicks and touches inside the menu must not reach the game
@@ -3190,6 +3681,7 @@ const Debug = (() => {
     const tg = Player.target;
     info.textContent =
       `fps        ${fps}\n` +
+      `world      ${GAME.name || '(unsaved)'} · ${GAME.mode}  hp ${Vitals.hp} food ${Vitals.food} air ${Math.ceil(Vitals.air)}\n` +
       `xyz        ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}\n` +
       `chunk      ${Math.floor(p.x / 16)}, ${Math.floor(p.z / 16)}\n` +
       `chunks     ${World.chunks.size} loaded, ${meshed} drawn\n` +
@@ -3200,70 +3692,330 @@ const Debug = (() => {
       `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() + '\n' + GameAudio.info() + '\n' + Animals.info() +
       (Save.locked() ? `\nlocked out ${Math.ceil((Save.lockUntil - Date.now()) / 1000)}s` : '');
   }
-  return { update, get timeSpeed() { return timeSpeed; } };
+  return { update, get timeSpeed() { return timeSpeed; }, get fps() { return fps; } };
 })();
 
 /* =====================================================================
-   SAVE — world, player, time, weather and the lockout, kept in localStorage
+   SAVE — the list of worlds, and each world's save, kept in localStorage
    ===================================================================== */
-const Save = (() => {
-  const KEY = 'stillness-save-v1';
-  let data = null;
-  try { data = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
-  let lockUntil = data && data.lockUntil || 0;
-  function write() {
-    try {
-      const p = Player.p;
-      localStorage.setItem(KEY, JSON.stringify({ v: 1, seed: World.getSeed(), edits: World.exportEdits(),
-        p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }, time: Sky.time, weather: Weather.exportState(), animals: Animals.exportState(), lockUntil }));
-    } catch (e) {}
+const Worlds = (() => {
+  const INDEX = 'stainless-worlds', CUR = 'stainless-current', PRE = 'stainless-world-';
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(INDEX) || '[]') || []; } catch (e) { list = []; }
+  const writeIndex = () => { try { localStorage.setItem(INDEX, JSON.stringify(list)); return true; } catch (e) { return false; } };
+  const newId = () => 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+  // Phases 1–4 kept a single world under an old key: it moves in as "My World"
+  try {
+    const old = localStorage.getItem('stillness-save-v1');
+    if (old && !list.length) {
+      const d = JSON.parse(old), id = newId();
+      localStorage.setItem(PRE + id, old);
+      list.push({ id, name: 'My World', mode: 'creative', seed: d.seed, created: Date.now(), played: Date.now(),
+                  day: d.weather && d.weather.days || 0, lockUntil: d.lockUntil || 0 });
+      if (writeIndex()) { localStorage.setItem(CUR, id); localStorage.removeItem('stillness-save-v1'); }
+    }
+  } catch (e) {}
+  const get = id => list.find(w => w.id === id) || null;
+  function create(name, mode, seed) {
+    const w = { id: newId(), name, mode, seed, created: Date.now(), played: Date.now(), day: 0, lockUntil: 0 };
+    list.push(w); writeIndex();
+    return w;
   }
-  return { data, write, locked: () => Date.now() < lockUntil, get lockUntil() { return lockUntil; }, set lockUntil(v) { lockUntil = v; } };
+  function update(id, patch) { const w = get(id); if (w) { Object.assign(w, patch); writeIndex(); } }
+  function wipe(id) { try { localStorage.removeItem(PRE + id); } catch (e) {} }      // the save only (a hardcore grave stays listed)
+  function remove(id) { list = list.filter(w => w.id !== id); writeIndex(); wipe(id); if (current() === id) setCurrent(null); }
+  function load(id) { try { return JSON.parse(localStorage.getItem(PRE + id)); } catch (e) { return null; } }
+  function store(id, data) { try { localStorage.setItem(PRE + id, JSON.stringify(data)); return true; } catch (e) { return false; } }
+  function current() { try { return localStorage.getItem(CUR); } catch (e) { return null; } }
+  function setCurrent(id) { try { if (id) localStorage.setItem(CUR, id); else localStorage.removeItem(CUR); } catch (e) {} }
+  return { get, create, update, wipe, remove, load, store, current, setCurrent, sorted: () => list.slice().sort((a, b) => b.played - a.played), get list() { return list; } };
+})();
+
+const Save = (() => {
+  let warned = false;
+  function write() {
+    if (GAME.temp || GAME.dead || !GAME.id) return;
+    const p = Player.p, days = Weather.exportState().days;
+    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: World.getSeed(), edits: World.exportEdits(),
+      p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly }, time: Sky.time, weather: Weather.exportState(),
+      animals: Animals.exportState(), inv: Inventory.exportState(), vitals: Vitals.exportState() });
+    Worlds.update(GAME.id, { played: Date.now(), day: days });
+    if (!ok && !warned) { warned = true; Inventory.toast('Storage is full: delete a world to keep saving'); }
+  }
+  const entry = () => !GAME.temp && GAME.id ? Worlds.get(GAME.id) : null;
+  return {
+    write,
+    locked: () => { const w = entry(); return !!w && Date.now() < (w.lockUntil || 0); },
+    get lockUntil() { const w = entry(); return w ? w.lockUntil || 0 : 0; },
+    set lockUntil(v) { if (entry()) Worlds.update(GAME.id, { lockUntil: v }); },
+  };
 })();
 
 /* =====================================================================
-   MAIN — start screen, pointer lock (desktop) or touch (phones), game loop
+   MAIN — which world, the menus, pointer lock (computers) or touch (phones), the game loop
    ===================================================================== */
-const overlay = document.getElementById('overlay'), goEl = document.getElementById('go'), loadingEl = document.getElementById('loading');
-const saved = Save.data;
-World.setSeed(saved && saved.seed || (Math.random() * 1e9) | 0);
-if (saved && saved.p) {
-  World.importEdits(saved.edits);
-  Object.assign(Player.p, saved.p);
-  if (typeof saved.time === 'number') Sky.time = saved.time;
-} else Player.spawn();
-Weather.importState(saved && saved.weather, Player.p);
-Animals.importState(saved && saved.animals);
+const overlay = document.getElementById('overlay'), $ = id => document.getElementById(id);
+const MODE_NAME = { creative: 'Creative', survival: 'Survival', hardcore: 'Hardcore' };
+
+// ---- load a world: the one picked in the menu (the page reloads into it), or the last one played.
+// With no world yet, an unsaved one is made up to stand behind the menu.
+let enterAfterLoad = false;
+try { enterAfterLoad = sessionStorage.getItem('stainless-enter') === '1'; sessionStorage.removeItem('stainless-enter'); } catch (e) {}
+{
+  const w = Worlds.get(Worlds.current());
+  if (w && !w.dead) Object.assign(GAME, { id: w.id, name: w.name, mode: w.mode, temp: false });
+  else enterAfterLoad = false;
+  GAME.fresh = GAME.temp;
+  const saved = GAME.temp ? null : Worlds.load(GAME.id);
+  const num = v => typeof v === 'number' && isFinite(v);
+  World.setSeed(saved && num(saved.seed) ? saved.seed : !GAME.temp && num(w.seed) ? w.seed : (Math.random() * 1e9) | 0);
+  if (saved && saved.p) {
+    World.importEdits(saved.edits);
+    Object.assign(Player.p, saved.p);
+    if (typeof saved.time === 'number') Sky.time = saved.time;
+  } else Player.spawn();
+  Weather.importState(saved && saved.weather, Player.p);
+  Animals.importState(saved && saved.animals);
+  Inventory.importState(saved && (saved.inv || (saved.animals && saved.animals.inv ? { items: saved.animals.inv } : null)));
+  Vitals.importState(saved && saved.vitals);
+}
 World.update(Player.p.x, Player.p.z);
 
-let started = false;
+function applyMode() {
+  document.body.classList.remove('mode-creative', 'mode-survival', 'mode-hardcore');
+  document.body.classList.add('mode-' + GAME.mode);
+  if (survivalMode()) Player.p.fly = false;
+  $('downBtn').classList.toggle('hide', !Player.p.fly);
+  $('flyBtn').classList.toggle('on', Player.p.fly);
+  Inventory.refreshHotbar(); Vitals.draw();
+}
+applyMode();
+
+// ---- settings take effect straight away
+const QUALITY = { low: 0.6, normal: IS_PHONE ? 1 : Math.min(devicePixelRatio, 1.5), high: Math.min(devicePixelRatio, 2) };
+function applySettings() {
+  const v = Settings.v;
+  CFG.VIEW = v.view;
+  renderer.setPixelRatio(QUALITY[v.quality] || 1); renderer.setSize(innerWidth, innerHeight);
+  camera.fov = v.fov; camera.updateProjectionMatrix();
+  GameAudio.setVolume(v.music, v.sound);
+  document.body.classList.toggle('lefty', !!v.lefty); Touch.home();
+  $('fps').classList.toggle('hide', !v.fps);
+  $('dbgBtn').classList.toggle('hide', !v.debug);
+}
+Settings.on(applySettings); applySettings();
+
+// ---------------- the menus ----------------
+const Menu = (() => {
+  const screens = [...overlay.querySelectorAll('.scr')], back = {};
+  let cur = null;
+  function show(id, from) {
+    for (const s of screens) s.classList.toggle('hide', s.id !== id);
+    if (from) back[id] = from;
+    cur = id;
+    overlay.classList.remove('hide');
+    overlay.classList.toggle('dark', id === 'scrLock');
+    overlay.classList.toggle('dead', id === 'scrDead');
+    ({ scrMain: refreshMain, scrWorlds: renderWorlds, scrSettings: renderSettings, scrNew: openNew, scrPause: refreshPause, scrEnter: refreshEnter }[id] || (() => {}))();
+  }
+  overlay.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => show(back[cur] || 'scrMain')));
+
+  // -- main
+  function refreshMain() {
+    const w = !GAME.temp && Worlds.get(GAME.id);
+    $('mPlayWorld').textContent = w ? `${w.name} · ${MODE_NAME[w.mode]}` : Worlds.list.some(x => !x.dead) ? 'choose a world' : 'make your first world';
+  }
+  $('mPlay').addEventListener('click', () => {
+    if (GAME.temp) show(Worlds.list.some(x => !x.dead) ? 'scrWorlds' : 'scrNew', 'scrMain');
+    else play();
+  });
+  $('mWorlds').addEventListener('click', () => show('scrWorlds', 'scrMain'));
+  $('mSettings').addEventListener('click', () => show('scrSettings', 'scrMain'));
+  $('mCredits').addEventListener('click', () => show('scrCredits', 'scrMain'));
+  $('ver').textContent = 'v' + GAME_VERSION;
+
+  // -- worlds
+  const ago = t => { const s = (Date.now() - t) / 1000; return s < 90 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; };
+  function renderWorlds() {
+    const box = $('wList'); box.textContent = '';
+    const list = Worlds.sorted();
+    if (!list.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No worlds yet.'; box.appendChild(p); }
+    for (const w of list) {
+      const row = document.createElement('div'); row.className = 'wrow' + (w.dead ? ' dead' : '') + (w.id === GAME.id && !GAME.temp ? ' cur' : '');
+      const info = document.createElement('div'); info.className = 'wi';
+      const name = document.createElement('b'); name.textContent = w.name;
+      const sub = document.createElement('span');
+      const closed = !w.dead && Date.now() < (w.lockUntil || 0);
+      sub.textContent = w.dead ? `died on day ${w.day + 1}` : closed ? `closed · come back in ${fmtLeft(w.lockUntil - Date.now())}` : `day ${w.day + 1} · ${ago(w.played)}`;
+      info.append(name, sub);
+      const badge = document.createElement('span'); badge.className = 'badge ' + w.mode; badge.textContent = w.dead ? '✝ gone' : MODE_NAME[w.mode];
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = 'Delete';
+      del.addEventListener('click', e => { e.stopPropagation(); ask(`Delete “${w.name}” forever?`, 'Delete', () => { deleteWorld(w.id); renderWorlds(); }); });
+      row.append(info, badge, del);
+      if (!w.dead) row.addEventListener('click', () => openWorld(w.id));
+      box.appendChild(row);
+    }
+  }
+  $('wNew').addEventListener('click', () => show('scrNew', 'scrWorlds'));
+
+  // -- a new world
+  let newMode = 'survival';
+  function setNewMode(m) { newMode = m; overlay.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m)); }
+  overlay.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => setNewMode(b.dataset.mode)));
+  function openNew() { $('nName').value = 'World ' + (Worlds.list.length + 1); $('nSeed').value = ''; setNewMode('survival'); }
+  function seedFrom(text) {
+    text = text.trim();
+    if (!text) return null;
+    if (/^-?\d{1,9}$/.test(text)) return +text;
+    let h = 7; for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return h;
+  }
+  $('nCreate').addEventListener('click', () => {
+    const name = $('nName').value.trim().slice(0, 24) || 'World ' + (Worlds.list.length + 1), typed = seedFrom($('nSeed').value);
+    if (GAME.fresh && typed === null) {
+      // the untouched world behind the menu becomes this world: no loading
+      const w = Worlds.create(name, newMode, World.getSeed());
+      Object.assign(GAME, { id: w.id, name: w.name, mode: w.mode, temp: false, fresh: false });
+      Worlds.setCurrent(w.id); Inventory.reset(); Vitals.reset(); applyMode(); Save.write();
+      play();
+      return;
+    }
+    openWorld(Worlds.create(name, newMode, typed === null ? (Math.random() * 1e9) | 0 : typed).id);
+  });
+
+  // -- settings
+  const ROWS = [
+    { k: 'music', name: 'Music', type: 'pct' },
+    { k: 'sound', name: 'Sounds', type: 'pct' },
+    { k: 'view', name: 'Render distance', note: 'near runs faster', type: 'num', min: 3, max: 10, step: 1, fmt: v => v + ' chunks' },
+    { k: 'quality', name: 'Graphics', type: 'pick', options: [['low', 'Fast'], ['normal', 'Normal'], ['high', 'Sharp']] },
+    { k: 'fov', name: 'Field of view', type: 'num', min: 50, max: 110, step: 5, fmt: v => v + '°' },
+    { k: 'sens', name: 'Look speed', type: 'num', min: 0.3, max: 3, step: 0.1, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'lefty', name: 'Left-handed', note: 'joystick on the right', type: 'bool', touch: true },
+    { k: 'fps', name: 'Show FPS', type: 'bool' },
+    { k: 'debug', name: 'Debug button (F3)', type: 'bool', touch: true },
+  ];
+  function renderSettings() {
+    const box = $('sList'), top = box.scrollTop; box.textContent = '';
+    for (const r of ROWS) {
+      const row = document.createElement('div'); row.className = 'srow' + (r.touch ? ' touchonly' : '');
+      const label = document.createElement('span'); label.textContent = r.name;
+      if (r.note) { const n = document.createElement('small'); n.textContent = r.note; label.appendChild(n); }
+      row.appendChild(label);
+      const val = document.createElement(r.type === 'bool' || r.type === 'pick' ? 'button' : 'b');
+      const text = () => {
+        const v = Settings.v[r.k];
+        val.textContent = r.type === 'pct' ? Math.round(v * 100) + '%' : r.type === 'bool' ? (v ? 'On' : 'Off') : r.type === 'pick' ? (r.options.find(o => o[0] === v) || r.options[1])[1] : r.fmt(v);
+      };
+      if (r.type === 'bool') val.addEventListener('click', () => { Settings.set(r.k, !Settings.v[r.k]); text(); });
+      else if (r.type === 'pick') val.addEventListener('click', () => { const i = r.options.findIndex(o => o[0] === Settings.v[r.k]); Settings.set(r.k, r.options[(i + 1) % r.options.length][0]); text(); });
+      else {
+        const lo = r.type === 'pct' ? 0 : r.min, hi = r.type === 'pct' ? 1 : r.max, st = r.type === 'pct' ? 0.1 : r.step;
+        const step = d => () => { Settings.set(r.k, Math.round(clamp(Settings.v[r.k] + d * st, lo, hi) * 100) / 100); text(); };
+        const minus = document.createElement('button'); minus.textContent = '−'; minus.setAttribute('aria-label', r.name + ' down'); minus.addEventListener('click', step(-1));
+        const plus = document.createElement('button'); plus.textContent = '+'; plus.setAttribute('aria-label', r.name + ' up'); plus.addEventListener('click', step(1));
+        row.appendChild(minus); row.appendChild(val); row.appendChild(plus);
+      }
+      if (r.type === 'bool' || r.type === 'pick') row.appendChild(val);
+      text();
+      box.appendChild(row);
+    }
+    box.scrollTop = top;
+  }
+  $('sReset').addEventListener('click', () => ask('Reset all settings?', 'Reset', () => { Settings.reset(); renderSettings(); }));
+
+  // -- pause
+  function refreshPause() {
+    $('pWorld').textContent = `${GAME.name || 'Unsaved world'} · ${MODE_NAME[GAME.mode]} · day ${Weather.exportState().days + 1}`;
+  }
+  $('pResume').addEventListener('click', play);
+  $('pSettings').addEventListener('click', () => show('scrSettings', 'scrPause'));
+  $('pQuit').addEventListener('click', () => { Save.write(); show('scrMain'); });
+
+  // -- entering a world after the page reloads into it
+  function refreshEnter() { $('eName').textContent = GAME.name; $('eMode').textContent = MODE_NAME[GAME.mode]; updateGo(); }
+  let waitingNow = null;
+  function updateGo() { $('go').textContent = waitingNow ? 'Growing the world…' : (touchMode ? 'Tap' : 'Click') + ' to enter'; }
+  $('scrEnter').addEventListener('click', () => { if (!waitingNow) play(); });
+
+  // -- yes / no
+  let yes = null;
+  function ask(text, label, onYes) { $('cText').textContent = text; $('cYes').textContent = label; yes = onYes; $('confirm').classList.remove('hide'); }
+  $('cNo').addEventListener('click', () => $('confirm').classList.add('hide'));
+  $('cYes').addEventListener('click', () => { $('confirm').classList.add('hide'); if (yes) yes(); });
+
+  // -- the title: hold it for 2.5 s to open the debug menu; now and then the words underneath are wrong
+  {
+    const h1 = $('title'); let pressT = 0;
+    const down = () => { clearTimeout(pressT); pressT = setTimeout(() => $('debug').classList.toggle('hide'), 2500); };
+    const up = () => clearTimeout(pressT);
+    h1.addEventListener('touchstart', down, { passive: true }); h1.addEventListener('touchend', up);
+    h1.addEventListener('mousedown', down); h1.addEventListener('mouseup', up);
+    const tag = $('tagline'), TAG = tag.textContent, WRONG = ['the fear of you', 'it is not unknown', 'do not look at the sun'];
+    const glitch = () => {
+      if (cur === 'scrMain' && !Player.locked) { tag.textContent = WRONG[Math.floor(Math.random() * WRONG.length)]; setTimeout(() => { tag.textContent = TAG; }, 130); }
+      setTimeout(glitch, 25000 + Math.random() * 45000);
+    };
+    setTimeout(glitch, 30000 + Math.random() * 30000);
+  }
+
+  function tick(waiting) {
+    if (waiting === waitingNow) return;
+    waitingNow = waiting;
+    $('loading').textContent = waiting ? 'Growing the world…' : '';
+    $('mPlay').disabled = waiting && !GAME.temp;
+    updateGo();
+  }
+  return { show, tick, updateGo, ask, get cur() { return cur; } };
+})();
+
+function fmtLeft(ms) { const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60; return m + ':' + String(s).padStart(2, '0'); }
+function openWorld(id) {
+  if (id === GAME.id && !GAME.temp) { play(); return; }
+  Save.write();
+  Worlds.setCurrent(id);
+  try { sessionStorage.setItem('stainless-enter', '1'); } catch (e) {}
+  location.reload();
+}
+function deleteWorld(id) {
+  Worlds.remove(id);
+  if (id === GAME.id) Object.assign(GAME, { id: null, name: '', temp: true });   // the world stays behind the menu, unsaved
+}
+
+// ---------------- playing and pausing ----------------
+let started = false, lockFrom = 'begin';
 function setTouchMode(on) {
   touchMode = on;
   document.body.classList.toggle('touch', on);
-  if (!Save.locked()) goEl.textContent = (on ? 'Tap' : 'Click') + (started ? ' to continue' : ' to begin');
+  Menu.updateGo();
 }
 setTouchMode(touchMode);
 // the first real touch switches to touch controls; a real mouse click (on a computer) switches back
 addEventListener('touchstart', () => { if (!touchMode) setTouchMode(true); }, { capture: true, passive: true });
 addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && touchMode && !IS_PHONE) setTouchMode(false); }, true);
 
-function setPlaying(on) {
+function setPlaying(on, screen) {
   Player.locked = on;
-  overlay.classList.toggle('hide', on);
   document.body.classList.toggle('playing', on);
-  if (on) started = true;
-  setTouchMode(touchMode);
-  if (!on) { Touch.release(); Save.write(); }
+  if (on) { started = true; overlay.classList.add('hide'); return; }
+  Touch.release(); Inventory.toggleBag(false); Save.write();
+  if (document.pointerLockElement) document.exitPointerLock();
+  Menu.show(screen || 'scrPause');
+}
+function play() {
+  if (Save.locked()) { setPlaying(false, 'scrLock'); showLock(); return; }
+  begin();
 }
 function begin() {
-  if (Player.locked || Save.locked()) return;
+  if (Player.locked || GAME.dead || Vitals.dead) return;
   GameAudio.start();   // browsers only allow sound after a click or tap
   if (!touchMode) {
     // computers: capture the mouse; if the browser refuses, play with touch-style controls instead
+    lockFrom = 'begin';
     try {
       const r = renderer.domElement.requestPointerLock();
-      if (r && r.catch) r.catch(() => { setTouchMode(true); setPlaying(true); });
-    } catch (e) { setTouchMode(true); setPlaying(true); }
+      if (r && r.catch) r.catch(lockFailed);
+    } catch (e) { lockFailed(); }
     return;
   }
   const el = document.documentElement;
@@ -3274,92 +4026,126 @@ function begin() {
   } catch (e) {}
   setPlaying(true);
 }
-overlay.addEventListener('click', begin);
-overlay.addEventListener('touchend', e => { e.preventDefault(); setTouchMode(true); begin(); }, { passive: false });
-document.addEventListener('pointerlockerror', () => { setTouchMode(true); setPlaying(true); });
-document.addEventListener('pointerlockchange', () => { if (!touchMode) setPlaying(document.pointerLockElement === renderer.domElement); });
-document.getElementById('pauseBtn').addEventListener('touchstart', e => { e.preventDefault(); setPlaying(false); }, { passive: false });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { Save.write(); if (touchMode) setPlaying(false); } });
+function lockFailed() {
+  if (lockFrom === 'begin') { if (!Player.locked) { setTouchMode(true); setPlaying(true); } }
+  else if (Player.locked) setPlaying(false);
+}
+Inventory.relock = () => { lockFrom = 'bag'; try { const r = renderer.domElement.requestPointerLock(); if (r && r.catch) r.catch(lockFailed); } catch (e) { lockFailed(); } };
+document.addEventListener('pointerlockerror', lockFailed);
+document.addEventListener('pointerlockchange', () => {
+  if (touchMode) return;
+  if (document.pointerLockElement === renderer.domElement) { if (!Player.locked) setPlaying(true); }
+  else if (Player.locked && !Inventory.isOpen) setPlaying(false);
+});
+$('pauseBtn').addEventListener('touchstart', e => { e.preventDefault(); setPlaying(false); }, { passive: false });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { Save.write(); if (touchMode && Player.locked) setPlaying(false); } });
+// Android's back button: pause the game, or step back through the menus (on the main menu it closes the app)
+window.androidBack = () => {
+  if (!$('confirm').classList.contains('hide')) { $('confirm').classList.add('hide'); return true; }
+  if (Inventory.isOpen) { Inventory.toggleBag(false); return true; }
+  if (Player.locked) { setPlaying(false); return true; }
+  const b = overlay.querySelector('.scr:not(.hide) [data-back]');
+  if (b) { b.click(); return true; }
+  if (Menu.cur === 'scrPause' || Menu.cur === 'scrEnter') { Menu.show('scrMain'); return true; }
+  return false;
+};
 
-// ---- the forbidden sun locks you out of your world for 24 real minutes
-const subEl = overlay.querySelector('.sub');
+// creative: fly
+function toggleFly(on) {
+  Player.p.fly = on === undefined ? !Player.p.fly : on;
+  $('downBtn').classList.toggle('hide', !Player.p.fly);
+  $('flyBtn').classList.toggle('on', Player.p.fly);
+}
+$('flyBtn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleFly(); }, { passive: false });
+
+// ---------------- dying ----------------
+Events.on('death', () => {
+  const hard = GAME.mode === 'hardcore', days = Weather.exportState().days;
+  $('deadWhy').textContent = Vitals.cause + (hard ? ' This world is gone.' : '');
+  $('deadDays').textContent = `You lived ${days + 1} day${days ? 's' : ''}.`;
+  $('dRespawn').classList.toggle('hide', hard);
+  if (hard && GAME.id) {
+    // one life: the world is deleted; only its name stays in the list, like a grave
+    Worlds.update(GAME.id, { dead: true, day: days, played: Date.now() }); Worlds.wipe(GAME.id); Worlds.setCurrent(null);
+    Object.assign(GAME, { dead: true, temp: true });
+  }
+  setTimeout(() => setPlaying(false, 'scrDead'), 900);   // fall over first
+});
+function respawn() {
+  Vitals.respawn(); Player.spawn(); toggleFly(false); unstuckDone = false; Save.write();
+}
+$('dRespawn').addEventListener('click', () => { respawn(); play(); });
+$('dMenu').addEventListener('click', () => { if (!GAME.dead) respawn(); Menu.show('scrMain'); });
+
+// ---------------- the forbidden sun locks you out of this world for 24 real minutes ----------------
 let lockTimer = 0;
 function showLock() {
-  overlay.classList.add('locked');
-  subEl.textContent = 'You looked at the sun.';
+  Menu.show('scrLock');
+  $('lockMenu').classList.add('hide'); setTimeout(() => $('lockMenu').classList.remove('hide'), 2500);
   clearInterval(lockTimer);
   const tick = () => {
     const left = Save.lockUntil - Date.now();
     if (left <= 0) {
       clearInterval(lockTimer);
-      overlay.classList.remove('locked'); subEl.textContent = 'Everything is fine.';
       Sky.time = 0.3;                    // the morning is over; as if nothing happened
-      setTouchMode(touchMode);
+      if (Menu.cur === 'scrLock') Menu.show('scrMain');
       return;
     }
-    const m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
-    goEl.textContent = `Your world is closed. Come back in ${m}:${String(sec).padStart(2, '0')}`;
+    $('lockText').textContent = `Your world is closed. Come back in ${fmtLeft(left)}`;
   };
   tick(); lockTimer = setInterval(tick, 1000);
 }
+$('lockMenu').addEventListener('click', () => { clearInterval(lockTimer); Menu.show('scrMain'); });
 Events.on('kick', () => {
   Save.lockUntil = Date.now() + 24 * 60 * 1000;
-  if (document.pointerLockElement) document.exitPointerLock();
-  setPlaying(false);
+  setPlaying(false, 'scrLock');
   showLock();
 });
-if (Save.locked()) showLock();
-// music / sound / credits buttons on the title screen (they must not start the game)
-{
-  const credits = document.getElementById('credits'), mBtn = document.getElementById('optMusic'), sBtn = document.getElementById('optSound');
-  const label = () => { mBtn.textContent = 'Music: ' + (GameAudio.opts.music ? 'on' : 'off'); sBtn.textContent = 'Sound: ' + (GameAudio.opts.sound ? 'on' : 'off'); };
-  const act = { optMusic: () => GameAudio.setOpt('music', !GameAudio.opts.music), optSound: () => GameAudio.setOpt('sound', !GameAudio.opts.sound),
-                optCredits: () => credits.classList.remove('hide') };
-  for (const id in act) {
-    const el = document.getElementById(id);
-    el.addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); act[id](); label(); });
-    el.addEventListener('click', e => { e.stopPropagation(); act[id](); label(); });
-  }
-  const close = e => { e.stopPropagation(); e.preventDefault(); credits.classList.add('hide'); };
-  credits.addEventListener('touchend', close); credits.addEventListener('click', close);
-  label();
-}
-// hidden developer door: hold the title for 2.5 s to open the debug menu (phones have no F3 key on this screen)
-{
-  const h1 = overlay.querySelector('h1'); let pressT = 0;
-  const down = () => { clearTimeout(pressT); pressT = setTimeout(() => document.getElementById('debug').classList.toggle('hide'), 2500); };
-  const up = () => clearTimeout(pressT);
-  h1.addEventListener('touchstart', down, { passive: true }); h1.addEventListener('touchend', up);
-  h1.addEventListener('mousedown', down); h1.addEventListener('mouseup', up);
-}
+
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 
-const clock = new THREE.Clock();
-let frameErrors = 0;
+// first screen: straight into the world you picked, or the main menu
+if (enterAfterLoad) { if (Save.locked()) showLock(); else Menu.show('scrEnter'); }
+else Menu.show('scrMain');
+
+// ---------------- the game loop ----------------
+const clock = new THREE.Clock(), fpsEl = $('fps');
+let frameErrors = 0, unstuckDone = false, saveT = 0, menuSpin = 0, roll = 0, fpsT = 0;
 function frame() {
   requestAnimationFrame(frame);
   try { step(); } catch (e) { if (frameErrors++ < 3) showError('Error: ' + (e && e.message || e)); console.error(e); }
 }
-let unstuckDone = false, saveT = 0;
+// the ground right around you exists (so you can't fall through a world that isn't there yet)
+function groundReady(p) {
+  const cx = Math.floor(p.x / CFG.CHUNK), cz = Math.floor(p.z / CFG.CHUNK);
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!World.chunks.has((cx + dx) + ',' + (cz + dz))) return false;
+  return true;
+}
 function step() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const gdt = Player.locked ? dt : 0;          // the world holds still while paused
   const p = Player.p;
   World.update(p.x, p.z);
   const waiting = World.pendingNear(p.x, p.z);
-  loadingEl.textContent = waiting ? 'Growing the world…' : '';
+  Menu.tick(!!waiting);
   if (!waiting && !unstuckDone) { unstuckDone = true; Player.unstuck(); }
-  if (!waiting || Player.locked) Player.update(dt);
+  if (!waiting || (Player.locked && groundReady(p))) Player.update(dt);
   else { camera.position.set(p.x, p.y + p.eye, p.z); camera.rotation.set(p.pitch, p.yaw, 0); }
+  // behind the main menu the view slowly turns; when you die, you fall over
+  if (!Player.locked && Menu.cur === 'scrMain') { menuSpin += dt * 0.025; camera.rotation.y = p.yaw + menuSpin; }
+  if (Vitals.dead) { roll = Math.min(1.25, roll + dt * 2.2); camera.rotation.z = roll; camera.position.y -= roll * 1.1; } else roll = 0;
   Sky.update(dt, Player.locked ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);
+  Inventory.update(gdt);
+  Vitals.update(gdt);
   GameAudio.update(gdt);
   Director.update(gdt);
   Debug.update(dt);
+  fpsT += dt; if (fpsT > 0.5) { fpsT = 0; if (Settings.v.fps) fpsEl.textContent = Debug.fps + ' fps'; }
   Post.render(Weather.post.amt, Weather.post.black, clock.elapsedTime);
   saveT += gdt; if (saveT > 10) { saveT = 0; Save.write(); }
 }

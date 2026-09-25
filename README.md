@@ -1,4 +1,6 @@
-# BlockCraft: Stillness
+# Stainless Craft
+
+*the fear of unknown*
 
 A calm, slightly uncanny block-building game for Android phones (it also plays in a computer browser).
 The world feels familiar and almost normal, until you start noticing small things that are wrong.
@@ -10,10 +12,9 @@ code, so there are no image files. The sounds are real recordings under free lic
 
 **Phase 1: the world**
 - Endless world, generated as you walk: meadows, hills, beaches, lakes and birch forests
-- Break and place 8 kinds of blocks
+- Break and place 9 kinds of blocks
 - 10-minute day and night cycle with sun, moon, stars and matching light and fog
 - Touch controls on phones; keyboard and mouse on a computer
-- Your world saves by itself (every 10 seconds and when you pause)
 
 **Phase 2: the weather and the Sky Mind**
 - Weather: clear, overcast, fog, rain, thunderstorms with lightning, and snow on high ground. Blocky clouds,
@@ -61,7 +62,7 @@ code, so there are no image files. The sounds are real recordings under free lic
   sheep; spotted pigs; brown hens; and no two exactly the same size
 - Hold on an animal to hit it; it drops meat (and leather or feathers). Tap a sheep to shear it (the wool
   grows back the next day) and tap a cow for a bucket of milk (once a day). Chickens lay eggs
-- Items pop out and fly into your **bag** (bag button on phones, E on a keyboard). Blocks stay unlimited
+- Items pop out and fly into your **bag** (bag button on phones, E on a keyboard)
 - Real animal sounds that come from the animal's direction. One that has lost its herd calls more, and
   sometimes another one answers
 - The animals are not quite right. Sometimes they all stop and stare at you, turning one after another,
@@ -70,12 +71,31 @@ code, so there are no image files. The sounds are real recordings under free lic
   far away. Some mornings a whole field is empty. When the world goes still, so do they
 - Somewhere far from home, very rarely, there is a deer. It brings bad luck, and you can't kill it
 
+**Phase 5: menus, game modes and worlds**
+- A new main menu: **Play**, **Worlds**, **Settings** and **Credits**, with the world slowly turning behind
+  it. A pause menu (Resume, Settings, Save & quit), and Android's back button pauses the game or steps
+  back through the menus
+- As many worlds as you like, each saved on its own. Make a world with a name, a game mode and a seed (the
+  same seed always grows the same world). The world from earlier versions moves in as **My World**
+- **Creative:** unlimited blocks, fly (the fly button, or Space twice on a keyboard), nothing can hurt you
+- **Survival:** health, hunger and air. Blocks take time to mine by hand (cracks show how far along you
+  are) and go into your bag; you can only place what you have. You get hurt by falling, drowning and
+  starving; eat meat or drink milk from the bag (raw chicken is a gamble). A full stomach heals you. When
+  you die, everything you carry falls where you stood and you come back at the world's spawn. The bag can
+  also make planks from logs and glass from sand
+- **Hardcore:** survival with one life, a little hungrier and a little unluckier. When you die, the world
+  is deleted; only its name stays in the list, like a grave
+- The forbidden sun now closes only the world you looked at it in
+- **Settings:** music and sound volume, render distance, graphics (fast / normal / sharp), field of view,
+  look speed, left-handed controls, an FPS counter and the debug button
+
 ## Coming next
 
-5. **The uncanny director:** a hidden unease that slowly grows, and the surprise after the house's
-   betrayal
-6. **Polish**
+6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update
+   notice in the game
 7. **The black storm:** what happens if you ever kill the deer
+- Later: **the uncanny director**, a hidden unease that slowly grows, and the surprise after the house's
+  betrayal
 
 ## Controls
 
@@ -84,28 +104,32 @@ code, so there are no image files. The sounds are real recordings under free lic
 | Drag on the left side | Walk (push the stick all the way forward to run) |
 | Drag on the right side | Look around |
 | Tap | Place the selected block, shear a sheep, milk a cow |
-| Tap and hold | Break blocks, hit animals |
+| Tap and hold | Mine blocks, hit animals |
 | ⬆ button | Jump / swim up / fly up |
+| Fly button (creative) | Fly on and off |
 | ⬇ button (while flying) | Fly down |
-| Hotbar | Pick a block |
-| II button | Pause |
-| Bag button | Your bag (items from animals) |
+| Hotbar | Pick a block (in survival it shows how many you have) |
+| II button or Back | Pause |
+| Bag button | Your bag: items, blocks (survival), eat, make planks and glass |
 | F3 button | Debug menu (weather, events, time of day, animals and their moods) |
 
 On a computer: WASD to walk, mouse to look (click to capture the mouse), Space to jump, Shift to run,
-left click to break or hit, right click to place (or shear/milk), E for the bag, 1–8 or the mouse wheel to pick a block, F3 for the debug menu.
+left click to mine or hit, right click to place (or shear/milk), E for the bag, 1–9 or the mouse wheel to pick a block, Space twice to fly (creative), Esc to pause, F3 for the debug menu.
 
 ## Getting it on your phone
 
 Every push that changes the game runs the **Build Android APK** GitHub Actions workflow. When it
-finishes, the APK is on this repository's **Releases** page under "BlockCraft APK (latest build)":
+finishes, the APK is on this repository's **Releases** page under "Stainless Craft APK (latest build)":
 
-https://github.com/mrguymrguy647-del/Test-one-two/releases/download/apk-latest/BlockCraft.apk
+https://github.com/mrguymrguy647-del/Test-one-two/releases/download/apk-latest/StainlessCraft.apk
+
+(The old link, `.../apk-latest/BlockCraft.apk`, still gives you the same file.)
 
 Download it on your phone and open it to install (Android asks you to allow installs from your browser
-or file manager the first time). The app is called **Stillness**.
+or file manager the first time). The app is called **Stainless Craft**.
 
 Each build is signed with a new debug key, so uninstall the old app before installing a newer build.
+**Uninstalling deletes your worlds** (fixing this is planned for Phase 6).
 
 ## Building the APK yourself
 
@@ -129,4 +153,5 @@ android/            Android app that shows the game full screen in a WebView
 ```
 
 Inside `web/index.html` the code is split into sections: CONFIG, UTIL (noise), WORLD, SKY & TIME,
-PLAYER, EVENTS, TOUCH CONTROLS, WEATHER, POST, AUDIO, ANIMALS, DIRECTOR, DEBUG, SAVE and MAIN.
+SETTINGS, PLAYER, EVENTS, TOUCH CONTROLS, WEATHER, POST, AUDIO, INVENTORY, ANIMALS, SURVIVAL, DIRECTOR,
+DEBUG, SAVE (the world list and each world's save) and MAIN (menus and the game loop).
