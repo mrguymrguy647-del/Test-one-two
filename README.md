@@ -78,16 +78,31 @@ code, so there are no image files. The sounds are real recordings under free lic
 - As many worlds as you like, each saved on its own. Make a world with a name, a game mode and a seed (the
   same seed always grows the same world). The world from earlier versions moves in as **My World**
 - **Creative:** unlimited blocks, fly (the fly button, or Space twice on a keyboard), nothing can hurt you
-- **Survival:** health, hunger and air. Blocks take time to mine by hand (cracks show how far along you
-  are) and go into your bag; you can only place what you have. You get hurt by falling, drowning and
-  starving; eat meat or drink milk from the bag (raw chicken is a gamble). A full stomach heals you. When
-  you die, everything you carry falls where you stood and you come back at the world's spawn. The bag can
-  also make planks from logs and glass from sand
+- **Survival:** health, hunger and air. Blocks take time to mine (cracks show how far along you are) and
+  go into your inventory; you can only place what you have. You get hurt by falling, drowning and
+  starving; eat food from the hotbar (raw chicken is a gamble). A full stomach heals you. When you die,
+  everything you carry falls where you stood and you come back at the world's spawn
 - **Hardcore:** survival with one life, a little hungrier and a little unluckier. When you die, the world
   is deleted; only its name stays in the list, like a grave
 - The forbidden sun now closes only the world you looked at it in
 - **Settings:** music and sound volume, render distance, graphics (fast / normal / sharp), field of view,
   look speed, left-handed controls, an FPS counter and the debug button
+
+**Phase 5.1: inventory, crafting and the furnace**
+- A real inventory: 27 slots plus the 9-slot hotbar, stacks of 64. Tap a slot to pick things up or put
+  them down; hold to split a stack or put down just one (right-click on a computer). Tap outside the
+  window to throw what you're holding
+- Crafting: a 2×2 grid in your inventory and a 3×3 grid at the **crafting table**. The **Recipes** list
+  shows every recipe and fills the grid for you when you tap one
+- Recipes: planks, sticks, crafting table, furnace, and wooden and stone pickaxes, axes, shovels and swords
+- Tools mine much faster (the right tool for the block: pickaxe for stone, axe for wood, shovel for dirt,
+  sand and gravel). Stone and furnaces drop nothing without a pickaxe. Swords hit harder. Tools wear out
+  and break
+- The **furnace** smelts sand into glass and cooks meat (cooked meat fills much more hunger), burning logs,
+  planks or sticks. It keeps going while you do other things, glows and crackles
+- Sheep drop wool blocks you can build with. Eat by picking food in the hotbar and tapping
+- Creative: every block and item in a palette
+- Menu buttons click; **Auto jump** can be switched off in Settings
 
 ## Coming next
 
@@ -103,18 +118,18 @@ code, so there are no image files. The sounds are real recordings under free lic
 | --- | --- |
 | Drag on the left side | Walk (push the stick all the way forward to run) |
 | Drag on the right side | Look around |
-| Tap | Place the selected block, shear a sheep, milk a cow |
+| Tap | Place the selected block, eat, open a crafting table or furnace, shear a sheep, milk a cow |
 | Tap and hold | Mine blocks, hit animals |
 | ⬆ button | Jump / swim up / fly up |
 | Fly button (creative) | Fly on and off |
 | ⬇ button (while flying) | Fly down |
 | Hotbar | Pick a block (in survival it shows how many you have) |
 | II button or Back | Pause |
-| Bag button | Your bag: items, blocks (survival), eat, make planks and glass |
+| Bag button | Inventory and crafting |
 | F3 button | Debug menu (weather, events, time of day, animals and their moods) |
 
 On a computer: WASD to walk, mouse to look (click to capture the mouse), Space to jump, Shift to run,
-left click to mine or hit, right click to place (or shear/milk), E for the bag, 1–9 or the mouse wheel to pick a block, Space twice to fly (creative), Esc to pause, F3 for the debug menu.
+left click to mine or hit, right click to place, eat or use (tables, furnaces, sheep, cows), E for the inventory, 1–9 or the mouse wheel to pick a block, Space twice to fly (creative), Esc to pause, F3 for the debug menu.
 
 ## Getting it on your phone
 
