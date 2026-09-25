@@ -212,6 +212,11 @@
     <button data-spawn="cow">Cow</button><button data-spawn="sheep">Sheep</button><button data-spawn="pig">Pig</button><button data-spawn="chicken">Chicken</button>
     <button id="dbgDeer">The deer</button><button id="dbgItems">Give items</button>
   </div>
+  <h3>Nearest animal</h3>
+  <div class="btns">
+    <button data-mood="startle">Startle</button><button data-mood="curious">Come here</button><button data-mood="zoomies">Zoomies</button>
+    <button data-mood="graze">Graze</button><button data-mood="rest">Lie down</button><button data-mood="sleep">Sleep</button>
+  </div>
   <h3>Creepy animals</h3>
   <div class="btns">
     <button data-creep="stare">The stare</button><button data-creep="freeze">Still in the rain</button><button data-creep="extra">One more</button>
@@ -346,10 +351,11 @@ const World = (() => {
   };
 
   // ---- shader patches: wind-swayed leaves, rain ripples on water, and "focus" fog that can gather in one direction
-  const U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2() }, uFocusDir: { value: new THREE.Vector3(0, 0, -1) }, uFocusAmt: { value: 0 }, uRain: { value: 0 } };
+  // (uCamPos: three.js doesn't give Lambert materials the camera position, so it is passed in here)
+  const U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2() }, uFocusDir: { value: new THREE.Vector3(0, 0, -1) }, uFocusAmt: { value: 0 }, uRain: { value: 0 }, uCamPos: { value: new THREE.Vector3() } };
   const FOG_FRAG = `#ifdef USE_FOG
     float fogFactor = smoothstep(fogNear, fogFar, fogDepth);
-    float stFocus = max(dot(normalize(vStW - cameraPosition), uFocusDir), 0.0);
+    float stFocus = max(dot(normalize(vStW - uCamPos), uFocusDir), 0.0);
     fogFactor = clamp(fogFactor + uFocusAmt * smoothstep(0.6, 0.97, stFocus) * smoothstep(2.0, 14.0, fogDepth), 0.0, 1.0);
     gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
   #endif`;
@@ -376,12 +382,25 @@ const World = (() => {
         .replace('#include <begin_vertex>', '#include <begin_vertex>' + (kind === 'cutout' ? SWAY : ''))
         .replace('#include <fog_vertex>', '#include <fog_vertex>\nvStW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvStUp = normal.y;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform float uTime;\nuniform float uRain;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform vec3 uCamPos;\nuniform float uTime;\nuniform float uRain;')
         .replace('#include <fog_fragment>', FOG_FRAG)
         .replace('#include <map_fragment>', '#include <map_fragment>' + (kind === 'water' ? RIPPLE : ''));
     };
   }
   patch(materials.solid, 'solid'); patch(materials.cutout, 'cutout'); patch(materials.water, 'water');
+  // other models (the animals) sink into the same fog, including the fog that gathers in one direction
+  function patchFog(mat) {
+    mat.customProgramCacheKey = () => 'stillness-model';
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.uFocusDir = U.uFocusDir; sh.uniforms.uFocusAmt = U.uFocusAmt; sh.uniforms.uCamPos = U.uCamPos;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;')
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\nvStW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform vec3 uCamPos;')
+        .replace('#include <fog_fragment>', FOG_FRAG);
+    };
+  }
 
   // ---- terrain
   let seed = 1, n1, n2, n3, n4;
@@ -625,7 +644,7 @@ const World = (() => {
     editsByChunk.clear();
     for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); editsByChunk.set(k, m); }
   }
-  return { B, INFO, SOLID, OPAQUE, TILE, NT, atlasCanvas, materials, group, chunks, U, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
+  return { B, INFO, SOLID, OPAQUE, TILE, NT, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
 })();
 
 /* =====================================================================
@@ -715,7 +734,7 @@ const Sky = (() => {
   const tmp = { top: new THREE.Color(), horizon: new THREE.Color(), bottom: new THREE.Color() };
   const stormCol = new THREE.Color(), mistCol = new THREE.Color(), sickCol = C(0x9fae86), flashCol = C(0xdfe7ff), white = C(0xffffff);
   let time = 0.06;            // 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight
-  const state = { day: 1, sunDir: new THREE.Vector3(), fogColor: new THREE.Color() };
+  const state = { day: 1, ambient: 0.62, sunDir: new THREE.Vector3(), fogColor: new THREE.Color() };
 
   function update(dt, speed) {
     time = (time + dt * speed / CFG.DAY_LENGTH) % 1;
@@ -777,6 +796,7 @@ const Sky = (() => {
     const nightAmbient = lerp(0.04, 0.28, F.moonLife) + F.falseDawn * 0.12;
     hemi.intensity = lerp(nightAmbient, 0.62 * (0.6 + 0.4 * F.light), day) + F.flash * 0.9;
     hemi.color.copy(tmp.top).lerp(white, 0.5);
+    state.ambient = hemi.intensity;       // the animals are filled with this much light from inside
   }
   return { update, state, get time() { return time; }, set time(v) { time = v; } };
 })();
@@ -1377,7 +1397,7 @@ const Weather = (() => {
       U.uFocusDir.value.set(home.x - p.x, 0, home.z - p.z).normalize(); focusTarget = 0.75;
     }
     focusAmt += (focusTarget - focusAmt) * Math.min(1, dt / 4);
-    U.uFocusAmt.value = focusAmt;
+    U.uFocusAmt.value = focusAmt; U.uCamPos.value.copy(camera.position);
 
     // wind
     windAngle += dt * 0.01;
@@ -1973,159 +1993,625 @@ const Animals = (() => {
   }
 
   // ---------------- models: boxes with textures painted in code ----------------
-  function tex(seed, base, vary, paint) {
-    const cv = document.createElement('canvas'); cv.width = cv.height = 16;
-    const x = cv.getContext('2d'), r = mulberry32(seed);
-    for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) {
-      const k = 1 + (r() - 0.5) * vary;
-      x.fillStyle = `rgb(${clamp(base[0] * k, 0, 255) | 0},${clamp(base[1] * k, 0, 255) | 0},${clamp(base[2] * k, 0, 255) | 0})`; x.fillRect(i, j, 1, 1);
-    }
-    if (paint) paint(x, r);
-    const t = new THREE.CanvasTexture(cv); t.magFilter = t.minFilter = THREE.NearestFilter;
-    return new THREE.MeshLambertMaterial({ map: t });
+  // Every part keeps the same pixel size (DENS pixels per metre), so nothing looks stretched; a face is one small
+  // picture on the front of the head. Every material has a red twin for when the animal is hurt, and is filled
+  // with daylight from inside (lightUp): side faces only get the sky's light, and a white sheep should still look
+  // white with the sun straight overhead.
+  const DENS = 20, HURT = new THREE.Color(1, 0.35, 0.35), allMats = [];
+  function look(o, hurt) {
+    const m = new THREE.MeshLambertMaterial(o), c = new THREE.Color(o.color === undefined ? 0xffffff : o.color);
+    if (m.map) m.emissiveMap = m.map;
+    if (hurt) { m.color.multiply(HURT); c.multiply(HURT); } else m.userData.hurt = look(o, true);
+    m.userData.fill = c;
+    World.patchFog(m); allMats.push(m);
+    return m;
   }
+  function lightUp(k) { for (const m of allMats) m.emissive.copy(m.userData.fill).multiplyScalar(k); }
+  function paint(seed, size, base, vary, fn) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = size;
+    const x = cv.getContext('2d'), r = mulberry32(seed), img = x.createImageData(size, size), d = img.data;
+    for (let p = 0; p < size * size; p++) {
+      const k = 1 + (r() - 0.5) * vary;
+      d[p * 4] = clamp(base[0] * k, 0, 255); d[p * 4 + 1] = clamp(base[1] * k, 0, 255); d[p * 4 + 2] = clamp(base[2] * k, 0, 255); d[p * 4 + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    if (fn) fn(x, r);
+    const t = new THREE.CanvasTexture(cv); t.magFilter = t.minFilter = THREE.NearestFilter; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
+  const coat = (seed, base, vary, fn) => look({ map: paint(seed, 32, base, vary, fn) });   // tiles over a whole part
+  const pic = (seed, base, vary, fn) => look({ map: paint(seed, 16, base, vary, fn) });    // one picture on one face
+  const plain = c => look({ color: c });
   const px = (x, c, pts) => { x.fillStyle = c; for (const [i, j, w, h] of pts) x.fillRect(i, j, w || 1, h || 1); };
-  const plain = c => new THREE.MeshLambertMaterial({ color: c });
-  const spots = (x, r, c) => { x.fillStyle = c; for (let n = 0; n < 5; n++) { const i = r() * 14 | 0, j = r() * 14 | 0; x.fillRect(i, j, 3 + (r() * 4 | 0), 2 + (r() * 3 | 0)); } };
-  const eyes = (c, y) => x => px(x, c, [[3, y, 2, 2], [11, y, 2, 2]]);
-  const M = {
-    cow: {
-      body: tex(11, [92, 60, 38], 0.25, (x, r) => spots(x, r, '#e9e3d6')), leg: tex(12, [80, 52, 33], 0.2),
-      head: tex(13, [92, 60, 38], 0.2), face: tex(14, [92, 60, 38], 0.2, x => { px(x, '#e9e3d6', [[5, 2, 6, 6]]); eyes('#101010', 5)(x); px(x, '#d9a79a', [[4, 11, 8, 5]]); px(x, '#6b4a42', [[5, 13], [10, 13]]); }),
-      horn: plain(0xd8d2c2), muzzle: plain(0xd9a79a),
-    },
-    pig: {
-      body: tex(21, [236, 160, 165], 0.15), leg: tex(22, [220, 140, 146], 0.15), head: tex(23, [236, 160, 165], 0.15),
-      face: tex(24, [236, 160, 165], 0.12, eyes('#1a1010', 5)), snout: tex(25, [214, 120, 128], 0.1, x => px(x, '#7a3b41', [[4, 6, 2, 4], [10, 6, 2, 4]])),
-    },
-    sheep: {
-      wool: tex(31, [232, 228, 218], 0.18, (x, r) => { x.fillStyle = '#c9c4b8'; for (let n = 0; n < 22; n++) x.fillRect(r() * 16 | 0, r() * 16 | 0, 1, 1); }),
-      skin: tex(32, [216, 196, 170], 0.15), leg: tex(33, [206, 186, 160], 0.15), head: tex(34, [214, 196, 172], 0.15),
-      face: tex(35, [214, 196, 172], 0.12, x => { eyes('#15110d', 6)(x); px(x, '#e6b1a6', [[6, 11, 4, 3]]); }),
-    },
-    chicken: {
-      body: tex(41, [242, 240, 234], 0.1), head: tex(42, [242, 240, 234], 0.1), face: tex(43, [242, 240, 234], 0.1, eyes('#111', 5)),
-      beak: plain(0xe39a2f), wattle: plain(0xc0332b), leg: plain(0xd98e2c),
-    },
-    deer: {
-      body: tex(51, [168, 160, 148], 0.12), leg: tex(52, [150, 143, 132], 0.12), head: tex(53, [170, 162, 150], 0.1),
-      face: tex(54, [170, 162, 150], 0.08, x => px(x, '#000', [[2, 5, 3, 3], [11, 5, 3, 3]])), antler: plain(0xd6cfbf),
-    },
+  const blots = (x, r, c, n, big) => {     // patches that wrap round the edges, so a coat tiles without a seam
+    x.fillStyle = c;
+    for (let k = 0; k < n; k++) {
+      const i = r() * 32 | 0, j = r() * 32 | 0, w = 3 + (r() * big | 0), h = 2 + (r() * big * 0.7 | 0);
+      for (const ox of [0, -32]) for (const oy of [0, -32]) x.fillRect(i + ox, j + oy, w, h);
+    }
   };
-  // a red "hurt" copy of every material, swapped in for a moment when an animal is hit
-  const hurtMat = new Map();
-  for (const k in M) for (const n in M[k]) { const h = M[k][n].clone(); h.color = new THREE.Color(1, 0.35, 0.35); hurtMat.set(M[k][n], h); }
-
-  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-  function part(parent, geo, mats, x, y, z) { const m = new THREE.Mesh(geo, mats); m.position.set(x, y, z); parent.add(m); return m; }
+  const eyes = (x, open, c, lid, y) => { if (open) px(x, c, [[3, y, 2, 2], [11, y, 2, 2]]); else px(x, lid, [[3, y + 1, 2, 1], [11, y + 1, 2, 1]]); };
+  // a face is painted twice: eyes open, and shut (blinking, sleeping)
+  const faces = (seed, base, vary, draw) => [pic(seed, base, vary, x => draw(x, true)), pic(seed, base, vary, x => draw(x, false))];
+  // each kind comes in a few natural looks: spotted cows and a rare brown one, cream, grey and (rarely) black
+  // sheep, spotted pigs, brown hens
+  const VARIANTS = { cow: [0.32, 0.32, 0.28, 0.08], sheep: [0.74, 0.17, 0.06, 0.03], pig: [0.84, 0.16], chicken: [0.68, 0.32], deer: [1] };
+  const LOOKS = { cow: ['', '', '', 'brown'], sheep: ['', 'cream', 'grey', 'black'], pig: ['', 'spotted'], chicken: ['', 'brown'], deer: [''] };
+  function variantOf(kind, r) { const w = VARIANTS[kind]; let x = r(); for (let i = 0; i < w.length; i++) if ((x -= w[i]) < 0) return i; return 0; }
+  const kits = {};
+  function kit(kind, v) {
+    const id = kind + v;
+    if (kits[id]) return kits[id];
+    let s;
+    if (kind === 'cow') {
+      const hide = v === 3 ? [150, 100, 62] : [92, 60, 38], sd = 11 + v * 10;
+      s = {
+        body: coat(sd, hide, 0.24, v === 3 ? null : (x, r) => blots(x, r, '#e9e3d6', 5 + v * 2, 6)),
+        leg: coat(sd + 1, hide.map(c => c * 0.9), 0.2), head: coat(sd + 2, hide, 0.2),
+        face: faces(sd + 3, hide, 0.2, (x, open) => {
+          if (v !== 3) px(x, '#e9e3d6', [[5, 2, 6, 6]]);
+          eyes(x, open, '#101010', v === 3 ? '#6e4527' : '#3b2618', 5); px(x, '#d9a79a', [[4, 11, 8, 5]]); px(x, '#6b4a42', [[5, 13], [10, 13]]);
+        }),
+        horn: plain(0xd8d2c2), muzzle: plain(0xd9a79a), udder: plain(0xe3aca4), tuft: plain(v === 3 ? 0x5e3d24 : 0x2b1d15),
+      };
+    } else if (kind === 'pig') {
+      const pink = [236, 160, 165], sd = 21 + v * 10;
+      s = {
+        body: coat(sd, pink, 0.15, v === 1 ? (x, r) => blots(x, r, '#8a5a55', 8, 4) : null), leg: coat(sd + 1, [220, 140, 146], 0.15), head: coat(sd + 2, pink, 0.15),
+        face: faces(sd + 3, pink, 0.12, (x, open) => eyes(x, open, '#1a1010', '#b86f76', 5)),
+        snout: pic(sd + 4, [214, 120, 128], 0.1, x => px(x, '#7a3b41', [[4, 6, 2, 4], [10, 6, 2, 4]])), snoutSide: plain(0xd6787f),
+      };
+    } else if (kind === 'sheep') {
+      const wool = [[232, 228, 218], [228, 214, 184], [148, 144, 138], [50, 46, 44]][v], fleck = ['#c9c4b8', '#c7b48e', '#7e7a74', '#2c2826'][v], sd = 31 + v * 10;
+      s = {
+        wool: coat(sd, wool, 0.16, (x, r) => { x.fillStyle = fleck; for (let n = 0; n < 70; n++) x.fillRect(r() * 32 | 0, r() * 32 | 0, 1, 1); }),
+        skin: coat(sd + 1, [216, 196, 170], 0.15), leg: coat(sd + 2, [206, 186, 160], 0.15), head: coat(sd + 3, [214, 196, 172], 0.15),
+        face: faces(sd + 4, [214, 196, 172], 0.12, (x, open) => { eyes(x, open, '#15110d', '#a58d76', 6); px(x, '#e6b1a6', [[6, 11, 4, 3]]); }),
+      };
+    } else if (kind === 'chicken') {
+      const feather = v ? [178, 116, 66] : [242, 240, 234], sd = 41 + v * 10;
+      s = {
+        body: coat(sd, feather, 0.1, v ? (x, r) => blots(x, r, '#8c5632', 9, 3) : null), head: coat(sd + 1, feather, 0.1),
+        face: faces(sd + 2, feather, 0.1, (x, open) => eyes(x, open, '#111', v ? '#6e4222' : '#c3beb2', 5)),
+        beak: plain(0xe39a2f), wattle: plain(0xc0332b), leg: plain(0xd98e2c),
+      };
+    } else {                                                            // the deer never closes its eyes
+      const f = pic(54, [170, 162, 150], 0.08, x => px(x, '#000', [[2, 5, 3, 3], [11, 5, 3, 3]]));
+      s = { body: coat(51, [168, 160, 148], 0.12), leg: coat(52, [150, 143, 132], 0.12), head: coat(53, [170, 162, 150], 0.1), face: [f, f], antler: plain(0xd6cfbf) };
+    }
+    return kits[id] = s;
+  }
+  // a box whose texture keeps the same pixel size on every face (face number `decal` shows one whole picture
+  // instead). Each animal gets its own boxes with its own offsets into the coat, so no two cows have the same
+  // spots; they are thrown away with the animal.
+  function box(w, h, d, decal, r) {
+    const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv, size = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) {
+      if (f === decal) continue;
+      const ou = Math.floor(r() * 32) / 32, ov = Math.floor(r() * 32) / 32;
+      for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, ou + uv.getX(i) * size[f][0] * DENS / 32, ov + uv.getY(i) * size[f][1] * DENS / 32); }
+    }
+    return g;
+  }
   function pivot(parent, x, y, z) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; }
-  const headMats = s => [s.head, s.head, s.head, s.head, s.face, s.head];
   // model faces +z; feet at y = 0
-  const SPEC = {
-    cow: { w: 0.9, h: 1.45, hp: 4, speed: 1.3, legH: 0.7, len: 1.35, sound: 'cow1', drops: [['beef', 1, 3], ['leather', 0, 2]] },
-    sheep: { w: 0.85, h: 1.3, hp: 3, speed: 1.2, legH: 0.55, len: 1.1, sound: 'sheep1', drops: [['mutton', 1, 2], ['wool', 1, 1]] },
-    pig: { w: 0.8, h: 0.95, hp: 3, speed: 1.2, legH: 0.35, len: 1.1, sound: 'pig1', hurt: 'pig_hurt1', drops: [['pork', 1, 3]] },
-    chicken: { w: 0.45, h: 0.85, hp: 2, speed: 1.0, legH: 0.3, len: 0.5, sound: 'chicken', drops: [['chicken', 1, 1], ['feather', 0, 2]] },
-    deer: { w: 0.7, h: 2.4, hp: Infinity, speed: 0, legH: 1.05, len: 1.25, drops: [] },
-  };
-  function build(kind, sheared) {
-    const s = M[kind], g = new THREE.Group(), rig = pivot(g, 0, 0, 0);
-    const out = { group: g, rig, legs: [], head: null, coat: null, headY: 1 };
-    const legs = (w, h, xo, zo, mat) => { for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) { const p = pivot(rig, sx * xo, h, sz * zo); part(p, box(w, h, w), mat, 0, -h / 2, 0); out.legs.push(p); } };
+  function build(kind, v, r) {
+    const s = kit(kind, v), g = new THREE.Group(), rig = pivot(g, 0, 0, 0);
+    const m = { group: g, rig, legs: [], head: null, base: new THREE.Vector3(), coat: [], tail: null, ears: [], wings: [], meshes: [], headY: 1, bodyY: 1, hipZ: 0, legW: 0.2 };
+    // a part remembers its normal and hurt looks (a head also its looks with the eyes shut)
+    const add = (parent, w, h, d, mat, x, y, z, decal) => {
+      const o = new THREE.Mesh(box(w, h, d, decal, r), mat);
+      o.position.set(x, y, z); parent.add(o); m.meshes.push(o);
+      o.userData.looks = [mat, Array.isArray(mat) ? mat.map(q => q.userData.hurt) : mat.userData.hurt];
+      return o;
+    };
+    const legs = (w, h, xo, zo, mat) => {
+      m.legW = w; m.hipZ = zo;
+      for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) { const p = pivot(rig, sx * xo, h, sz * zo); add(p, w, h, w, mat, 0, -h / 2, 0); m.legs.push(p); }
+    };
+    const head = (w, h, d, x, y, z) => {
+      const H = s.head, set = f => [H, H, H, H, f, H], shut = set(s.face[1]);
+      add(m.head, w, h, d, set(s.face[0]), x, y, z, 4).userData.looks.push(shut, shut.map(q => q.userData.hurt));
+    };
+    const ear = (x, y, z, w, h, d, mat, ox, rx) => { const e = pivot(m.head, x, y, z); e.rotation.x = e.userData.rx = rx; add(e, w, h, d, mat, ox, 0, 0); m.ears.push(e); };
     if (kind === 'cow') {
       legs(0.26, 0.7, 0.27, 0.5, s.leg);
-      part(rig, box(0.9, 0.75, 1.35), s.body, 0, 1.07, 0);
-      const h = out.head = pivot(rig, 0, 1.25, 0.66); out.headY = 1.3;
-      part(h, box(0.56, 0.56, 0.46), headMats(s), 0, 0.08, 0.24);
-      part(h, box(0.36, 0.22, 0.08), s.muzzle, 0, -0.08, 0.5);
-      part(h, box(0.08, 0.16, 0.08), s.horn, -0.3, 0.38, 0.22); part(h, box(0.08, 0.16, 0.08), s.horn, 0.3, 0.38, 0.22);
+      add(rig, 0.9, 0.75, 1.35, s.body, 0, 1.07, 0); m.bodyY = 1.07;
+      add(rig, 0.3, 0.1, 0.28, s.udder, 0, 0.65, -0.3);
+      m.head = pivot(rig, 0, 1.25, 0.66); m.headY = 1.3;
+      add(m.head, 0.34, 0.36, 0.42, s.head, 0, 0, -0.16);                     // the neck: hidden in the body until the head goes down
+      head(0.56, 0.56, 0.46, 0, 0.08, 0.24);
+      add(m.head, 0.36, 0.22, 0.08, s.muzzle, 0, -0.08, 0.5);
+      add(m.head, 0.08, 0.16, 0.08, s.horn, -0.3, 0.38, 0.22); add(m.head, 0.08, 0.16, 0.08, s.horn, 0.3, 0.38, 0.22);
+      for (const sx of [-1, 1]) ear(sx * 0.28, 0.24, 0.16, 0.18, 0.08, 0.1, s.head, sx * 0.09, 0);
+      m.tail = pivot(rig, 0, 1.4, -0.66);
+      add(m.tail, 0.08, 0.62, 0.08, s.leg, 0, -0.31, -0.04); add(m.tail, 0.13, 0.15, 0.13, s.tuft, 0, -0.62, -0.04);
     } else if (kind === 'pig') {
       legs(0.24, 0.35, 0.22, 0.36, s.leg);
-      part(rig, box(0.76, 0.6, 1.1), s.body, 0, 0.65, 0);
-      const h = out.head = pivot(rig, 0, 0.72, 0.55); out.headY = 0.75;
-      part(h, box(0.56, 0.5, 0.46), headMats(s), 0, 0.03, 0.22);
-      part(h, box(0.3, 0.2, 0.08), s.snout, 0, -0.04, 0.48);
+      add(rig, 0.76, 0.6, 1.1, s.body, 0, 0.65, 0); m.bodyY = 0.65;
+      m.head = pivot(rig, 0, 0.72, 0.55); m.headY = 0.75;
+      head(0.56, 0.5, 0.46, 0, 0.03, 0.22);
+      const S = s.snoutSide; add(m.head, 0.3, 0.2, 0.08, [S, S, S, S, s.snout, S], 0, -0.04, 0.48, 4);
+      for (const sx of [-1, 1]) ear(sx * 0.19, 0.27, 0.14, 0.16, 0.14, 0.06, s.body, sx * 0.03, 0.55);
+      m.tail = pivot(rig, 0, 0.84, -0.55);
+      add(m.tail, 0.06, 0.06, 0.12, s.body, 0, 0, -0.06); add(m.tail, 0.06, 0.1, 0.06, s.body, 0, 0.05, -0.12);
     } else if (kind === 'sheep') {
       legs(0.2, 0.55, 0.22, 0.36, s.leg);
-      part(rig, box(0.66, 0.56, 1.0), s.skin, 0, 0.86, 0);
-      out.coat = part(rig, box(0.88, 0.78, 1.18), s.wool, 0, 0.9, 0); out.coat.visible = !sheared;
-      const h = out.head = pivot(rig, 0, 1.05, 0.56); out.headY = 1.1;
-      part(h, box(0.42, 0.44, 0.44), headMats(s), 0, 0.04, 0.2);
+      add(rig, 0.66, 0.62, 1.08, s.skin, 0, 0.86, 0); m.bodyY = 0.86;       // the shorn body touches the legs and the head
+      m.coat.push(add(rig, 0.88, 0.78, 1.18, s.wool, 0, 0.9, 0));
+      m.head = pivot(rig, 0, 1.05, 0.52); m.headY = 1.1;
+      add(m.head, 0.28, 0.3, 0.36, s.skin, 0, -0.02, -0.12);
+      head(0.42, 0.44, 0.44, 0, 0.04, 0.22);
+      m.coat.push(add(m.head, 0.46, 0.16, 0.28, s.wool, 0, 0.25, 0.12));      // a woolly cap
+      for (const sx of [-1, 1]) ear(sx * 0.21, 0.13, 0.2, 0.16, 0.06, 0.1, s.skin, sx * 0.08, 0);
+      m.tail = pivot(rig, 0, 1.08, -0.56); add(m.tail, 0.14, 0.24, 0.1, s.wool, 0, -0.12, -0.04);
     } else if (kind === 'chicken') {
-      for (const sx of [-1, 1]) { const p = pivot(rig, sx * 0.09, 0.3, 0); part(p, box(0.06, 0.3, 0.06), s.leg, 0, -0.15, 0); out.legs.push(p); }
-      part(rig, box(0.36, 0.36, 0.5), s.body, 0, 0.48, 0);
-      part(rig, box(0.06, 0.24, 0.34), s.body, -0.21, 0.5, -0.02); part(rig, box(0.06, 0.24, 0.34), s.body, 0.21, 0.5, -0.02);
-      const h = out.head = pivot(rig, 0, 0.6, 0.2); out.headY = 0.72;
-      part(h, box(0.24, 0.32, 0.2), headMats(s), 0, 0.12, 0.05);
-      part(h, box(0.12, 0.07, 0.12), s.beak, 0, 0.12, 0.2); part(h, box(0.07, 0.1, 0.05), s.wattle, 0, 0.02, 0.17);
+      m.legW = 0.06;
+      for (const sx of [-1, 1]) {
+        const p = pivot(rig, sx * 0.09, 0.3, 0); add(p, 0.06, 0.3, 0.06, s.leg, 0, -0.15, 0); add(p, 0.12, 0.03, 0.15, s.leg, 0, -0.285, 0.035); m.legs.push(p);
+      }
+      add(rig, 0.36, 0.36, 0.5, s.body, 0, 0.48, 0); m.bodyY = 0.48;
+      for (const sx of [-1, 1]) { const w = pivot(rig, sx * 0.18, 0.62, -0.02); w.userData.sx = sx; add(w, 0.06, 0.26, 0.34, s.body, sx * 0.03, -0.13, 0); m.wings.push(w); }
+      add(rig, 0.26, 0.2, 0.1, s.body, 0, 0.7, -0.27);                           // tail feathers
+      m.head = pivot(rig, 0, 0.6, 0.2); m.headY = 0.72;
+      head(0.24, 0.32, 0.2, 0, 0.12, 0.05);
+      add(m.head, 0.12, 0.07, 0.12, s.beak, 0, 0.12, 0.2); add(m.head, 0.07, 0.1, 0.05, s.wattle, 0, 0.02, 0.17);
+      add(m.head, 0.06, 0.08, 0.14, s.wattle, 0, 0.31, 0.05);                    // comb
     } else if (kind === 'deer') {
       legs(0.14, 1.05, 0.18, 0.48, s.leg);
-      part(rig, box(0.55, 0.62, 1.25), s.body, 0, 1.36, 0);
-      const h = out.head = pivot(rig, 0, 1.55, 0.55); out.headY = 2.2;
-      part(h, box(0.26, 0.62, 0.26), s.body, 0, 0.28, 0.02);
-      part(h, box(0.3, 0.32, 0.5), headMats(s), 0, 0.62, 0.2);
-      for (const sx of [-1, 1]) {                                  // antlers
-        const a = pivot(h, sx * 0.1, 0.78, 0.12); a.rotation.z = sx * -0.45;
-        part(a, box(0.05, 0.55, 0.05), s.antler, 0, 0.27, 0);
-        const t1 = pivot(a, 0, 0.3, 0); t1.rotation.x = 0.7; part(t1, box(0.04, 0.26, 0.04), s.antler, 0, 0.13, 0);
-        const t2 = pivot(a, 0, 0.48, 0); t2.rotation.z = sx * 0.7; part(t2, box(0.04, 0.22, 0.04), s.antler, 0, 0.11, 0);
+      add(rig, 0.55, 0.62, 1.25, s.body, 0, 1.36, 0); m.bodyY = 1.36;
+      m.head = pivot(rig, 0, 1.55, 0.55); m.headY = 2.2;
+      add(m.head, 0.26, 0.62, 0.26, s.body, 0, 0.28, 0.02);
+      head(0.3, 0.32, 0.5, 0, 0.62, 0.2);
+      for (const sx of [-1, 1]) {                                                 // antlers
+        const a = pivot(m.head, sx * 0.1, 0.78, 0.12); a.rotation.z = sx * -0.45;
+        add(a, 0.05, 0.55, 0.05, s.antler, 0, 0.27, 0);
+        const t1 = pivot(a, 0, 0.3, 0); t1.rotation.x = 0.7; add(t1, 0.04, 0.26, 0.04, s.antler, 0, 0.13, 0);
+        const t2 = pivot(a, 0, 0.48, 0); t2.rotation.z = sx * 0.7; add(t2, 0.04, 0.22, 0.04, s.antler, 0, 0.11, 0);
       }
     }
-    g.traverse(o => { if (o.isMesh) o.userData.mat = o.material; });
-    return out;
+    m.head.rotation.order = 'YXZ';                                               // turn, then nod
+    m.base.copy(m.head.position);
+    return m;
   }
-  function tint(a, hurt) {
-    a.model.group.traverse(o => {
-      if (!o.isMesh) return;
-      const m = o.userData.mat;
-      o.material = hurt ? (Array.isArray(m) ? m.map(x => hurtMat.get(x) || x) : hurtMat.get(m) || m) : m;
-    });
+  function setLook(a) {   // normal or red, eyes open or shut
+    const k = (a.red ? 1 : 0) + (a.blink ? 2 : 0);
+    for (const o of a.model.meshes) { const L = o.userData.looks; o.material = L[k < L.length ? k : k & 1]; }
   }
+
+  // w, h: size; walk, run: speeds (m/s); turn: how fast it turns (rad/s); legH: leg length; len: body length;
+  // zf, zb: how far the nose and the tail reach from the middle; shy: how early it runs from you; call: seconds
+  // between calls; graze: how the head goes down to eat [drop, forward, tilt]
+  const SPEC = {
+    cow:     { w: 0.9, h: 1.45, hp: 4, walk: 1.15, run: 3.6, turn: 2.2, legH: 0.7, len: 1.35, zf: 1.13, zb: 0.74, shy: 1, sound: 'cow1', call: [14, 36], drops: [['beef', 1, 3], ['leather', 0, 2]], graze: [-0.62, 0.08, 1.15] },
+    sheep:   { w: 0.85, h: 1.3, hp: 3, walk: 1.05, run: 3.8, turn: 2.6, legH: 0.55, len: 1.1, zf: 0.98, zb: 0.66, shy: 1.2, sound: 'sheep1', call: [12, 32], drops: [['mutton', 1, 2], ['wool', 1, 1]], graze: [-0.55, 0.06, 1.1] },
+    pig:     { w: 0.8, h: 0.95, hp: 3, walk: 0.95, run: 3.4, turn: 2.6, legH: 0.35, len: 1.1, zf: 1.03, zb: 0.7, shy: 0.8, sound: 'pig1', hurt: 'pig_hurt1', call: [12, 34], drops: [['pork', 1, 3]], graze: [-0.2, 0.06, 0.55] },
+    chicken: { w: 0.45, h: 0.85, hp: 2, walk: 0.85, run: 3.0, turn: 4.5, legH: 0.3, len: 0.5, zf: 0.41, zb: 0.33, shy: 1.4, sound: 'chicken', call: [6, 18], drops: [['chicken', 1, 1], ['feather', 0, 2]], graze: [-0.3, 0.05, 1.2] },
+    deer:    { w: 0.7, h: 2.4, hp: Infinity, walk: 0, run: 0, turn: 0.3, legH: 1.05, len: 1.25, zf: 1.05, zb: 0.63, shy: 0, call: [1e9, 1e9], drops: [], graze: [0, 0, 0] },
+  };
 
   // ---------------- animals ----------------
   const animals = [];
   let today = 0;
+  // what it's like. Herd animals are born from the world seed, so each one is always itself when you come back
+  const character = r => ({ bold: r(), curious: r(), lazy: r(), social: r(), jumpy: r(), roam: r(), pace: 0.86 + r() * 0.28, voice: 0.9 + r() * 0.22, size: 0.93 + r() * 0.14 });
   function spawn(kind, x, y, z, o) {
-    const spec = SPEC[kind], model = build(kind, o && o.sheared);
-    const a = Object.assign({ kind, spec, model, x, y, z, vx: 0, vy: 0, vz: 0, a: Math.random() * Math.PI * 2, state: 'idle', t: rand(0.5, 3),
-      hp: spec.hp, hurtT: 0, dieT: 0, phase: 0, walk: 0, graze: 0, callT: rand(4, 25), eggT: rand(200, 500), onGround: false,
-      herd: null, idx: -1, special: '', gone: false, unseenT: 0, seen: false }, o || {});
+    o = o || {};
+    const r = o.rng || Math.random, per = character(r), v = o.variant !== undefined ? o.variant : variantOf(kind, r), spec = SPEC[kind];
+    if (o.special) per.size = 1;
+    const model = build(kind, v, r), sz = per.size;
+    model.group.scale.setScalar(sz);
+    const a = Object.assign({
+      kind, spec, model, per, variant: v, x, y, z, vx: 0, vy: 0, vz: 0, kx: 0, kz: 0, a: Math.random() * Math.PI * 2, spd: 0, yawV: 0, moved: 0,
+      hw: spec.w * 0.45 * sz, hh: spec.h * sz, front: Math.max(0, (spec.len / 2 - spec.w * 0.45) * sz), rad: (spec.w + spec.len) * 0.25 * sz,
+      hp: spec.hp, hurtT: 0, dieT: 0, red: false, blink: false, phase: 0, amp: 0, onGround: false, inWater: false, bumped: false, hop: false,
+      herd: null, idx: -1, flock: '', home: { x, z }, special: '', t: 0, gone: false, unseenT: 0, seen: false, eggT: rand(200, 500),
+    }, o);
+    delete a.rng;
+    a.ai = mind(a, r);
+    if (a.sheared) for (const c of model.coat) c.visible = false;
     scene.add(model.group);
     animals.push(a);
     return a;
   }
-  function remove(a) { a.gone = true; scene.remove(a.model.group); const i = animals.indexOf(a); if (i >= 0) animals.splice(i, 1); }
+  function mind(a, r) {
+    return {
+      mode: 'idle', t: rand(0.5, 3), goalA: a.a, goalSpd: 0, turn: a.spec.turn, wanderA: a.a, gait: 1, steer: 0, steerGoal: 0, steerT: 0,
+      detour: 0, detourT: 0, dsign: 0, probeT: 0, planT: 0, replan: false, stuck: 0, look: null, lookAt: null, lookAtT: 0, lookT: rand(1, 4), gy: 0, gp: 0,
+      hunger: r(), tired: r() * 0.5, curio: r(), fear: 0, scared: 0, threat: { x: a.x, y: a.y + 1, z: a.z }, pend: null, target: null, back: 0,
+      lie: 0, lieT: 0, gz: 0, gzT: 0, al: 0, side: 0, nib: 0, up: false, step: 0, peck: 0, zig: r() * 6, sniff: false, sleepy: 0, caught: false, creep: false,
+      blinkT: rand(1, 5), blinkOn: 0, noBlink: false, callT: rand(4, 25), tailPh: r() * 6, earT: rand(1, 6), ear: 0, earSide: 1, flap: 0, wingPh: 0, chew: 0,
+      stare: null, frzIn: null, frzOut: 0, frozen: false, fdist: 0,
+    };
+  }
+  function remove(a) {
+    a.gone = true; scene.remove(a.model.group);
+    for (const o of a.model.meshes) o.geometry.dispose();
+    const i = animals.indexOf(a); if (i >= 0) animals.splice(i, 1);
+  }
+
+  // ---------------- physics ----------------
+  const CORNERS = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
   function blockedAt(x, y, z, hw, h) {
-    for (let by = Math.floor(y + 0.05); by <= Math.floor(y + Math.min(h, 1.6) - 0.05); by++)
-      for (const [dx, dz] of [[-hw, -hw], [hw, -hw], [-hw, hw], [hw, hw]]) if (World.solid(Math.floor(x + dx), by, Math.floor(z + dz))) return true;
+    for (let by = Math.floor(y + 0.05), top = Math.floor(y + Math.min(h, 1.6) - 0.05); by <= top; by++)
+      for (const c of CORNERS) if (World.solid(Math.floor(x + c[0] * hw), by, Math.floor(z + c[1] * hw))) return true;
     return false;
   }
-  function groundBelow(x, y, z) { for (let d = 0; d < 4; d++) { const b = World.get(Math.floor(x), Math.floor(y) - 1 - d, Math.floor(z)); if (b === B.WATER) return -1; if (World.SOLID[b]) return d; } return 9; }
-  // walking forward: turn away from walls, water and cliffs; hop up single blocks
-  function physics(a, dt, want) {
-    const s = a.spec, hw = s.w * 0.4;
-    a.vx += (Math.sin(a.a) * want - a.vx) * Math.min(1, dt * 8); a.vz += (Math.cos(a.a) * want - a.vz) * Math.min(1, dt * 8);
-    if (want > 0.05 && a.onGround) {
-      const ax = a.x + Math.sin(a.a) * (hw + 0.5), az = a.z + Math.cos(a.a) * (hw + 0.5), g = groundBelow(ax, a.y + 1, az);
-      if (g < 0 || g > 2) { a.a += Math.PI * rand(0.6, 1.4); a.vx = a.vz = 0; if (a.state === 'walk') a.t = Math.min(a.t, 1); }
+  function footBlocked(x, y, z, hw) {    // anything to stand on at height y?
+    const by = Math.floor(y);
+    for (const c of CORNERS) if (World.solid(Math.floor(x + c[0] * hw), by, Math.floor(z + c[1] * hw))) return true;
+    return false;
+  }
+  // bodies are longer than they are wide: a second box at the chest keeps the front out of walls
+  const bodyBlocked = (a, x, y, z) => blockedAt(x, y, z, a.hw, a.hh) || (a.front > 0.05 && blockedAt(x + Math.sin(a.a) * a.front, y, z + Math.cos(a.a) * a.front, a.hw, a.hh));
+  // it stands on whatever is under the middle of its body, or (the long ones) under its chest
+  const standsOn = (a, x, y, z) => footBlocked(x, y, z, a.hw) || (a.front > 0.05 && footBlocked(x + Math.sin(a.a) * a.front, y, z + Math.cos(a.a) * a.front, a.hw));
+  function stepAhead(a) {   // one block in the way (at the chest, or at the nose for a low head), with room above it for the body
+    const fx = Math.sin(a.a), fz = Math.cos(a.a), y0 = Math.floor(a.y + 0.05), far = Math.max(a.front + a.hw, a.spec.zf * a.per.size) + 0.3;
+    for (let d = a.front + a.hw + 0.1; d <= far; d += 0.2) {
+      const x = Math.floor(a.x + fx * d), z = Math.floor(a.z + fz * d);
+      for (let y = y0; y <= y0 + (a.inWater ? 1 : 0); y++) {     // swimming, the bank can be a little higher
+        if (!World.solid(x, y, z)) continue;
+        for (let k = 1, n = Math.ceil(Math.min(a.hh, 1.6)); k <= n; k++) if (World.solid(x, y + k, z) || World.solid(Math.floor(a.x), y + k, Math.floor(a.z))) return false;
+        return true;
+      }
     }
-    const nx = a.x + a.vx * dt;
-    if (!blockedAt(nx, a.y, a.z, hw, s.h)) a.x = nx; else a.bump = true;
-    const nz = a.z + a.vz * dt;
-    if (!blockedAt(a.x, a.y, nz, hw, s.h)) a.z = nz; else a.bump = true;
-    if (a.bump) {
-      a.bump = false;
-      if (a.onGround && !blockedAt(a.x + Math.sin(a.a) * 0.3, a.y + 1.05, a.z + Math.cos(a.a) * 0.3, hw, s.h)) a.vy = 6.5;
-      else if (a.state === 'walk' || a.state === 'flee') a.a += rand(1, 2.5) * (Math.random() < 0.5 ? 1 : -1);
-    }
-    a.vy -= 24 * dt; a.vy = Math.max(a.vy, -30);
+    return false;
+  }
+  function physics(a, dt) {
+    const ox = a.x, oz = a.z, fx = Math.sin(a.a), fz = Math.cos(a.a), sp = a.hop ? Math.max(a.spd, 1) : a.spd;   // it keeps going over a step
+    a.vx = fx * sp + a.kx; a.vz = fz * sp + a.kz;
+    const kd = Math.max(0, 1 - dt * 6); a.kx *= kd; a.kz *= kd;                   // a knock fades away
+    let hit = false;
+    const inside = blockedAt(a.x, a.y, a.z, a.hw, a.hh);                             // walled in (a block was put where it stood): it may walk out
+    const nx = a.x + a.vx * dt; if (inside || !bodyBlocked(a, nx, a.y, a.z)) a.x = nx; else hit = true;
+    const nz = a.z + a.vz * dt; if (inside || !bodyBlocked(a, a.x, a.y, nz)) a.z = nz; else hit = true;
+    const nose = a.spec.zf * a.per.size * 0.92;                                     // and the face never goes into a wall
+    if (!inside && (a.x !== ox || a.z !== oz) && World.solid(Math.floor(a.x + fx * nose), Math.floor(a.y + a.model.headY * a.per.size), Math.floor(a.z + fz * nose))) { a.x = ox; a.z = oz; hit = true; }
+    if (hit && a.onGround && a.spd > 0.15 && stepAhead(a)) { a.vy = a.inWater ? 8.4 : 7.8; a.hop = true; }   // hop up one block (clears 1.25 m)
+    a.bumped = hit;
+    // swimming: it floats with its back just above the surface, and stays "in the water" until its feet are out
+    const wet = World.get(Math.floor(a.x), Math.floor(a.y + 0.4), Math.floor(a.z)) === B.WATER;
+    a.inWater = wet || (a.inWater && World.get(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z)) === B.WATER);
+    if (a.inWater) a.vy += ((wet ? 1.5 : -1) - a.vy) * Math.min(1, dt * 3);
+    else a.vy = Math.max(a.vy - 24 * dt, a.kind === 'chicken' ? -2.6 : -20);       // chickens flutter down
     const ny = a.y + a.vy * dt;
     a.onGround = false;
-    if (a.vy <= 0 && blockedAt(a.x, ny, a.z, hw, 0.1)) { a.y = Math.floor(ny) + 1; a.vy = 0; a.onGround = true; }
-    else if (a.vy > 0 && blockedAt(a.x, ny + s.h * 0.9, a.z, hw, 0.1)) a.vy = 0;
+    // land on whatever is under the feet (the old check let it sink a few cm every frame, so it shook)
+    if (a.vy <= 0 && standsOn(a, a.x, ny, a.z)) { a.y = Math.floor(ny) + 1; a.vy = 0; a.onGround = true; a.hop = false; }
+    else if (a.vy > 0 && standsOn(a, a.x, ny + Math.min(a.hh, 1.6), a.z)) a.vy = 0;
     else a.y = ny;
-    if (World.get(Math.floor(a.x), Math.floor(a.y + 0.3), Math.floor(a.z)) === B.WATER) { a.vy = Math.max(a.vy, 1.2); a.onGround = true; }
+    if (a.inWater) a.onGround = true;
+    a.moved = Math.hypot(a.x - ox, a.z - oz);
     if (a.y < -20) remove(a);
+  }
+  function nudge(a, dx, dz) {
+    if (!blockedAt(a.x + dx, a.y, a.z, a.hw, a.hh)) a.x += dx;
+    if (!blockedAt(a.x, a.y, a.z + dz, a.hw, a.hh)) a.z += dz;
+  }
+  function separate(dt) {   // they don't walk through each other, and you can shove them
+    const P = Player.p;
+    for (let i = 0; i < animals.length; i++) {
+      const a = animals[i];
+      if (a.dieT || a.special === 'deer' || !a.model.group.visible) continue;
+      let dx = a.x - P.x, dz = a.z - P.z, d = Math.hypot(dx, dz), min = a.hw + 0.32;
+      if (d < min && P.y < a.y + a.hh && P.y + 1.8 > a.y) { const k = (min - d) / (d || 1) * Math.min(1, dt * 10); nudge(a, dx * k, dz * k); }
+      for (let j = i + 1; j < animals.length; j++) {
+        const b = animals[j];
+        if (b.dieT || b.special === 'deer') continue;
+        dx = a.x - b.x; dz = a.z - b.z;
+        if (Math.abs(dx) > 2.2 || Math.abs(dz) > 2.2 || Math.abs(a.y - b.y) > 1.2) continue;
+        d = Math.hypot(dx, dz); min = a.rad + b.rad;
+        if (d >= min) continue;
+        if (d < 0.01) { dx = Math.random() - 0.5; dz = Math.random() - 0.5; d = Math.hypot(dx, dz); }
+        const k = (min - d) / d * Math.min(1, dt * 6) * 0.5;
+        nudge(a, dx * k, dz * k); nudge(b, -dx * k, -dz * k);
+      }
+    }
+  }
+
+  // ---------------- finding the way ----------------
+  // how far it can walk in direction `ang` (up to `max` m) before a wall, a drop it won't take, or water
+  function clearance(a, ang, max) {
+    const sx = Math.sin(ang), sz = Math.cos(ang), drop = a.kind === 'chicken' ? 6 : 2, w = a.hw * 0.95;
+    let y = Math.floor(a.y + (a.inWater ? 0.4 : 0.05));
+    for (let d = 0.5; d <= max + 0.01; d += 0.5) {
+      const px = a.x + sx * (d + a.front), pz = a.z + sz * (d + a.front), x = Math.floor(px), z = Math.floor(pz);
+      // it is as wide as its body: a wall beside the line (a tree, the corner of a house) stops it too
+      if (World.solid(Math.floor(px + sz * w), y + 1, Math.floor(pz - sx * w)) || World.solid(Math.floor(px - sz * w), y + 1, Math.floor(pz + sx * w))) return d - 0.5;
+      if (World.solid(x, y, z)) {                                             // a step up, or a wall
+        if (World.solid(x, y + 1, z) || World.solid(x, y + 2, z)) return d - 0.5;
+        y++; continue;
+      }
+      let k = 1;
+      for (; k <= drop + 1; k++) {
+        const b = World.get(x, y - k, z);
+        if (b === B.WATER) { if (!a.inWater) return d - 0.5; break; }         // swimming, the surface is the floor
+        if (World.SOLID[b]) break;
+      }
+      if (k > drop + 1) return d - 0.5;                                       // a cliff (or the edge of the world)
+      y -= k - 1;
+    }
+    return max;
+  }
+  // head for `want`, looking ahead now and then: if the way is blocked (a wall, a drop, water) take a detour.
+  // `free` (wandering): no destination, so the detour simply becomes the new direction
+  const OFFS = [0.55, 1.1, 1.7, 2.4, Math.PI];
+  function go(a, want, spd, dt, ahead, free) {
+    const ai = a.ai;
+    if ((ai.detourT -= dt) <= 0) ai.detour = 0;
+    ai.planT += dt; ai.probeT -= dt;
+    if (ai.probeT <= 0 || ((a.bumped || ai.replan) && ai.planT > 0.25)) {
+      ai.probeT = rand(0.22, 0.42);
+      if (a.bumped || ai.replan || clearance(a, want + ai.detour, ahead) < ahead * 0.75) {
+        let best = Math.PI, bs = -1;
+        const sg = ai.dsign || (Math.random() < 0.5 ? 1 : -1);             // keeps to the side it chose, so it gets round things
+        for (const off of OFFS) for (const s of [sg, -sg]) {
+          const o = off * s, sc = clearance(a, want + o, ahead) * (1 - off * 0.12) * (s === sg ? 1.15 : 1) * rand(0.9, 1.1);
+          if (sc > bs) { bs = sc; best = o; }
+          if (off === Math.PI) break;
+        }
+        ai.planT = 0; ai.replan = false; ai.detourT = rand(0.8, 2.2); ai.detour = best; ai.dsign = best > 0 ? 1 : -1;
+        if (free) { ai.wanderA = wrap(want + best); ai.detour = 0; }
+      } else if (ai.detour && clearance(a, want, ahead) >= ahead) ai.detour = 0;  // the straight way is clear again
+    }
+    ai.goalA = (free ? ai.wanderA : want) + ai.detour; ai.goalSpd = spd;
+  }
+  function steer(a, dt) {   // turn towards where it wants to go; slow down while turning hard
+    const ai = a.ai, err = wrap(ai.goalA - a.a), st = clamp(err, -ai.turn * dt, ai.turn * dt);
+    a.a = wrap(a.a + st); a.yawV = st / dt;
+    const al = Math.max(0, Math.cos(err)), want = ai.goalSpd * al * al;
+    a.spd += (want - a.spd) * Math.min(1, dt * (want > a.spd ? 2.5 + a.per.pace : 6));
+  }
+  function stuckCheck(a, dt) {   // it wants to go somewhere but hasn't got anywhere for a while: think again
+    const ai = a.ai;
+    if (ai.goalSpd > 0.3 && Math.abs(wrap(ai.goalA - a.a)) < 0.5 && a.moved < ai.goalSpd * dt * 0.25) ai.stuck += dt;
+    else ai.stuck = Math.max(0, ai.stuck - dt * 2);
+    if (ai.stuck > 1.6) { ai.stuck = 0; ai.replan = true; ai.planT = 1; ai.dsign = -ai.dsign; }     // and tries the other way round
+  }
+  function meander(a, dt, amt) {   // a slow wandering line, not a straight one
+    const ai = a.ai;
+    if ((ai.steerT -= dt) <= 0) { ai.steerT = rand(0.6, 2.4); ai.steerGoal = rand(-1, 1) * amt; }
+    ai.steer += (ai.steerGoal - ai.steer) * Math.min(1, dt * 1.5);
+    ai.wanderA = wrap(ai.wanderA + ai.steer * dt);
+  }
+  function leash(a, dt) {          // and not too far from home
+    const hx = a.home.x - a.x, hz = a.home.z - a.z, d = Math.hypot(hx, hz), max = 10 + a.per.roam * 12;
+    if (d > max) a.ai.wanderA += wrap(Math.atan2(hx, hz) - a.ai.wanderA) * Math.min(1, dt * (d / max - 0.7));
+  }
+  function floorNear(x, z, y0) {   // where it could stand around height y0 (under a tree, not on top of it)
+    const fx = Math.floor(x), fz = Math.floor(z);
+    for (let y = Math.floor(y0) + 2; y > y0 - 4; y--) if (World.solid(fx, y - 1, fz) && !World.solid(fx, y, fz) && !World.solid(fx, y + 1, fz)) return y;
+    return null;
+  }
+  // somewhere under a tree, the nearest within about 14 m. The herd shares what one of them found, so they
+  // all end up under the same tree
+  const shelters = new Map();
+  function findShelter(a) {
+    const known = shelters.get(a.flock);
+    if (known && performance.now() - known.at < 20000) return known.spot;
+    let spot = null;
+    for (let r = 1.5; r <= 14 && !spot; r += 1.5) {
+      const n = Math.ceil(r * 4), off = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n && !spot; i++) {
+        const ang = off + i / n * Math.PI * 2, x = a.x + Math.sin(ang) * r, z = a.z + Math.cos(ang) * r, y = floorNear(x, z, a.y);
+        if (y !== null) for (let k = 2; k < 7; k++) { const b = World.get(Math.floor(x), y + k, Math.floor(z)); if (b === B.LEAVES || World.OPAQUE[b]) { spot = { x: Math.floor(x) + 0.5, z: Math.floor(z) + 0.5 }; break; } }
+      }
+    }
+    if (a.flock) shelters.set(a.flock, { at: performance.now(), spot });
+    return spot;
+  }
+  function findShore(a) {          // the nearest dry land
+    for (let r = 1.5; r <= 12; r += 1.5) {
+      const off = Math.random() * Math.PI * 2;
+      for (let i = 0; i < 10; i++) {
+        const ang = off + i / 10 * Math.PI * 2, fx = Math.floor(a.x + Math.sin(ang) * r), fz = Math.floor(a.z + Math.cos(ang) * r);
+        for (let y = Math.floor(a.y) + 2; y >= Math.floor(a.y) - 1; y--) if (World.solid(fx, y - 1, fz) && World.get(fx, y, fz) === B.AIR) return { x: fx + 0.5, z: fz + 0.5 };
+      }
+    }
+    return null;
+  }
+
+  // ---------------- the brain ----------------
+  // Every animal has a character and needs (hunger, tiredness, curiosity), and a fear that fades. When it's done
+  // with something it picks what to do next with a weighted coin toss, shaped by those. What it notices (you
+  // coming too close or too fast, a block breaking, thunder, a herd mate bolting) interrupts it, each in its own way.
+  const DUR = { idle: [1.5, 6], wander: [3, 10], graze: [6, 18], rest: [12, 40], sleep: [40, 120], regroup: [4, 10], follow: [6, 18],
+                curious: [7, 16], alert: [1, 2.8], flee: [3, 6], zoomies: [1.5, 3.5], shelter: [8, 20], swim: [2, 4], hold: [1e9, 1e9] };
+  function setMode(a, mode, t) {
+    const ai = a.ai;
+    if (mode === 'flee' && ai.lie > 0.5) { mode = 'alert'; t = 0.6; }            // it has to get up first
+    if (ai.mode !== mode) { ai.mode = mode; ai.target = null; ai.nib = 0; ai.up = false; ai.step = 0; ai.back = 0; ai.steerT = 0; ai.probeT = 0; ai.dsign = 0; }
+    ai.t = t !== undefined ? t : rand(DUR[mode][0], DUR[mode][1]);
+    if (mode === 'wander' || mode === 'zoomies') { ai.wanderA = wrap(a.a + rand(-1.3, 1.3)); ai.gait = rand(0.75, 1.12); }
+    if (mode === 'rest' || mode === 'sleep') ai.t *= 0.6 + a.per.lazy * 0.8;
+    if (mode === 'hold') ai.goalSpd = 0;
+  }
+  function think(a, c) {
+    const ai = a.ai, per = a.per, H = c.herd, night = c.night > 0.6, k = a.kind;
+    const w = {
+      idle: 0.5 + per.lazy * 0.6,
+      wander: (0.55 + per.roam) * (1 - per.lazy * 0.5) * (night ? 0.15 : 1),
+      graze: (0.25 + ai.hunger * 2.2) * (night ? 0.3 : 1),
+      rest: night ? 0 : (0.08 + ai.tired * 1.4) * (0.4 + per.lazy),
+      sleep: night ? 2 + ai.tired * 2 : 0,
+      regroup: H && H.far > 5 ? (0.4 + per.social * 2) * Math.min(3, H.far / 7) : 0,
+      follow: H && H.leader && H.leader !== a && H.leaderD > 3.5 && !night ? per.social * 1.1 : 0,
+      curious: c.pd < 16 && !c.inHouse && ai.fear < 0.1 && ai.scared < 0.3 && per.curious > 0.35 ? ai.curio * (per.curious - 0.25) * 1.6 * (0.3 + per.bold) * (night ? 0.3 : 1) : 0,
+      zoomies: night ? 0 : (k === 'cow' ? 0.015 : 0.05) * (1.2 - per.lazy),
+      shelter: c.raining && !night ? 1.4 + per.social * 0.5 : 0,
+    };
+    let total = 0;
+    for (const n in w) { w[n] = w[n] > 0 ? Math.pow(w[n], 1.4) * rand(0.5, 1.5) : 0; total += w[n]; }
+    let r = Math.random() * total;
+    for (const n in w) if ((r -= w[n]) <= 0) { setMode(a, n); return; }
+    setMode(a, 'idle');
+  }
+  // something startled it: a glance, a nervous stop, or it bolts, depending on how jumpy it is.
+  // A bolting animal spreads the panic through its herd, each one a moment later than the last
+  function alarm(a, x, z, lvl, relayed, y) {
+    const ai = a.ai;
+    if (a.special || a.dieT || ai.creep || ai.mode === 'hold') return;
+    const k = lvl * (0.5 + a.per.jumpy);
+    ai.threat.x = x; ai.threat.z = z; ai.threat.y = y === undefined ? a.y + 1 : y;
+    ai.fear = Math.min(1, Math.max(ai.fear, k));
+    if (ai.mode === 'flee') ai.t = Math.max(ai.t, 1.5);
+    else if (ai.fear > 0.6) setMode(a, 'flee', rand(2.5, 5) * (0.8 + a.per.jumpy * 0.5));
+    else if (ai.fear > 0.25) { if (ai.mode !== 'alert') setMode(a, 'alert', rand(0.8, 2.4)); }
+    else { ai.lookAt = ai.threat; ai.lookAtT = rand(1, 2.5); }                     // just a look
+    if (!relayed && ai.fear > 0.45)
+      for (const b of animals) if (b !== a && b.flock && b.flock === a.flock && !b.ai.pend && Math.hypot(b.x - a.x, b.z - a.z) < 14)
+        b.ai.pend = { t: rand(0.12, 0.9), x, z, lvl: lvl * rand(0.55, 0.95) };
+  }
+  function watchPlayer(a, c) {    // too close, or coming at it too fast?
+    const ai = a.ai, P = Player.p;
+    if (c.pd > 24 || ai.mode === 'flee' || Math.abs(P.y - a.y) > 6) return;
+    const toward = c.pd > 0.01 ? (P.vx * (a.x - P.x) + P.vz * (a.z - P.z)) / c.pd : 0;
+    let flight = lerp(6, 1.4, a.per.bold) * a.spec.shy * (c.sprint ? 1.7 : 1) * (1 + ai.scared * 1.5);
+    if (ai.mode === 'curious') flight *= 0.4;
+    if (ai.lie > 0.5) flight *= 0.75;
+    if (c.pd < flight && (toward > 1 || c.pd < flight * 0.45))
+      alarm(a, P.x, P.z, clamp(0.3 + toward * 0.12 + (c.sprint ? 0.35 : 0) + (1 - c.pd / flight) * 0.3, 0, 1), false, P.y + P.eye);
+  }
+  function glance(a, dt, c, rate) {   // now and then it looks somewhere else: at you, at a herd mate, at nothing
+    const ai = a.ai;
+    if ((ai.lookT -= dt) > 0) return;
+    ai.lookT = rand(1.2, 5) * (1.3 - a.per.jumpy * 0.6) / (rate || 1);
+    const r = Math.random();
+    if (r < 0.3 * (0.4 + a.per.curious) && c.pd < 18) { ai.lookAt = c.playerPt; ai.lookAtT = rand(1, 3.5); }
+    else if (r < 0.5 && c.mate) { ai.lookAt = { x: c.mate.x, y: c.mate.y + 1, z: c.mate.z }; ai.lookAtT = rand(0.8, 2.5); }
+    else { ai.gy = rand(-0.9, 0.9) * (rate && rate < 1 ? 0.5 : 1); ai.gp = rand(-0.25, 0.3); ai.lookAtT = 0; }
+  }
+  function graze(a, dt, c, walk) {
+    const ai = a.ai;
+    ai.lieT = 0;
+    if (a.kind === 'chicken') {                                  // peck, peck, a few quick steps, peck
+      if ((ai.nib -= dt) <= 0) { ai.nib = rand(0.3, 1.3); ai.peck = 0.22; if (Math.random() < 0.4) { ai.goalA = a.a + rand(-1.5, 1.5); ai.step = rand(0.25, 0.8); } }
+      ai.peck -= dt; ai.step -= dt;
+      ai.gzT = ai.peck > 0 ? 1 : 0.1;
+      ai.goalSpd = ai.step > 0 ? walk * 0.9 : 0;
+    } else {                                                     // head down; now and then it looks up, chewing
+      if ((ai.nib -= dt) <= 0) {
+        ai.up = !ai.up; ai.nib = ai.up ? rand(1.2, 3.5) : rand(3, 10);
+        if (!ai.up && Math.random() < 0.6) { ai.step = rand(0.6, 1.6); ai.goalA = a.a + rand(-0.8, 0.8); }
+      }
+      ai.step -= dt;
+      ai.gzT = ai.up ? 0.1 : 1;
+      ai.goalSpd = ai.step > 0 && !ai.up ? walk * 0.3 : 0;
+      if (ai.up) glance(a, dt, c);
+    }
+    ai.hunger = Math.max(0, ai.hunger - dt / 30);
+  }
+  function brain(a, dt, c) {
+    const ai = a.ai, per = a.per, night = c.night > 0.6, walk = a.spec.walk * per.pace;
+    ai.hunger = Math.min(1, ai.hunger + dt / 260);
+    ai.tired = Math.min(1, ai.tired + dt / (night ? 70 : 420));
+    ai.curio = Math.min(1, ai.curio + dt / 200);
+    ai.fear = Math.max(0, ai.fear - dt * (0.07 + (1 - per.jumpy) * 0.12));
+    ai.scared = Math.max(0, ai.scared - dt / 150);
+    ai.noBlink = false; ai.look = null; ai.turn = a.spec.turn; ai.sniff = false; ai.sleepy = 0;
+    if (a.special) return special(a, c);
+    if (uncanny(a, dt, c)) return;
+    ai.t -= dt;
+    if (ai.pend && (ai.pend.t -= dt) <= 0) { const e = ai.pend; ai.pend = null; alarm(a, e.x, e.z, e.lvl, true); }
+    if (a.inWater && ai.mode !== 'swim' && ai.mode !== 'flee' && ai.mode !== 'hold') setMode(a, 'swim');
+    watchPlayer(a, c);
+    if ((ai.lookAtT -= dt) > 0) ai.look = ai.lookAt;
+    switch (ai.mode) {
+      case 'idle':
+        ai.goalSpd = 0; ai.gzT = 0; ai.lieT = 0;
+        if (Math.random() < dt * 0.12) ai.goalA = a.a + rand(-0.9, 0.9);       // shifting its weight
+        glance(a, dt, c);
+        break;
+      case 'wander':
+        ai.gzT = 0; ai.lieT = 0;
+        meander(a, dt, 0.3 + per.roam * 0.9); leash(a, dt);
+        go(a, ai.wanderA, walk * ai.gait, dt, 2.2, true);
+        glance(a, dt, c, 0.45);
+        break;
+      case 'graze': graze(a, dt, c, walk); break;
+      case 'rest': case 'sleep':
+        ai.goalSpd = 0; ai.gzT = 0; ai.lieT = 1;
+        ai.tired = Math.max(0, ai.tired - dt / (ai.mode === 'sleep' ? 45 : 30));
+        if (ai.mode === 'sleep') { ai.sleepy = 1; if (!night && Math.random() < dt * 0.15) ai.t = 0; }   // morning: they wake one by one
+        else { glance(a, dt, c, 0.6); if (ai.tired < 0.05 && ai.t > 4) ai.t = 4; }
+        break;
+      case 'regroup': {
+        const H = c.herd;
+        ai.gzT = 0; ai.lieT = 0;
+        if (!H || H.far < 2.2 + H.n * 0.4) { ai.t = 0; ai.goalSpd = 0; break; }
+        go(a, Math.atan2(H.x - a.x, H.z - a.z), walk * clamp(H.far / 6, 0.8, 1.5), dt, 2.2);
+        break; }
+      case 'follow': {                                           // follow the leader, and do what it does
+        const L = c.herd && c.herd.leader;
+        ai.lieT = 0;
+        if (!L || L === a || L.gone) { ai.t = 0; break; }
+        const d = Math.hypot(L.x - a.x, L.z - a.z);
+        if (d > 2.6) { ai.gzT = 0; go(a, Math.atan2(L.x - a.x, L.z - a.z), walk * clamp(d / 4, 0.6, 1.4), dt, 2); }
+        else { ai.goalSpd = 0; ai.gzT = L.ai.gz > 0.5 ? 1 : 0; }
+        break; }
+      case 'curious': {                                          // comes to have a look at you (or at what you built)
+        const T = ai.target || c.playerPt, d = Math.hypot(T.x - a.x, T.z - a.z), stop = lerp(5, 2, per.bold) + ai.back;
+        ai.gzT = 0; ai.lieT = 0; ai.look = T;
+        if (c.pd > 24) { ai.t = 0; break; }
+        if (d > stop + 0.3) go(a, Math.atan2(T.x - a.x, T.z - a.z), walk * 0.7, dt, 2);
+        else {
+          ai.goalSpd = 0; ai.goalA = Math.atan2(T.x - a.x, T.z - a.z); ai.sniff = true;
+          if (Math.random() < dt * 0.12) ai.back = Math.max(1.3 - stop + ai.back, ai.back - rand(0.2, 0.5));   // it inches closer
+        }
+        ai.curio = Math.max(0, ai.curio - dt / 25);
+        break; }
+      case 'alert': {                                            // freezes, head up, watching whatever it was
+        const T = ai.threat;
+        ai.goalSpd = 0; ai.gzT = 0; ai.lieT = 0; ai.look = T;
+        if (Math.abs(wrap(Math.atan2(T.x - a.x, T.z - a.z) - a.a)) > 1.2) ai.goalA = Math.atan2(T.x - a.x, T.z - a.z);
+        break; }
+      case 'flee': {                                             // a scared one bolts in a zigzag; a bothered one just walks off
+        const T = ai.threat, f = clamp((ai.fear - 0.3) / 0.5, 0, 1);
+        ai.gzT = 0; ai.lieT = 0; ai.zig += dt * (1.5 + per.jumpy * 2); ai.turn = a.spec.turn * (1.3 + f);
+        go(a, Math.atan2(a.x - T.x, a.z - T.z) + Math.sin(ai.zig) * 0.5 * f, lerp(walk * 1.5, a.spec.run * per.pace, f), dt, 2.8);
+        if (ai.t <= 0 && ai.fear > 0.2 && Math.hypot(a.x - T.x, a.z - T.z) < 8 + f * 6) ai.t = 0.8;   // not far enough yet
+        break; }
+      case 'zoomies':                                            // a sudden mad dash, for no reason at all
+        ai.gzT = 0; ai.lieT = 0; ai.turn = a.spec.turn * 2;
+        meander(a, dt, 3);
+        go(a, ai.wanderA, a.spec.run * per.pace * 0.85, dt, 2.5, true);
+        if (a.onGround && !a.inWater && a.kind !== 'cow' && Math.random() < dt * 1.3) a.vy = 4.2;   // happy little hops
+        break;
+      case 'shelter': {                                          // rain: under a tree, or huddled together, its back to the wind
+        ai.gzT = 0; ai.lieT = 0;
+        if (!ai.target) ai.target = findShelter(a) || (c.herd ? { x: c.herd.x, z: c.herd.z, huddle: true } : { x: a.x, z: a.z, huddle: true });
+        const T = ai.target;
+        if (Math.hypot(T.x - a.x, T.z - a.z) > (T.huddle ? 1.8 : 0.8)) go(a, Math.atan2(T.x - a.x, T.z - a.z), walk * 1.15, dt, 2);
+        else { ai.goalSpd = 0; if (c.windy) { ai.goalA = c.windA; ai.turn = 0.7; } glance(a, dt, c, 0.5); }
+        if (!c.raining && ai.t > 4) ai.t = rand(1, 4);
+        break; }
+      case 'swim':                                               // paddle to the nearest shore
+        ai.gzT = 0; ai.lieT = 0; ai.t = Math.max(ai.t, 0.5);
+        if (!a.inWater) { ai.t = 0; break; }
+        if (!ai.target || Math.random() < dt * 0.3) ai.target = findShore(a) || ai.target;
+        if (ai.target) go(a, Math.atan2(ai.target.x - a.x, ai.target.z - a.z), walk * 0.8, dt, 1.5);
+        else { meander(a, dt, 1); go(a, ai.wanderA, walk * 0.8, dt, 1.5, true); }
+        break;
+      case 'hold': break;                                        // (debugging) does nothing by itself
+    }
+    if (ai.t <= 0) {
+      if (ai.mode === 'flee') setMode(a, 'alert', rand(1, 2.5));                  // stop, and look back
+      else if (ai.mode === 'alert' && ai.fear > 0.45) setMode(a, 'flee');
+      else if (ai.mode === 'shelter' && c.raining && Math.random() < 0.7) ai.t = rand(4, 10);
+      else think(a, c);
+    }
+  }
+  function special(a, c) {   // the ones that are not quite animals
+    const ai = a.ai, P = Player.p, toP = Math.atan2(P.x - a.x, P.z - a.z);
+    ai.noBlink = true; ai.look = c.playerPt; ai.goalSpd = 0; ai.gzT = 0; ai.lieT = 0; ai.goalA = toP;
+    if (a.special === 'extra') {                                 // never grazes, never makes a sound, always facing you
+      ai.turn = 1.5;
+      const f = flocks.get(a.flock), m = f && f.members[0];
+      if (m && Math.hypot(m.x - a.x, m.z - a.z) > 4) { ai.goalA = Math.atan2(m.x - a.x, m.z - a.z); ai.goalSpd = a.spec.walk * 0.8; ai.turn = 3; }
+    } else if (a.special === 'upright') { ai.goalA = a.a; ai.goalSpd = 0.7; ai.look = null; }
+    else if (a.special === 'deer') ai.turn = 0.3;               // too still. it turns very slowly
+    else ai.turn = 2;                                            // the one at your window
   }
 
   // ---------------- herds: part of the world, the same ones are there when you come back ----------------
@@ -2140,14 +2626,23 @@ const Animals = (() => {
     if (h <= CFG.SEA + 1) return null;
     return { id: cx + ',' + cz, kind: ['cow', 'sheep', 'pig', 'chicken'][Math.floor(hash2(cx, cz, seed + 902) * 4)], x, z, n: 2 + Math.floor(hash2(cx, cz, seed + 905) * 3) };
   }
+  // all the ground a herd stands on must exist first (unloaded ground counts as solid, so animals were lost)
+  function areaReady(x, z) {
+    for (const dx of [-6, 6]) for (const dz of [-6, 6]) if (!World.chunks.has(Math.floor((x + dx) / CFG.CHUNK) + ',' + Math.floor((z + dz) / CFG.CHUNK))) return false;
+    return true;
+  }
   function loadHerd(H) {
     const st = hs(H.id), members = [];
     if (st.gone === today) { loaded.set(H.id, { H, members }); return; }
     const n = Math.max(1, H.n + (st.delta || 0)), r = mulberry32(Math.floor(hash2(H.x, H.z, 77) * 1e9));
     const place = (i, o) => {
-      const x = H.x + (r() - 0.5) * 8, z = H.z + (r() - 0.5) * 8, y = World.heightAt(Math.floor(x), Math.floor(z)) + 1;
-      if (blockedAt(x, y, z, 0.3, 1.5) || World.get(Math.floor(x), y - 1, Math.floor(z)) === B.WATER) return;
-      members.push(spawn(H.kind, x, y, z, Object.assign({ herd: H.id, idx: i, sheared: st.sheared[i] === today }, o)));
+      const me = mulberry32(Math.floor(hash2(H.x + i * 131, H.z - i * 71, 78) * 1e9));   // this animal: always the same one
+      for (let tries = 0; tries < 8; tries++) {
+        const x = H.x + (r() - 0.5) * 8, z = H.z + (r() - 0.5) * 8, y = World.heightAt(Math.floor(x), Math.floor(z)) + 1;
+        if (blockedAt(x, y, z, 0.4, 1.5) || !World.solid(Math.floor(x), y - 1, Math.floor(z)) || World.get(Math.floor(x), y, Math.floor(z)) === B.WATER) continue;
+        members.push(spawn(H.kind, x, y, z, Object.assign({ herd: H.id, idx: i, flock: H.id, home: { x: H.x, z: H.z }, rng: me, sheared: st.sheared[i] === today }, o)));
+        return;
+      }
     };
     for (let i = 0; i < n; i++) if (st.dead.indexOf(i) < 0) place(i);
     if (st.extra === today) place(99, { special: 'extra' });                // one more than yesterday
@@ -2162,24 +2657,33 @@ const Animals = (() => {
     const near = [];
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       const cx = pcx + dx, cz = pcz + dz, id = cx + ',' + cz;
-      if (loaded.has(id) || !World.chunks.has(cx + ',' + cz)) continue;
-      const H = herdAt(cx, cz); if (H) near.push([dx * dx + dz * dz, H]);
+      if (loaded.has(id) || !World.chunks.has(id)) continue;
+      const H = herdAt(cx, cz); if (H && areaReady(H.x, H.z)) near.push([dx * dx + dz * dz, H]);
     }
     near.sort((p, q) => p[0] - q[0]);
-    for (const [, H] of near) { if (animals.length + H.n > CAP) break; loadHerd(H); }
+    let budget = 2;                                             // (a couple per second, so no single frame stutters)
+    for (const [, H] of near) {
+      if (animals.length + H.n > CAP) break;
+      const st = herdState[H.id];                               // an emptied field fills up again while you're not looking
+      if (st && st.gone !== undefined && st.gone !== today && Math.hypot(H.x - P.x, H.z - P.z) < 70 && inViewPt(H.x, World.heightAt(H.x, H.z) + 1, H.z, 0.3)) continue;
+      if (budget-- <= 0) break;
+      loadHerd(H);
+    }
   }
 
   // ---------------- hitting, shearing, milking ----------------
-  const ray = new THREE.Ray(), bmin = new THREE.Vector3(), bmax = new THREE.Vector3(), bx = new THREE.Box3(), hitP = new THREE.Vector3();
+  const ray = new THREE.Ray(), lray = new THREE.Ray(), bx = new THREE.Box3(), hitP = new THREE.Vector3();
   let hitCool = 0;
   function aimed(maxDist) {
     ray.origin.copy(camera.position); ray.direction.set(0, 0, -1).applyQuaternion(camera.quaternion);
     let best = null, bd = maxDist;
     for (const a of animals) {
-      if (a.dieT) continue;
-      const hw = a.spec.w / 2 + 0.1;
-      bx.min.set(a.x - hw, a.y, a.z - hw); bx.max.set(a.x + hw, a.y + a.spec.h, a.z + hw);
-      if (ray.intersectBox(bx, hitP)) { const d = hitP.distanceTo(ray.origin); if (d < bd) { bd = d; best = a; } }
+      if (a.dieT || !a.model.group.visible) continue;
+      // test the ray in the animal's own frame, against a box from its nose to its tail
+      const c = Math.cos(a.a), s = Math.sin(a.a), sz = a.per.size, ox = ray.origin.x - a.x, oz = ray.origin.z - a.z, dx = ray.direction.x, dz = ray.direction.z, hw = a.spec.w / 2 * sz + 0.08;
+      lray.origin.set(ox * c - oz * s, ray.origin.y - a.y, ox * s + oz * c); lray.direction.set(dx * c - dz * s, ray.direction.y, dx * s + dz * c);
+      bx.min.set(-hw, 0, -a.spec.zb * sz - 0.05); bx.max.set(hw, a.hh * (1 - a.ai.lie * 0.45), a.spec.zf * sz + 0.05);
+      if (lray.intersectBox(bx, hitP)) { const d = hitP.distanceTo(lray.origin); if (d < bd) { bd = d; best = a; } }
     }
     return best;
   }
@@ -2189,13 +2693,17 @@ const Animals = (() => {
     if (kind === 'break') { if (hitCool <= 0) { hitCool = 0.4; hit(a); } return true; }
     // tap: shear or milk
     if (a.special) return true;
-    const st = a.herd ? hs(a.herd) : null;
+    const st = a.herd ? hs(a.herd) : null, P = Player.p;
     if (a.kind === 'sheep') {
       if (a.sheared) toast('Its wool hasn\'t grown back yet');
-      else { a.sheared = true; a.model.coat.visible = false; if (st) st.sheared[a.idx] = today; for (let i = 0, n = 1 + (Math.random() < 0.5 ? 1 : 0); i < n; i++) drop('wool', a.x, a.y + 0.6, a.z); GameAudio.animal('sheep1', a.x, a.z, 0.8); }
+      else {
+        a.sheared = true; for (const c of a.model.coat) c.visible = false; if (st) st.sheared[a.idx] = today;
+        for (let i = 0, n = 1 + (Math.random() < 0.5 ? 1 : 0); i < n; i++) drop('wool', a.x, a.y + 0.6, a.z);
+        GameAudio.animal('sheep1', a.x, a.z, 0.8, a.per.voice); alarm(a, P.x, P.z, 0.3, true);
+      }
     } else if (a.kind === 'cow') {
       if (st && st.milked[a.idx] === today || a.milked) toast('No more milk today');
-      else { a.milked = true; if (st) st.milked[a.idx] = today; give('milk', 1); GameAudio.animal('cow1', a.x, a.z, 0.6); }
+      else { a.milked = true; if (st) st.milked[a.idx] = today; give('milk', 1); GameAudio.animal('cow1', a.x, a.z, 0.6, a.per.voice); }
     }
     return true;
   }
@@ -2203,13 +2711,16 @@ const Animals = (() => {
     const P = Player.p;
     if (a.kind === 'deer') { deer.hits++; Events.emit('deerHit', { hits: deer.hits }); return; }     // nothing happens. it just looks at you
     if (a.special === 'extra' || a.special === 'visitor' || a.special === 'upright') { Events.emit('animalVanish', { kind: a.special }); remove(a); return; }
-    a.hp--; a.hurtT = 0.3; tint(a, true);
+    a.hp--; a.hurtT = 0.3; a.red = true; setLook(a);
     const l = Math.hypot(a.x - P.x, a.z - P.z) || 1;
-    a.vx = (a.x - P.x) / l * 5; a.vz = (a.z - P.z) / l * 5; a.vy = 5; a.onGround = false;
+    a.kx = (a.x - P.x) / l * 4.5; a.kz = (a.z - P.z) / l * 4.5; a.vy = 5; a.onGround = false;
     GameAudio.hit();
-    GameAudio.animal(a.spec.hurt || a.spec.sound, a.x, a.z, 0.9, 1.25);
-    // the whole herd runs
-    for (const b of animals) if (b.herd === a.herd && !b.special && Math.hypot(b.x - a.x, b.z - a.z) < 12) { b.state = 'flee'; b.t = rand(4, 7); }
+    GameAudio.animal(a.spec.hurt || a.spec.sound, a.x, a.z, 0.9, 1.25 * a.per.voice);
+    // it runs, the herd runs after it (each one a moment later), and they remember you for a while
+    for (const b of animals) if ((b === a || b.flock && b.flock === a.flock) && Math.hypot(b.x - a.x, b.z - a.z) < 14) {
+      b.ai.scared = Math.max(b.ai.scared, b === a ? 1 : 0.6); b.ai.stare = null; b.ai.frozen = false; b.ai.frzIn = 1e9; b.ai.creep = false;   // that breaks the spell
+    }
+    alarm(a, P.x, P.z, 1.5, false, P.y + P.eye);
     if (a.hp <= 0) {
       a.dieT = 0.001;
       for (const [item, lo, hi] of a.spec.drops) {
@@ -2220,16 +2731,33 @@ const Animals = (() => {
       if (a.herd) { const st = hs(a.herd); if (st.dead.indexOf(a.idx) < 0) st.dead.push(a.idx); }
     }
   }
+  // a puff of dust when one is gone
+  const puffs = [], puffMat = look({ color: 0xdedbd4 }), puffGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+  function puff(x, y, z, n) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(puffGeo, puffMat); m.position.set(x + rand(-0.3, 0.3), y + rand(0, 0.5), z + rand(-0.3, 0.3)); scene.add(m);
+      puffs.push({ m, vx: rand(-0.7, 0.7), vy: rand(0.4, 1.3), vz: rand(-0.7, 0.7), t: 0, life: rand(0.45, 0.85) });
+    }
+  }
+  function updatePuffs(dt) {
+    for (let i = puffs.length - 1; i >= 0; i--) {
+      const p = puffs[i], k = 1 - (p.t += dt) / p.life;
+      if (k <= 0) { scene.remove(p.m); puffs.splice(i, 1); continue; }
+      p.m.position.set(p.m.position.x + p.vx * dt, p.m.position.y + p.vy * dt, p.m.position.z + p.vz * dt); p.m.scale.setScalar(k);
+    }
+  }
 
   // ---------------- the uncanny ----------------
   const fwd = new THREE.Vector3(), tv = new THREE.Vector3();
-  function inView(a, cone) {
-    tv.set(a.x - camera.position.x, a.y + a.spec.h * 0.6 - camera.position.y, a.z - camera.position.z);
+  function inViewPt(x, y, z, cone) {
+    tv.set(x - camera.position.x, y - camera.position.y, z - camera.position.z);
     const d = tv.length(); if (d < 0.01) return true;
     return fwd.dot(tv) / d > (cone || 0.6);
   }
-  let stareT = 0, follow = null, rainFreeze = false, creepT = rand(240, 420);
-  Events.on('weather', e => { rainFreeze = (e.state === 'rain' || e.state === 'storm') && Math.random() < 0.5 * (1 + Weather.unease); });
+  const inView = (a, cone) => inViewPt(a.x, a.y + a.spec.h * 0.6, a.z, cone);
+  let stareT = 0, follow = null, rainFreeze = false, creepT = rand(240, 420), stillness = false;
+  Events.on('weather', e => { rainFreeze = (e.state === 'rain' || e.state === 'storm') && Math.random() < 0.2 * (1 + Weather.unease); });
+  Events.on('stillness', e => { stillness = e.on; });     // the world holds its breath, and so do they
   function groundSpot(x, z, near) {   // the first place to stand, looking down from above (built blocks count too)
     const h = near === undefined ? World.heightAt(Math.floor(x), Math.floor(z)) : Math.floor(near);
     for (let y = h + 10; y > h - 10; y--) {
@@ -2238,17 +2766,56 @@ const Animals = (() => {
     }
     return null;
   }
+  // stop and look at you (no blinking)
+  function hold(a, c, turn, stand) {
+    const ai = a.ai, P = Player.p;
+    ai.creep = true; ai.noBlink = true; ai.look = c.playerPt; ai.gzT = 0; ai.sleepy = 0; ai.goalSpd = 0;
+    ai.goalA = Math.atan2(P.x - a.x, P.z - a.z); ai.turn = turn;
+    if (stand) ai.lieT = 0;
+    return true;
+  }
+  function uncanny(a, dt, c) {
+    const ai = a.ai;
+    ai.creep = false; ai.caught = false;
+    // the stare: they turn to look one by one, and they don't all stop at the same time
+    if (ai.stare) {
+      const s = ai.stare; s.in -= dt; s.out -= dt;
+      if (s.out <= 0) { ai.stare = null; ai.t = Math.min(ai.t, rand(0.5, 3)); }
+      else if (s.in <= 0) return hold(a, c, 1.1, false);
+    }
+    // standing still in the rain, facing you: they stop one by one, and start again one by one
+    if (c.rainFreeze) {
+      ai.frzOut = rand(0.5, 5);
+      if (!ai.frozen) { if (ai.frzIn === null) ai.frzIn = rand(0, 6); if ((ai.frzIn -= dt) <= 0) ai.frozen = true; }
+    } else { ai.frzIn = null; if (ai.frozen && (ai.frzOut -= dt) <= 0) ai.frozen = false; }
+    if (ai.frozen) return hold(a, c, 0.7, true);
+    // followers: they come after you while you're not looking, and stop dead (mid-step) when you turn round.
+    // Every time you catch one, it is a little closer than before
+    if (follow && follow.members.indexOf(a) >= 0) {
+      const seen = inView(a, 0.75);
+      if (seen && !a.followLook) ai.fdist = Math.max(8, ai.fdist - rand(0, 3.5));
+      a.followLook = seen;
+      hold(a, c, seen ? 0 : 2, true);
+      if (seen) { a.spd = 0; ai.caught = true; }
+      else if (c.pd > ai.fdist) { go(a, ai.goalA, a.spec.walk * 2.2, dt, 2.5); ai.turn = 5; }
+      return true;
+    }
+    return false;
+  }
   const creeps = {
     stare() {   // every animal around you stops and watches you
-      let n = 0;
-      for (const a of animals) if (!a.special && !a.dieT && Math.hypot(a.x - Player.p.x, a.z - Player.p.z) < 45) { a.state = 'stare'; n++; }
-      if (!n) return false;
-      stareT = rand(8, 14); Events.emit('animalStare', { n }); return true;
+      const who = animals.filter(a => !a.special && !a.dieT && Math.hypot(a.x - Player.p.x, a.z - Player.p.z) < 45);
+      if (!who.length) return false;
+      stareT = rand(8, 14);
+      who.forEach((a, i) => { a.ai.stare = { in: i ? rand(0, 2.4) : 0, out: stareT + rand(-2, 2.5) }; });
+      if (who.length > 1 && Math.random() < 0.5) pick(who).ai.stare.out += rand(6, 14);      // and one of them doesn't stop
+      Events.emit('animalStare', { n: who.length }); return true;
     },
     follow() {   // a herd follows you through the night, and stops when you turn around
       let best = null, bd = 90;
       for (const [, L] of loaded) { const m = L.members.filter(a => !a.gone && !a.special); const d = Math.hypot(L.H.x - Player.p.x, L.H.z - Player.p.z); if (m.length && d < bd) { bd = d; best = m; } }
       if (!best) return false;
+      for (const a of best) a.ai.fdist = rand(20, 30);
       follow = { members: best, t: rand(60, 120) }; Events.emit('animalFollow', {}); return true;
     },
     window() {   // something is standing outside your house, looking in
@@ -2260,7 +2827,7 @@ const Animals = (() => {
         if (blockedAt(x, y, z, 0.35, 1.5) || !World.solid(Math.floor(x), y - 1, Math.floor(z))) continue;
         let roof = false; for (let k = 2; k < 8 && !roof; k++) roof = World.solid(Math.floor(x), y + k, Math.floor(z));
         if (roof) continue;
-        spawn(pick(['cow', 'sheep', 'pig']), x, y, z, { special: 'visitor', state: 'watch', t: 90 });
+        spawn(pick(['cow', 'sheep', 'pig']), x, y, z, { special: 'visitor', t: 90 });
         Events.emit('animalWindow', {}); return true;
       }
       return false;
@@ -2269,7 +2836,7 @@ const Animals = (() => {
       const P = Player.p, ang = Player.p.yaw + Math.PI + rand(-0.6, 0.6), r = rand(34, 48);
       const x = P.x - Math.sin(ang) * r, z = P.z - Math.cos(ang) * r, y = groundSpot(x, z);
       if (y === null) return false;
-      spawn(pick(['cow', 'sheep', 'pig']), x, y, z, { special: 'upright', state: 'upright', t: 90, a: ang + Math.PI / 2 });
+      spawn(pick(['cow', 'sheep', 'pig']), x, y, z, { special: 'upright', t: 90, a: ang + Math.PI / 2 });
       Events.emit('animalUpright', {}); return true;
     },
   };
@@ -2279,12 +2846,20 @@ const Animals = (() => {
     for (const a of animals.slice()) if (a.special === 'visitor' || a.special === 'upright') remove(a);
     if (ids.length && Math.random() < 0.25 * u) extraOne(pick(ids));
     if (ids.length > 1 && Math.random() < 0.15 * u) emptyField(pick(ids));
-    for (const a of animals) if (a.kind === 'cow') a.milked = false;
+    for (const a of animals) {
+      if (a.kind === 'cow') a.milked = false;
+      if (a.kind === 'sheep' && a.sheared && !(a.herd && hs(a.herd).sheared[a.idx] === today)) { a.sheared = false; for (const c of a.model.coat) c.visible = true; }  // the wool grew back
+    }
+    // yesterday's empty fields fill up again (while you're not looking)
+    for (const [id, L] of loaded) { const st = hs(id); if (st.gone !== undefined && st.gone !== today && !L.members.some(b => !b.gone)) loaded.delete(id); }
   }
   function extraOne(id) {   // one more than yesterday
     hs(id).extra = today;
     const L = loaded.get(id), m = L && L.members.find(b => !b.gone);
-    if (m) L.members.push(spawn(L.H.kind, m.x + 1, m.y, m.z, { herd: id, idx: 99, special: 'extra' }));
+    if (m) for (let k = 0; k < 12; k++) {
+      const x = m.x + rand(-3, 3), z = m.z + rand(-3, 3), y = floorNear(x, z, m.y);
+      if (y !== null && !blockedAt(x, y, z, 0.45, 1.5)) { L.members.push(spawn(L.H.kind, x, y, z, { herd: id, idx: 99, flock: id, home: m.home, special: 'extra' })); break; }
+    }
     Events.emit('extraAnimal', { herd: id });
   }
   function emptyField(id) {   // the whole herd is gone (while you're not looking). Tomorrow it's back: one fewer, or one more
@@ -2293,6 +2868,19 @@ const Animals = (() => {
     Events.emit('emptyField', { herd: id });
   }
   Events.on('dawn', dawn);
+
+  // ---------------- what they hear ----------------
+  function near(x, z, r, f) { for (const a of animals.slice()) { const d = Math.hypot(a.x - x, a.z - z); if (d < r) f(a, d); } }
+  Events.on('break', b => near(b.x + 0.5, b.z + 0.5, 14, (a, d) => alarm(a, b.x + 0.5, b.z + 0.5, 0.5 * (1 - d / 14), false, b.y + 0.5)));
+  Events.on('place', b => near(b.x + 0.5, b.z + 0.5, 12, a => {       // something new: the curious ones come and sniff it
+    const ai = a.ai, p = { x: b.x + 0.5, y: b.y + 0.5, z: b.z + 0.5 };
+    if (a.special || ai.creep || ai.fear > 0.1 || ai.mode === 'sleep' || ai.mode === 'flee') return;
+    if (a.per.curious > 0.55 && Math.random() < a.per.curious) { setMode(a, 'curious'); ai.target = p; }
+    else { ai.lookAt = p; ai.lookAtT = rand(0.8, 2); }
+  }));
+  const thunderQ = [];
+  let thunderCalm = 0;
+  Events.on('thunder', e => thunderQ.push({ t: e.delay, x: e.x, z: e.z, dist: e.dist }));
 
   // ---------------- the deer ----------------
   const deer = { a: null, seen: 0, hits: 0, luck: 0, checkT: 5, regions: {} };
@@ -2311,46 +2899,126 @@ const Animals = (() => {
       const ang = P.yaw + rand(-0.9, 0.9), x = P.x - Math.sin(ang) * dist, z = P.z - Math.cos(ang) * dist, y = groundSpot(x, z);
       if (y === null) continue;
       if (deer.a) remove(deer.a);
-      deer.a = spawn('deer', x, y, z, { special: 'deer', state: 'watch', t: 180 });
+      deer.a = spawn('deer', x, y, z, { special: 'deer', t: 180 });
       return true;
     }
     return false;
   }
 
-  // ---------------- every frame ----------------
-  function faceTo(a, tx, tz, dt, speed) { const ta = Math.atan2(tx - a.x, tz - a.z); a.a += wrap(ta - a.a) * Math.min(1, dt * (speed || 3)); }
-  const upQ = new THREE.Vector3(), upP = new THREE.Vector3();
-  function animate(a, dt, P) {
-    const m = a.model, moving = Math.hypot(a.vx, a.vz);
-    a.walk += ((moving > 0.2 ? 1 : 0) - a.walk) * Math.min(1, dt * 6);
-    a.phase += dt * moving * (a.kind === 'chicken' ? 9 : 4.5);
-    const sw = Math.sin(a.phase) * 0.6 * a.walk;
-    m.legs.forEach((l, i) => { l.rotation.x = (i === 0 || i === 3 ? sw : -sw); });
-    // the head: grazing, or looking at you
-    const watching = a.state === 'stare' || a.state === 'watch' || a.state === 'freeze' || a.special === 'extra' || a.special === 'deer' || a.followLook;
-    let hy = 0, hx = a.state === 'graze' ? 0.95 : 0;
-    if (watching) {
-      hy = clamp(wrap(Math.atan2(P.x - a.x, P.z - a.z) - a.a), -1.1, 1.1);
-      hx = clamp(-Math.atan2(P.y + P.eye - (a.y + m.headY), Math.hypot(P.x - a.x, P.z - a.z)), -0.7, 0.7);
+  // ---------------- the body: legs, head, tail, ears, wings, eyes ----------------
+  const tv1 = new THREE.Vector3(), tv2 = new THREE.Vector3();
+  function animate(a, dt) {
+    const m = a.model, ai = a.ai, s = a.spec, L = s.legH, rig = m.rig;
+    // poses blend: lying down and getting up take a moment, the head drops quickly to eat
+    ai.lie += (ai.lieT - ai.lie) * Math.min(1, dt * (ai.lieT ? 1.2 : 2.6));
+    ai.gz += (ai.gzT - ai.gz) * Math.min(1, dt * (a.kind === 'chicken' ? 14 : 3.2));
+    ai.al += (((ai.mode === 'alert' || ai.fear > 0.55) && !ai.creep ? 1 : 0) - ai.al) * Math.min(1, dt * 4);
+    ai.side += ((a.kind === 'pig' && ai.mode === 'sleep' ? 1 : 0) - ai.side) * Math.min(1, dt * 1.5);   // pigs sleep on their side
+    // the legs move with the ground covered, so the feet don't slide; turning on the spot moves them too.
+    // A follower you've caught stays frozen mid-step
+    if (!ai.caught) {
+      const moved = a.moved + Math.abs(a.yawV) * dt * s.len * 0.3, A = clamp(moved / dt / (3.8 * L), 0, 0.85);
+      a.amp += (A - a.amp) * Math.min(1, dt * 7);
+      a.phase += moved * Math.PI / (2 * L * Math.max(0.25, Math.sin(a.amp)));
     }
-    m.head.rotation.y += (hy - m.head.rotation.y) * Math.min(1, dt * (a.special === 'deer' ? 30 : 5));
-    m.head.rotation.x += (hx - m.head.rotation.x) * Math.min(1, dt * (a.special === 'deer' ? 30 : 4));
-    if (a.state === 'upright') {                          // standing up on its back legs
-      const L = a.spec.len;
-      m.rig.rotation.x = -1.35; upQ.set(0, a.spec.legH, -L / 2);
-      upP.copy(upQ).applyEuler(m.rig.rotation); m.rig.position.copy(upQ).sub(upP);
-      m.legs.forEach((l, i) => { if (i >= 2) l.rotation.x = 1.35 + sw; else l.rotation.x = 0.3; });
-      m.head.rotation.x = 1.2;
+    const lie = ai.lie, tuck = lie * (1 - ai.side), sw = Math.sin(a.phase) * a.amp * (1 - lie), two = m.legs.length === 2, R = Math.PI / 2;
+    m.legs.forEach((l, i) => {
+      const walk = i === 0 || i === 3 ? sw : -sw, fold = two ? R : i < 2 ? R : -R;       // folded flat under the body
+      l.rotation.x = walk + (fold - walk) * tuck;
+      l.rotation.z = two || i < 2 ? 0 : (i === 2 ? -0.3 : 0.3) * tuck;                // lying: the back legs splay a little
+      if (two) l.visible = tuck < 0.6;                                                  // a sitting hen covers her legs
+    });
+    // the body rides up and down over the planted legs; lying down, it sits on the ground
+    rig.rotation.set(!a.onGround && !a.inWater && !a.dieT ? clamp(-a.vy * 0.035, -0.3, 0.3) : 0, 0, 0);
+    rig.position.set(0, L * (Math.cos(sw) - 1) * 0.4 - tuck * (L - m.legW * 0.6), 0);
+    if (ai.side > 0.01) {                                      // rolled over onto its right side, around the bottom edge
+      const k = ai.side * lie, e = -s.w * 0.475;
+      rig.rotation.z = k * 1.52;
+      tv1.set(e, 0, 0).applyEuler(rig.rotation); tv2.set(0, m.bodyY, 0).applyEuler(rig.rotation);
+      rig.position.set(-tv2.x * k, rig.position.y - tv1.y, 0);
     }
-    if (a.hurtT > 0) { a.hurtT -= dt; if (a.hurtT <= 0) tint(a, false); }
-    if (a.dieT) { a.dieT += dt; m.rig.rotation.z = Math.min(1.5, a.dieT * 5); }
+    if (a.special === 'upright') {                             // standing up on its back legs, pivoting on the back hips
+      rig.rotation.set(-1.35, 0, 0); tv1.set(0, L, -m.hipZ); tv2.copy(tv1).applyEuler(rig.rotation); rig.position.copy(tv1).sub(tv2);
+      m.legs.forEach((l, i) => { l.rotation.x = i >= 2 ? 1.35 + sw : 0.3; });
+    }
+    if (a.dieT) rig.rotation.z = Math.min(1.5, a.dieT * 5);
+    // the head: looking at something, glancing about, eating, asleep
+    let hy = ai.gy, hp = ai.gp;
+    if (ai.look) {
+      const dx = ai.look.x - a.x, dz = ai.look.z - a.z;
+      hy = wrap(Math.atan2(dx, dz) - a.a); hp = -Math.atan2(ai.look.y - (a.y + m.headY * a.per.size), Math.hypot(dx, dz));
+    }
+    hy = clamp(hy, -1.05, 1.05); hp = clamp(hp, -0.75, 0.6) - ai.al * 0.2;
+    if (ai.sleepy && lie > 0.5) { hy = 0.4; hp = 0.5; }
+    if (ai.sniff) hp += Math.sin(ai.chew * 1.6) * 0.05;
+    const g = s.graze, gz = ai.gz;
+    ai.chew += dt * 9;
+    hp += (g[2] + (a.kind === 'chicken' ? 0 : Math.sin(ai.chew) * 0.07) - hp) * gz; hy *= 1 - gz;
+    const hk = Math.min(1, dt * (a.special === 'deer' ? 30 : ai.look ? 6 : 4));
+    m.head.rotation.y += (hy - m.head.rotation.y) * hk;
+    m.head.rotation.x = a.special === 'upright' ? 1.2 : m.head.rotation.x + (hp - m.head.rotation.x) * hk;
+    m.head.position.set(m.base.x, m.base.y + g[0] * gz, m.base.z + g[1] * gz + (two ? Math.sin(a.phase * 2) * 0.03 * a.amp : 0));
+    // tail, ears, wings
+    if (m.tail) {
+      const fast = ai.mode === 'flee' || ai.mode === 'zoomies';
+      ai.tailPh += dt * (fast ? 10 : 1.5 + Math.sin(ai.tailPh * 0.13) * 0.9);
+      m.tail.rotation.z = Math.sin(ai.tailPh) * (a.kind === 'pig' || fast ? 0.45 : 0.14 + Math.max(0, Math.sin(ai.tailPh * 0.29)) * 0.3);
+      if (a.kind === 'cow') m.tail.rotation.x = fast ? 0.6 : 0.06;
+    }
+    if ((ai.earT -= dt) <= 0) { ai.earT = rand(1.5, 8); ai.ear = 1; ai.earSide = Math.random() < 0.5 ? 1 : -1; }
+    ai.ear = Math.max(0, ai.ear - dt * 5);
+    for (const e of m.ears) { const sx = e.position.x > 0 ? 1 : -1; e.rotation.z = sx === ai.earSide ? sx * Math.sin(ai.ear * Math.PI) * 0.6 : 0; e.rotation.x = e.userData.rx - ai.al * 0.35; }
+    if (m.wings.length) {
+      ai.flap += (((!a.onGround && !a.inWater) || ai.mode === 'flee' || ai.mode === 'zoomies' ? 1 : 0) - ai.flap) * Math.min(1, dt * 10);
+      ai.wingPh += dt * 26;
+      for (const w of m.wings) w.rotation.z = w.userData.sx * ai.flap * (0.25 + Math.abs(Math.sin(ai.wingPh)));
+    }
+    // blinking (never while it stares at you), eyes shut in its sleep
+    if (!ai.noBlink && (ai.blinkT -= dt) <= 0) { ai.blinkT = rand(1.8, 7); ai.blinkOn = 0.13; }
+    ai.blinkOn -= dt;
+    const shut = !ai.noBlink && !a.special && (ai.blinkOn > 0 || (ai.sleepy > 0 && lie > 0.8));
+    if (shut !== a.blink) { a.blink = shut; setLook(a); }
+    if (a.hurtT > 0 && (a.hurtT -= dt) <= 0 && !a.dieT) { a.red = false; setLook(a); }
     m.group.position.set(a.x, a.y, a.z); m.group.rotation.y = a.a;
   }
+  function voice(a, dt, c) {
+    const ai = a.ai;
+    if ((ai.callT -= dt) > 0) return;
+    ai.callT = rand(a.spec.call[0], a.spec.call[1]) * (c.herd && c.herd.far > 8 ? 0.5 : 1);     // it calls more when it's lost the herd
+    if (a.special || ai.creep || stareT || ai.mode === 'sleep' || c.pd > 32) return;
+    GameAudio.animal(a.spec.sound, a.x, a.z, 0.7, a.per.voice);
+    const f = a.kind !== 'chicken' && flocks.get(a.flock);                                    // sometimes another one answers
+    if (f) for (const b of f.members) if (b !== a && Math.random() < 0.3) { b.ai.callT = Math.min(b.ai.callT, rand(0.7, 2.5)); break; }
+  }
+
+  // ---------------- every frame ----------------
+  const flocks = new Map();
+  function flockTick() {   // where each herd is, and who leads it (the boldest)
+    flocks.clear();
+    for (const a of animals) {
+      if (a.special || a.dieT || !a.flock) continue;
+      let f = flocks.get(a.flock);
+      if (!f) flocks.set(a.flock, f = { x: 0, z: 0, n: 0, leader: null, lb: -1, members: [] });
+      f.x += a.x; f.z += a.z; f.n++; f.members.push(a);
+      if (a.per.bold + a.per.roam * 0.5 > f.lb) { f.lb = a.per.bold + a.per.roam * 0.5; f.leader = a; }
+    }
+    for (const f of flocks.values()) { f.x /= f.n; f.z /= f.n; }
+  }
+  function herdView(a) {   // the rest of its herd, from where it stands
+    const f = flocks.get(a.flock);
+    if (!f || f.n < 2 || a.special) return null;
+    const x = (f.x * f.n - a.x) / (f.n - 1), z = (f.z * f.n - a.z) / (f.n - 1);
+    let mate = null, md = 1e9;
+    for (const b of f.members) if (b !== a) { const d = (b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z); if (d < md) { md = d; mate = b; } }
+    return { x, z, n: f.n, far: Math.hypot(x - a.x, z - a.z), leader: f.leader, leaderD: f.leader ? Math.hypot(f.leader.x - a.x, f.leader.z - a.z) : 0, mate };
+  }
+  const playerPt = { x: 0, y: 0, z: 0 };
   function update(dt) {
     if (!dt) return;
-    const P = Player.p, night = 1 - Sky.state.day, u = 1 + Weather.unease, w = Weather.sound();
+    const P = Player.p, night = 1 - Sky.state.day, u = 1 + Weather.unease, w = Weather.sound(), wind = World.U.uWind.value;
     fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     hitCool -= dt;
+    lightUp(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day));   // by day only: at night they should be hard to see
     scanT -= dt; if (scanT <= 0) { scanT = 1; scanHerds(); }
     // the uncanny: rare, more at night and in fog
     stareT = Math.max(0, stareT - dt);
@@ -2368,75 +3036,50 @@ const Animals = (() => {
     const dA = deer.a;
     deer.luck += ((dA && Math.hypot(dA.x - P.x, dA.z - P.z) < 60 ? 1.5 : 0) - deer.luck) * Math.min(1, dt / (dA ? 6 : 60));
     Weather.unease = deer.luck;                          // Phase 5's director will add its own unease here
-
+    // thunder: they jump when the sound reaches them, some more than others, and a little less every time
+    thunderCalm = Math.max(0, thunderCalm - dt / 240);
+    for (let i = thunderQ.length - 1; i >= 0; i--) {
+      const q = thunderQ[i]; if ((q.t -= dt) > 0) continue;
+      thunderQ.splice(i, 1);
+      const lvl = clamp(1.05 - q.dist / 110, 0.15, 0.9) * (1 - thunderCalm * 0.6);
+      thunderCalm = Math.min(1, thunderCalm + 0.25);
+      for (const a of animals) if (!(a.ai.mode === 'sleep' && Math.random() < 0.5)) alarm(a, q.x === undefined ? a.x + rand(-9, 9) : q.x, q.z === undefined ? a.z + rand(-9, 9) : q.z, lvl * rand(0.6, 1.1), true);
+    }
+    playerPt.x = P.x; playerPt.y = P.y + P.eye; playerPt.z = P.z;
+    const c = { night, raining: w.rain > 0.3 || w.snow > 0.5, rainFreeze: rainFreeze && w.rain > 0.55, sprint: Math.hypot(P.vx, P.vz) > 5.2, inHouse: Weather.ctx.inHouse,
+                playerPt, windA: Math.atan2(wind.x, wind.y), windy: wind.length() > 0.3, pd: 0, herd: null, mate: null };
+    flockTick();
     for (const a of animals.slice()) {
+      if (a.gone) continue;
       const dist = Math.hypot(a.x - P.x, a.z - P.z), seen = inView(a);
-      if (a.dieT) { animate(a, dt, P); if (a.dieT > 0.8) remove(a); continue; }
+      if (a.dieT) { a.dieT += dt; animate(a, dt); if (a.dieT > 0.9) { puff(a.x, a.y + a.hh * 0.3, a.z, 7); remove(a); } continue; }
       // things that are only there while you don't look
       if (a.vanish && !seen) { remove(a); continue; }
       if (a.special === 'deer') {
         if (seen && !a.seen) { a.seen = true; deer.seen++; Events.emit('deerSeen', { n: deer.seen }); }
         a.unseenT = seen ? 0 : a.unseenT + dt; a.t -= dt;
         if (a.seen && a.unseenT > 1.5 && (Math.random() < 0.5 || dist < 12 || a.t < 0)) { remove(a); deer.a = null; continue; }
-        a.a += wrap(Math.atan2(P.x - a.x, P.z - a.z) - a.a) * Math.min(1, dt * 0.3);   // too still. it turns very slowly
-        physics(a, dt, 0); animate(a, dt, P); continue;
-      }
-      if (a.special === 'visitor') {
+      } else if (a.special === 'visitor') {
         a.t -= dt;
-        if (!Weather.ctx.inHouse || a.t < 0 || night < 0.4) { if (!seen || !Weather.ctx.inHouse) { remove(a); continue; } }
-        faceTo(a, P.x, P.z, dt, 2); physics(a, dt, 0); animate(a, dt, P); continue;
-      }
-      if (a.special === 'upright') {
+        if ((!Weather.ctx.inHouse || a.t < 0 || night < 0.4) && (!seen || !Weather.ctx.inHouse)) { remove(a); continue; }
+      } else if (a.special === 'upright') {
         a.t -= dt;
         if ((dist < 18 || a.t < 0 || night < 0.4) && (!seen || dist < 10)) { remove(a); continue; }
-        physics(a, dt, 0.7); animate(a, dt, P); continue;
-      }
-      if (dist > 70) { a.model.group.visible = false; continue; }
+      } else if (dist > 70) { a.model.group.visible = false; continue; }
       a.model.group.visible = true;
-      let want = 0;
-      a.t -= dt;
-      const freeze = rainFreeze && w.rain > 0.55 && !a.special;
-      if (a.special === 'extra') {                          // never grazes, never makes a sound, always facing you
-        faceTo(a, P.x, P.z, dt, 1.5);
-        const L = loaded.get(a.herd), c = L && L.members.find(b => b !== a && !b.gone);
-        if (c && Math.hypot(c.x - a.x, c.z - a.z) > 4) { want = a.spec.speed * 0.8; a.a = Math.atan2(c.x - a.x, c.z - a.z); }
-      } else if (follow && follow.members.indexOf(a) >= 0) {
-        a.followLook = inView(a, 0.75);
-        if (a.followLook) faceTo(a, P.x, P.z, dt, 6);           // it stops the moment you turn around
-        else if (dist > 26) { a.a = Math.atan2(P.x - a.x, P.z - a.z); want = a.spec.speed * 2.2; }
-        else faceTo(a, P.x, P.z, dt, 2);
-      } else if (a.state === 'stare' || freeze) {
-        faceTo(a, P.x, P.z, dt, 4);
-        if (!stareT && !freeze) { a.state = 'idle'; a.t = rand(1, 3); }
-      } else if (a.state === 'flee') {
-        want = a.spec.speed * 2.8;
-        if (Math.random() < dt * 1.5) a.a = Math.atan2(a.x - P.x, a.z - P.z) + rand(-0.8, 0.8);
-        if (a.t <= 0) { a.state = 'idle'; a.t = rand(1, 3); }
-      } else if (a.state === 'walk') {
-        want = a.spec.speed;
-        if (a.t <= 0) { a.state = 'idle'; a.t = rand(1, 4); }
-      } else if (a.state === 'graze') {
-        if (a.t <= 0) { a.state = 'idle'; a.t = rand(1, 3); }
-      } else if (a.t <= 0) {                                // idle: decide what's next
-        const r = Math.random(), L = a.herd && loaded.get(a.herd);
-        if (r < 0.5) {
-          a.state = 'walk'; a.t = rand(2, 6);
-          if (L && Math.hypot(L.H.x - a.x, L.H.z - a.z) > 9) a.a = Math.atan2(L.H.x - a.x, L.H.z - a.z) + rand(-0.4, 0.4);
-          else a.a += rand(-1.6, 1.6);
-        } else if (r < 0.85 && a.kind !== 'chicken') { a.state = 'graze'; a.t = rand(3, 9); }
-        else { a.t = rand(1, 4); }
-      }
-      physics(a, dt, want);
+      if (stillness && !a.special) continue;
+      c.pd = dist; c.herd = herdView(a); c.mate = c.herd && c.herd.mate;
+      brain(a, dt, c);
+      steer(a, dt);
+      physics(a, dt);
       if (a.gone) continue;
-      animate(a, dt, P);
-      // sounds (the uncanny ones are silent)
-      a.callT -= dt;
-      if (a.callT <= 0) {
-        a.callT = a.kind === 'chicken' ? rand(6, 16) : rand(12, 32);
-        if (!a.special && !stareT && !freeze && !(follow && follow.members.indexOf(a) >= 0) && dist < 30) GameAudio.animal(a.spec.sound, a.x, a.z, 0.7);
-      }
-      if (a.kind === 'chicken' && !a.special) { a.eggT -= dt; if (a.eggT <= 0) { a.eggT = rand(300, 600); if (dist < 40) drop('egg', a.x, a.y, a.z); } }
+      stuckCheck(a, dt);
+      animate(a, dt);
+      voice(a, dt, c);
+      if (a.kind === 'chicken' && !a.special && a.ai.mode !== 'sleep') { a.eggT -= dt; if (a.eggT <= 0) { a.eggT = rand(300, 600); if (dist < 40) drop('egg', a.x, a.y, a.z); } }
     }
+    if (!stillness) separate(dt);
+    updatePuffs(dt);
     updateDrops(dt);
   }
 
@@ -2450,27 +3093,41 @@ const Animals = (() => {
     if (s.deer) { deer.seen = s.deer.seen || 0; deer.hits = s.deer.hits || 0; deer.regions = s.deer.regions || {}; }
   }
   Player.setHook(interact);
+  function nearest() {
+    let best = null, bd = 1e9;
+    for (const a of animals) { if (a.special || a.dieT) continue; const d = Math.hypot(a.x - Player.p.x, a.z - Player.p.z); if (d < bd) { bd = d; best = a; } }
+    return best;
+  }
   function info() {
-    const herds = loaded.size, d = deer.a ? `deer ${Math.hypot(deer.a.x - Player.p.x, deer.a.z - Player.p.z).toFixed(0)} m` : 'no deer';
+    const herds = loaded.size, d = deer.a ? `deer ${Math.hypot(deer.a.x - Player.p.x, deer.a.z - Player.p.z).toFixed(0)} m` : 'no deer', n = nearest();
+    const k = v => Math.min(9, v * 10 | 0), q = n && n.per;
     return `animals    ${animals.length} in ${herds} herds, ${drops.length} items  ${d}, luck ${deer.luck.toFixed(2)}\n` +
-      `creepy     next ~${Math.max(0, creepT).toFixed(0)}s${stareT ? '  STARE' : ''}${follow ? '  FOLLOWED' : ''}${rainFreeze ? '  rain-freeze' : ''}`;
+      (n ? `nearest    ${LOOKS[n.kind][n.variant] ? LOOKS[n.kind][n.variant] + ' ' : ''}${n.kind}: ${n.ai.creep ? 'watching you' : n.ai.mode}${n.ai.fear > 0.05 ? ', fear ' + n.ai.fear.toFixed(1) : ''}, ${Math.hypot(n.x - Player.p.x, n.z - Player.p.z).toFixed(0)} m\n` +
+           `nature     bold ${k(q.bold)} curious ${k(q.curious)} lazy ${k(q.lazy)} social ${k(q.social)} jumpy ${k(q.jumpy)}\n` : '') +
+      `creepy     next ~${Math.max(0, creepT).toFixed(0)}s${stareT ? '  STARE' : ''}${follow ? '  FOLLOWED' : ''}${rainFreeze ? '  rain-freeze' : ''}${stillness ? '  STILL' : ''}`;
   }
   return {
     update, info, exportState, importState, give, toggleBag, animals,
     // debug helpers
     spawnNear(kind) {
       const P = Player.p, x = P.x - Math.sin(P.yaw) * 4, z = P.z - Math.cos(P.yaw) * 4, y = groundSpot(x, z, P.y);
-      return y === null ? null : spawn(kind, x, y, z, { a: P.yaw });
+      return y === null ? null : spawn(kind, x, y, z, { a: P.yaw, flock: 'debug' });
     },
     spawnDeer() { return spawnDeer(14); },
     creep(name) {
       const ids = [...loaded.keys()].sort((p, q) => { const P = Player.p, d = id => { const H = loaded.get(id).H; return Math.hypot(H.x - P.x, H.z - P.z); }; return d(p) - d(q); });
       if (name === 'extra') { if (ids.length) extraOne(ids[0]); return; }
       if (name === 'empty') { if (ids.length) emptyField(ids[0]); return; }
-      if (name === 'freeze') { rainFreeze = true; Weather.force('storm'); Weather.update(30); return; }
+      if (name === 'freeze') { Weather.force('storm'); Weather.update(30); rainFreeze = true; return; }   // (after the storm, which rolls its own dice)
       if (creeps[name]) creeps[name]();
     },
-    spawnAt(kind, x, y, z, o) { return spawn(kind, x, y, z, o); },
+    mood(name) {   // the nearest animal does this, now
+      const a = nearest();
+      if (!a) return;
+      if (name === 'startle') alarm(a, Player.p.x, Player.p.z, 1.2, false, Player.p.y + Player.p.eye);
+      else setMode(a, name);
+    },
+    setMode, spawnAt(kind, x, y, z, o) { return spawn(kind, x, y, z, o); },
     giveAll() { for (const k in ITEMS) give(k, 1); },
   };
 })();
@@ -2512,6 +3169,7 @@ const Debug = (() => {
   document.getElementById('dbgMusic').addEventListener('click', () => GameAudio.playMusic());
   el.querySelectorAll('[data-spawn]').forEach(b => b.addEventListener('click', () => Animals.spawnNear(b.dataset.spawn)));
   el.querySelectorAll('[data-creep]').forEach(b => b.addEventListener('click', () => Animals.creep(b.dataset.creep)));
+  el.querySelectorAll('[data-mood]').forEach(b => b.addEventListener('click', () => Animals.mood(b.dataset.mood)));
   document.getElementById('dbgDeer').addEventListener('click', () => Animals.spawnDeer());
   document.getElementById('dbgItems').addEventListener('click', () => Animals.giveAll());
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });

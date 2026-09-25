@@ -46,15 +46,28 @@ code, so there are no image files. The sounds are real recordings under free lic
 - Music and sound can be switched off on the title screen. Sound credits: [CREDITS.md](CREDITS.md)
 
 **Phase 4: animals**
-- Cows, sheep, pigs and chickens live in herds that belong to the world: the same herds are still there
-  when you come back. They wander, graze, and run away when hit
+- Cows, sheep, pigs and chickens live in herds that belong to the world: the same herds (and the same
+  animals, each with its own look and character) are still there when you come back
+- Every animal has a character: bold or timid, curious, lazy, sociable, jumpy. It gets hungry and tired,
+  and picks what to do next with a weighted coin toss, so you can't predict it. They graze (chickens
+  peck), wander, lie down, follow the herd's leader, come over to have a look at you or at a block you
+  just placed, and now and then break into a mad dash for no reason. At night they sleep; in the rain
+  they gather under a tree, or huddle with their backs to the wind. They swim to the shore if they fall in
+- They notice things: come at them too fast (or run) and the timid ones bolt while the bold ones barely
+  look up; break a block nearby and heads turn; thunder spooks them, a little less each time. When one
+  panics the herd follows, one after another. Hit one and the herd stays wary of you for a while
+- They look alive: they blink (and sleep with their eyes shut), flick their ears, swish their tails, and
+  their legs keep pace with the ground. Spotted cows and a rare brown one; cream, grey and (rarely) black
+  sheep; spotted pigs; brown hens; and no two exactly the same size
 - Hold on an animal to hit it; it drops meat (and leather or feathers). Tap a sheep to shear it (the wool
   grows back the next day) and tap a cow for a bucket of milk (once a day). Chickens lay eggs
 - Items pop out and fly into your **bag** (bag button on phones, E on a keyboard). Blocks stay unlimited
-- Real animal sounds that come from the animal's direction
-- The animals are not quite right. Sometimes they all stop and stare at you. Some mornings a herd has
-  one more than yesterday. At night something may follow you, stand outside your window, or walk on its
-  back legs far away. Some mornings a whole field is empty
+- Real animal sounds that come from the animal's direction. One that has lost its herd calls more, and
+  sometimes another one answers
+- The animals are not quite right. Sometimes they all stop and stare at you, turning one after another,
+  and they don't blink. Some mornings a herd has one more than yesterday. At night something may follow
+  you (a little closer every time you turn round), stand outside your window, or walk on its back legs
+  far away. Some mornings a whole field is empty. When the world goes still, so do they
 - Somewhere far from home, very rarely, there is a deer. It brings bad luck, and you can't kill it
 
 ## Coming next
@@ -77,7 +90,7 @@ code, so there are no image files. The sounds are real recordings under free lic
 | Hotbar | Pick a block |
 | II button | Pause |
 | Bag button | Your bag (items from animals) |
-| F3 button | Debug menu (weather, events, time of day) |
+| F3 button | Debug menu (weather, events, time of day, animals and their moods) |
 
 On a computer: WASD to walk, mouse to look (click to capture the mouse), Space to jump, Shift to run,
 left click to break or hit, right click to place (or shear/milk), E for the bag, 1–8 or the mouse wheel to pick a block, F3 for the debug menu.
