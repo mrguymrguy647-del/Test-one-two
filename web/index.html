@@ -52,6 +52,13 @@
   #overlay dt { color: var(--accent); text-align: right; }
   #overlay dd { margin: 0; }
   #loading { font: 13px var(--mono); color: var(--ink-dim); }
+  #opts { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 8px; }
+  #opts button { font: 12px var(--mono); color: var(--ink-dim); background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; }
+  #credits { position: absolute; inset: 0; background: #0b0d10; padding: 20px 24px; overflow-y: auto; font: 13px/1.5 var(--mono); color: var(--ink-dim); text-align: left; }
+  #credits h2 { font: 400 20px var(--font); color: var(--ink); margin: 0 0 8px; }
+  #credits p { margin: 0 0 8px; max-width: 70ch; }
+  #credits .close { color: var(--accent); }
+  #overlay.locked #opts { display: none; }
   #overlay.locked { background: #000; cursor: default; }
   #overlay.locked dl, #overlay.locked #loading { display: none; }
   #overlay.locked .sub { color: #c9b98a; }
@@ -135,6 +142,18 @@
     <dt>F3</dt><dd>debug menu</dd>
   </dl>
   <div id="loading">Growing the world…</div>
+  <div id="opts"><button id="optMusic">Music: on</button><button id="optSound">Sound: on</button><button id="optCredits">Credits</button></div>
+  <div id="credits" class="hide">
+    <h2>Sound credits</h2>
+    <p>Piano: Salamander Grand Piano by Alexander Holm (CC BY 3.0).</p>
+    <p>Footsteps, digging and placing: Minetest Game contributors (CC BY-SA 3.0, CC BY 3.0, CC0).</p>
+    <p>Thunder: hantorio, juskiddink, IllusiaProductions on Freesound, via the Minetest lightning mod (CC BY-SA).</p>
+    <p>Rain: Arctura (CC BY 3.0) and Q.K. (CC0). Wind: InspectorJ (CC BY 3.0). Via the regional_weather mod.</p>
+    <p>Crickets, owl: Mike Koenig (CC BY 3.0). Birds: reinsamba, PsychoBird (CC BY), UncleSigmund (CC0).
+       Water drops: kddekadenz (CC0). Via the Minetest ambience mod.</p>
+    <p>Sounds were trimmed, made mono and levelled for the game. Full list: CREDITS.md.</p>
+    <p class="close">Tap to close</p>
+  </div>
 </div>
 
 <div id="debug" class="hide">
@@ -166,12 +185,13 @@
   </div>
   <h3>Night &amp; the Sky Mind</h3>
   <div class="btns">
-    <button id="dbgMoonKill">Kill the moon</button><button id="dbgMoonFix">Restore moon</button><button id="dbgAiFast">Sky Mind ×10</button><button id="dbgUnlock">Clear lockout</button>
+    <button id="dbgMoonKill">Kill the moon</button><button id="dbgMoonFix">Restore moon</button><button id="dbgAiFast">Sky Mind ×10</button><button id="dbgUnlock">Clear lockout</button><button id="dbgMusic">Play music now</button>
   </div>
   <p class="hint">Weather is silent until Phase 3 (sound). Thunder without a flash only shows up here for now.</p>
 </div>
 
 <script src="three.min.js"></script>
+<script src="sounds.js"></script>
 <script>window.THREE || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');</script>
 <script>
 'use strict';
@@ -1219,7 +1239,7 @@ const Weather = (() => {
     bolts.push({ mesh, life: 0.4 });
     flashT = 0; flashStr = clamp(1.4 - dist / 120, 0.35, 1);
     Events.emit('lightning', { dist, silent: !!silent });
-    if (!silent) Events.emit('thunder', { delay: dist / 343, dist });
+    if (!silent) Events.emit('thunder', { delay: dist / 343, dist, x, z });
   }
 
   // ---------------- uncanny events (rare, never two at once) ----------------
@@ -1408,6 +1428,7 @@ const Weather = (() => {
       `false dawn ${['—', 'rising', 'holding', 'fading'][fd.phase]}   sun ${forb.on ? 'FORBIDDEN, stare ' + forb.stare.toFixed(1) + 's' : 'normal'}\n` +
       `sky mind   next choice ${Math.max(0, thinkT).toFixed(0)}s${betrayal ? '   betrayal: ' + betrayal.kind : ''}`;
   }
+  const snd = {};
   function exportState() { return { state, moonLife, trust, protect, home, days, cold: coldSpell }; }
   function importState(s, p) {
     home = { x: p.x, z: p.z, built: false };
@@ -1419,6 +1440,13 @@ const Weather = (() => {
   }
   return {
     update, trigger, info, exportState, importState, post, ctx,
+    // what the sound needs to know, every frame
+    sound() {
+      snd.rain = Math.max(live.rain, betrayal && betrayal.kind === 'rainInside' ? 0.8 : 0); snd.snow = live.snow;
+      snd.wind = U.uWind.value.length(); snd.storm = live.lightning; snd.timeScale = timeScale; snd.event = ev ? ev.name : '';
+      snd.betrayal = betrayal ? betrayal.kind : ''; snd.falseDawn = fd.phase; snd.stare = post.amt; snd.moonLife = moonLife;
+      return snd;
+    },
     force(name) { auto = false; setTarget(name, 5); },
     auto() { auto = true; thinkT = 0; },
     killMoon() { moonLife = 0.03; }, restoreMoon() { moonLife = 1; },
@@ -1467,9 +1495,329 @@ const Post = (() => {
 })();
 
 /* =====================================================================
-   AUDIO — Phase 3
+   AUDIO — real recorded sounds and a live piano (Phase 3)
    ===================================================================== */
-const GameAudio = { start() {}, update() {} };
+const GameAudio = (() => {
+  // Real recordings (web/sounds.js, see CREDITS.md) played through Web Audio so they react to the world:
+  // indoors everything is muffled, mines echo, thunder comes from where the lightning struck, and the
+  // piano music is composed live. Everything stays silent until the first tap (a browser rule).
+  const B = World.B, rand = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+  let ac = null, ready = false, loaded = 0, total = 0;
+  const buf = {};
+  const opts = { music: true, sound: true };
+  try { Object.assign(opts, JSON.parse(localStorage.getItem('stillness-audio') || '{}')); } catch (e) {}
+  const saveOpts = () => { try { localStorage.setItem('stillness-audio', JSON.stringify(opts)); } catch (e) {} };
+
+  // ---------------- the mixer ----------------
+  // your own sounds (sfx) ─────────────────────────────┐
+  // weather + ambience (world) → muffle → still ───────┼→ master → compressor → speakers
+  // piano (music) → still ─────────────────────────────┘      cave reverb and music hall hang off the side
+  let master, sfx, world, muffle, still, music, musicOut, cave, caveIn, hall, ring, ringOsc;
+  function impulse(sec, decay, bright) {
+    const n = Math.floor(ac.sampleRate * sec), b = ac.createBuffer(2, n, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c); let lp = 0;
+      for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * bright; d[i] = lp * Math.pow(1 - i / n, decay); }
+    }
+    return b;
+  }
+  function gainNode(v, to) { const g = ac.createGain(); g.gain.value = v; if (to) g.connect(to); return g; }
+  function build() {
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(ac.destination);
+    master = gainNode(opts.sound ? 0.9 : 0, comp);
+    still = gainNode(1, master);                         // silenced by "stillness" and the forbidden sun
+    muffle = ac.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 18000; muffle.Q.value = 0.4; muffle.connect(still);
+    world = gainNode(1, muffle);
+    sfx = gainNode(1, master);
+    cave = ac.createConvolver(); cave.buffer = impulse(3.2, 3.5, 0.5); cave.connect(still);
+    caveIn = gainNode(0, cave); sfx.connect(caveIn); world.connect(caveIn);
+    musicOut = gainNode(opts.music ? 1 : 0, still);
+    music = gainNode(0.55, musicOut);
+    hall = ac.createConvolver(); hall.buffer = impulse(3.8, 4, 0.35); hall.connect(musicOut);
+    music.connect(gainNode(0.32, hall));
+    ring = gainNode(0, master);                          // the forbidden sun rings in your ears
+    ringOsc = [7040, 7063].map(f => { const o = ac.createOscillator(); o.frequency.value = f; o.connect(ring); o.start(); return o; });
+  }
+  function b64(s) { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
+  function decode(data) {   // older WebViews only know the callback form
+    return new Promise((ok, no) => { const r = ac.decodeAudioData(data, ok, no); if (r && r.then) r.then(ok, no); });
+  }
+  async function load() {
+    const src = window.SOUNDS || {};
+    // the sounds you hear first go first; the piano last
+    const names = Object.keys(src).sort((a, b) => (a.startsWith('piano') ? 1 : 0) - (b.startsWith('piano') ? 1 : 0));
+    total = names.length;
+    for (const n of names) {
+      try { buf[n] = await decode(b64(src[n])); } catch (e) { console.warn('sound', n, e); }
+      delete src[n]; loaded++;
+      if (n === 'wind') startLoops();
+    }
+    ready = true;
+  }
+  const has = n => !!buf[n], recent = [];
+  // one sound, once. opts: gain, rate, pan (-1..1), to (bus), at (time), lp (lowpass Hz)
+  function play(name, o) {
+    if (!ac || !buf[name]) return null;
+    o = o || {};
+    recent.push(name); if (recent.length > 6) recent.shift();
+    const s = ac.createBufferSource(); s.buffer = buf[name]; s.playbackRate.value = o.rate || 1;
+    let node = s;
+    if (o.lp) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; node.connect(f); node = f; }
+    const g = gainNode(o.gain === undefined ? 1 : o.gain); node.connect(g); node = g;
+    if (o.pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = clamp(o.pan, -1, 1); node.connect(p); node = p; }
+    node.connect(o.to || sfx);
+    s.start(o.at || 0);
+    return { src: s, gain: g };
+  }
+  const variants = (base) => { const out = []; for (let i = 1; buf[base + i]; i++) out.push(base + i); return out; };
+  const playVar = (base, o) => { const v = variants(base); return v.length ? play(pick(v), o) : null; };
+
+  // ---------------- weather loops ----------------
+  const loops = {};
+  function startLoops() {
+    for (const n of ['rain', 'rain_heavy', 'wind']) {
+      if (loops[n] || !buf[n]) continue;
+      const s = ac.createBufferSource(); s.buffer = buf[n]; s.loop = true;
+      const g = gainNode(0, world); s.connect(g); s.start(0, Math.random() * buf[n].duration);
+      loops[n] = { src: s, gain: g, pos: 0, stuck: false, rate: 1 };
+    }
+  }
+  function setLoop(n, gain, rate, frozen, dt) {
+    const L = loops[n]; if (!L) return;
+    L.gain.gain.setTargetAtTime(gain, ac.currentTime, 0.4);
+    // "frozen rain": the sound gets stuck on a tiny slice, like a scratched CD
+    if (frozen && !L.stuck) {
+      const d = L.src.buffer.duration, at = (L.pos + 0.05) % (d - 0.2);
+      L.src.loopStart = at; L.src.loopEnd = at + 0.09; L.stuck = true;
+    } else if (!frozen && L.stuck) { L.src.loopStart = 0; L.src.loopEnd = 0; L.stuck = false; }
+    if (!frozen) { L.rate += (rate - L.rate) * Math.min(1, dt * 2); L.src.playbackRate.value = L.rate; L.pos = (L.pos + dt * L.rate) % L.src.buffer.duration; }
+  }
+
+  // ---------------- thunder ----------------
+  const thunderQ = [];
+  Events.on('thunder', e => thunderQ.push({ t: e.delay, dist: e.dist, x: e.x, z: e.z, ghost: e.ghost }));
+  function panTo(x, z) {
+    if (x === undefined) return rand(-0.8, 0.8);
+    const p = Player.p, dx = x - p.x, dz = z - p.z, l = Math.hypot(dx, dz) || 1;
+    return (dx * Math.cos(p.yaw) - dz * Math.sin(p.yaw)) / l;     // how far to your right it is
+  }
+  function thunder(e) {
+    const far = clamp(e.dist / 160, 0, 1), pan = panTo(e.x, e.z) * 0.8;
+    const o = { to: world, pan, lp: 9000 - far * 7600, gain: clamp(1.25 - far * 0.8, 0.35, 1) };
+    if (e.dist < 45) { play('thunder3', o); play('thunder1', Object.assign({}, o, { gain: o.gain * 0.7 })); }
+    else play(e.dist < 110 ? 'thunder1' : 'thunder2', o);
+  }
+
+  // ---------------- ambience: birds, crickets, the owl, cave drips ----------------
+  const birds = []; let birdT = 3, owlT = 60, dripT = 2, birdsMute = 0;
+  const crickets = [0, 1, 2, 3].map(i => ({ t: rand(1, 6) + i }));
+  function ambience(dt, w, c) {
+    const day = Sky.state.day, night = 1 - day, P = Player.p;
+    const quiet = w.event === 'stillness' || w.rain > 0.35 || w.storm > 0.5;
+    // birds sing by day... and during a false dawn, until they suddenly stop mid-song
+    birdsMute = Math.max(0, birdsMute - dt);
+    const dawnBirds = w.falseDawn === 1 || w.falseDawn === 2;
+    if (w.falseDawn === 3 && birds.length) { for (const b of birds) try { b.src.stop(); } catch (e) {} birds.length = 0; birdsMute = 90; }
+    if ((day > 0.6 || dawnBirds) && !quiet && !c.inMine && !birdsMute) {
+      birdT -= dt * (dawnBirds ? 1.6 : 1);
+      if (birdT <= 0) {
+        birdT = rand(3, 11);
+        const b = playVar('bird', { to: world, gain: rand(0.12, 0.3), rate: rand(0.94, 1.06), pan: rand(-0.9, 0.9) });
+        if (b) { birds.push(b); b.src.onended = () => { const i = birds.indexOf(b); if (i >= 0) birds.splice(i, 1); }; }
+      }
+    }
+    // crickets: four of them. As the moon dies they go quiet, one by one
+    if (night > 0.6 && !quiet && !c.inMine && P.y > CFG.SEA - 2) {
+      const voices = Math.round(w.moonLife * 4 + 0.2);
+      crickets.forEach((k, i) => {
+        if (i >= voices) return;
+        k.t -= dt;
+        if (k.t <= 0) { k.t = rand(2.5, 7); play('cricket', { to: world, gain: rand(0.3, 0.5), rate: rand(0.97, 1.03), pan: (i / 1.5 - 1) * 0.8 }); }
+      });
+      owlT -= dt;
+      if (owlT <= 0) { owlT = rand(70, 160); play('owl', { to: world, gain: 0.18, pan: rand(-1, 1), lp: 3500 }); }
+    }
+    // water dripping somewhere in the dark
+    if (c.inMine) {
+      dripT -= dt;
+      if (dripT <= 0) { dripT = rand(1.5, 7); playVar('drip', { to: world, gain: rand(0.1, 0.3), rate: rand(0.8, 1.2), pan: rand(-1, 1) }); }
+    }
+  }
+
+  // ---------------- footsteps and blocks ----------------
+  const STEP = { [B.GRASS]: 'grass', [B.LEAVES]: 'grass', [B.DIRT]: 'dirt', [B.SAND]: 'sand', [B.GRAVEL]: 'gravel', [B.STONE]: 'hard',
+                 [B.LOG]: 'wood', [B.PLANKS]: 'wood', [B.GLASS]: 'glass' };
+  const DIG = { [B.GRASS]: 'dig_crumbly', [B.DIRT]: 'dig_crumbly', [B.SAND]: 'dig_crumbly', [B.GRAVEL]: 'dig_crumbly', [B.STONE]: 'dig_cracky',
+                [B.LOG]: 'dig_choppy', [B.PLANKS]: 'dig_choppy', [B.LEAVES]: 'dig_snappy', [B.GLASS]: 'break_glass' };
+  let stepDist = 0, wasGround = true, fallV = 0;
+  function steps(dt) {
+    const P = Player.p;
+    if (P.fly) { wasGround = P.onGround; return; }
+    const speed = Math.hypot(P.vx, P.vz);
+    if (P.inWater && speed > 0.5) {
+      stepDist += speed * dt;
+      if (stepDist > 2.6) { stepDist = 0; playVar('step_water', { gain: 0.22, rate: rand(0.9, 1.1) }); }
+    } else if (P.onGround && speed > 0.5) {
+      stepDist += speed * dt;
+      if (stepDist > (speed > 5 ? 2.7 : 2.1)) { stepDist = 0; step(0.34); }
+    }
+    if (P.onGround && !wasGround && fallV < -5) step(Math.min(0.7, 0.3 - fallV * 0.03));   // landing
+    fallV = P.onGround ? 0 : Math.min(fallV, P.vy);
+    wasGround = P.onGround;
+  }
+  function step(gain) {
+    const P = Player.p, b = World.get(Math.floor(P.x), Math.floor(P.y - 0.2), Math.floor(P.z)), m = STEP[b];
+    if (m) playVar('step_' + m, { gain, rate: rand(0.92, 1.08) });
+  }
+  Events.on('break', t => {
+    if (!ac) return;
+    const d = DIG[t.b] || 'dig_crumbly';
+    playVar(d, { gain: 0.55, rate: rand(0.9, 1.1) });
+    if (t.b !== B.GLASS) playVar('dug', { gain: 0.35, rate: rand(0.9, 1.1) });
+  });
+  Events.on('place', t => {
+    if (!ac) return;
+    playVar(t.b === B.STONE || t.b === B.GLASS ? 'place_hard' : 'place', { gain: 0.5, rate: rand(0.92, 1.08) });
+  });
+
+  // ---------------- the piano: music composed live ----------------
+  // A real grand piano (sampled every minor third) played by a slow, sparse composer that picks its
+  // mood from the time of day and the weather. Phase 4's director can make it play wrong notes.
+  const SAMPLES = [];   // [midi, name]
+  ['C', 'Ds', 'Fs', 'A'].forEach((n, i) => { for (let o = 2; o <= 6; o++) SAMPLES.push([12 * (o + 1) + i * 3, 'piano_' + n + o]); });
+  function note(m, vel, at) {
+    let best = null;
+    for (const s of SAMPLES) if (buf[s[1]] && (!best || Math.abs(s[0] - m) < Math.abs(best[0] - m))) best = s;
+    if (!best) return;
+    play(best[1], { to: music, at, gain: 0.25 + vel * vel * 0.75, rate: Math.pow(2, (m - best[0]) / 12) });
+  }
+  const MODES = {
+    ionian: [0, 2, 4, 5, 7, 9, 11], lydian: [0, 2, 4, 6, 7, 9, 11], mixolydian: [0, 2, 4, 5, 7, 9, 10],
+    dorian: [0, 2, 3, 5, 7, 9, 10], aeolian: [0, 2, 3, 5, 7, 8, 10],
+  };
+  const PROGS = [[0, 5, 3, 4], [0, 3, 5, 4], [0, 4, 5, 3], [5, 3, 0, 4], [0, 3, 0, 4], [0, 2, 3, 3]];
+  let piece = null, musicT = rand(25, 45), wrongChance = 0;
+  function mood(w, c) {
+    const day = Sky.state.day;
+    if (c.inMine) return 'aeolian';
+    if (day < 0.35) return pick(['aeolian', 'dorian']);
+    if (w.rain > 0.3 || w.snow > 0.3) return pick(['dorian', 'mixolydian']);
+    return pick(['ionian', 'lydian', 'ionian', 'mixolydian']);
+  }
+  function compose(modeName) {
+    const scale = MODES[modeName], root = 48 + Math.floor(rand(0, 8)), beat = rand(0.95, 1.3), prog = pick(PROGS);
+    const deg = (d, oct) => root + 12 * (oct + Math.floor(d / 7)) + scale[((d % 7) + 7) % 7];
+    const notes = [], bars = 16;
+    // a little motif, reused and bent to each chord
+    const rhythm = pick([[0, 1.5, 2], [0.5, 1, 2.5], [0, 1, 1.5, 3], [0, 2], [1, 1.5, 2, 3]]);
+    const shape = rhythm.map(() => Math.floor(rand(-2, 5)));
+    for (let bar = 0; bar < bars; bar++) {
+      const t0 = bar * 4 * beat, ch = prog[bar % 4], section = Math.floor(bar / 4);   // 0 intro, 1-2 melody, 3 fading
+      notes.push([t0 + rand(0, 0.03), deg(ch, -1), rand(0.35, 0.5)]);                   // bass
+      if (Math.random() < 0.7) notes.push([t0 + 2 * beat, deg(ch + 4, -1), rand(0.25, 0.35)]);
+      if (section === 0 || section === 3) {                                               // sparse chord tones
+        if (Math.random() < 0.6) notes.push([t0 + beat * pick([1, 1.5, 2.5]), deg(ch + pick([2, 4, 7]), 0), rand(0.25, 0.4)]);
+      } else {
+        const vary = Math.random() < 0.35;
+        rhythm.forEach((r, i) => {
+          if (Math.random() < 0.12) return;                                                  // a breath
+          const d = ch + shape[i] + (vary && i === rhythm.length - 1 ? pick([-1, 1, 2]) : 0);
+          notes.push([t0 + r * beat + rand(-0.02, 0.03), deg(d, 1), rand(0.35, 0.6)]);
+        });
+        if (Math.random() < 0.3) notes.push([t0 + 3.5 * beat, deg(ch + 2, 0), rand(0.2, 0.3)]);
+      }
+    }
+    notes.push([bars * 4 * beat, deg(0, -1), 0.4], [bars * 4 * beat + 0.08, deg(4, 0), 0.3], [bars * 4 * beat + 0.2, deg(2, 1), 0.35]);
+    notes.sort((a, b) => a[0] - b[0]);
+    return { notes, i: 0, start: ac.currentTime + 0.3, end: bars * 4 * beat + 6, mode: modeName };
+  }
+  function musicTick(dt, w, c) {
+    if (!piece) {
+      // no music in storms, or when the night has gone completely dark: silence is worse
+      if (w.storm > 0.5 || w.moonLife < 0.3 || w.event === 'stillness') return;
+      musicT -= dt;
+      if (musicT <= 0 && has('piano_C4')) { piece = compose(mood(w, c)); musicT = rand(120, 300); }
+      return;
+    }
+    const now = ac.currentTime;
+    while (piece.i < piece.notes.length && piece.start + piece.notes[piece.i][0] < now + 0.4) {
+      const n = piece.notes[piece.i++];
+      const wrong = Math.random() < wrongChance ? pick([-1, 1]) : 0;                        // Phase 4
+      note(n[1] + wrong, n[2], piece.start + n[0]);
+    }
+    if (now > piece.start + piece.end) piece = null;
+  }
+  function stopMusic() {   // cut the piano off mid-phrase (it just stops)
+    piece = null;
+    music.gain.cancelScheduledValues(ac.currentTime); music.gain.setValueAtTime(0, ac.currentTime);
+    music.gain.setValueAtTime(0.55, ac.currentTime + 6);
+  }
+
+  // ---------------- every frame ----------------
+  function update(dt) {
+    if (!ac) return;
+    // sound only while you're playing; the title screen is quiet
+    if (!Player.locked || document.hidden) { if (ac.state === 'running') ac.suspend(); return; }
+    if (ac.state === 'suspended') ac.resume();
+    if (!dt) return;
+    const w = Weather.sound(), c = Weather.ctx, now = ac.currentTime, P = Player.p;
+    // indoors the world is muffled, underground more so. When the house betrays you, it isn't anymore
+    const cut = w.betrayal === 'rainInside' ? 16000 : c.inMine ? 380 : c.inHouse ? 750 : c.roofed ? 3500 : 18000;
+    muffle.frequency.setTargetAtTime(cut, now, 0.5);
+    caveIn.gain.setTargetAtTime(c.inMine ? 0.5 : 0.04, now, 0.8);
+    world.gain.setTargetAtTime(w.betrayal === 'rainInside' ? 1 : c.inMine ? 0.35 : c.inHouse ? 0.45 : c.roofed ? 0.8 : 1, now, 0.5);
+    // weather
+    const frozen = w.event === 'frozenRain' || w.event === 'stillness';
+    const high = clamp((P.y - CFG.SEA - 10) / 40, 0, 1);
+    setLoop('rain', smoothstep(0.02, 0.45, w.rain) * 0.42, w.timeScale || 0.001, frozen, dt);
+    setLoop('rain_heavy', smoothstep(0.45, 0.95, w.rain) * 0.3, w.timeScale || 0.001, frozen, dt);
+    setLoop('wind', clamp(0.03 + w.wind * 0.3 + high * 0.12 + w.snow * 0.08, 0, 0.5) * (w.event === 'stillness' ? 0 : 1), 1, false, dt);
+    // stillness: every sound of the world cuts out at once (your own steps don't)
+    const hush = w.event === 'stillness' ? 0 : 1 - w.stare * 0.85;
+    still.gain.setTargetAtTime(hush, now, w.event === 'stillness' ? 0.05 : 0.6);
+    ring.gain.setTargetAtTime(Math.pow(w.stare, 1.5) * 0.05, now, 0.3);
+    // thunder waits for the sound to arrive
+    for (let i = thunderQ.length - 1; i >= 0; i--) { thunderQ[i].t -= dt; if (thunderQ[i].t <= 0) { thunder(thunderQ[i]); thunderQ.splice(i, 1); } }
+    ambience(dt, w, c);
+    steps(dt);
+    musicTick(dt, w, c);
+  }
+  function start() {
+    if (!ac) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ac = new AC(); build(); load();
+      // the frame loop stops when the app goes to the background, so stop the sound right here
+      document.addEventListener('visibilitychange', () => { if (document.hidden) ac.suspend(); });
+    }
+    if (ac.state !== 'running') ac.resume();
+  }
+  function setOpt(k, v) {
+    opts[k] = v; saveOpts();
+    if (ac) { if (k === 'music') musicOut.gain.value = v ? 1 : 0; else master.gain.value = v ? 0.9 : 0; }
+  }
+  let meter = null, mdata = null;
+  function level() {   // loudness of what you hear, in dB (debug menu)
+    if (!ac) return -99;
+    if (!meter) { meter = ac.createAnalyser(); meter.fftSize = 2048; master.connect(meter); mdata = new Float32Array(meter.fftSize); }
+    meter.getFloatTimeDomainData(mdata);
+    let sum = 0, peak = 0; for (const v of mdata) { sum += v * v; peak = Math.max(peak, Math.abs(v)); }
+    return { rms: 10 * Math.log10(sum / mdata.length + 1e-12), peak: 20 * Math.log10(peak + 1e-12) };
+  }
+  function info() {
+    if (!ac) return 'audio      not started';
+    const l = level();
+    return `audio      ${ac.state}, ${loaded}/${total} sounds, level ${l.rms.toFixed(0)} dB (peak ${l.peak.toFixed(0)})\n` +
+      `recent     ${recent.join(' ')}\n` +
+      `music      ${opts.music ? '' : '(off) '}${piece ? piece.mode + ' ' + Math.floor((ac.currentTime - piece.start) / piece.end * 100) + '%' : 'next ~' + Math.max(0, musicT).toFixed(0) + 's'}`;
+  }
+  return {
+    start, update, info, level, opts, setOpt, stopMusic,
+    playMusic() { if (ac) { musicT = 0; piece = null; } },
+    set wrongChance(v) { wrongChance = v; },
+    get ready() { return ready; },
+  };
+})();
 
 /* =====================================================================
    DIRECTOR — Phase 4
@@ -1505,6 +1853,7 @@ const Debug = (() => {
   const aiBtn = document.getElementById('dbgAiFast');
   aiBtn.addEventListener('click', () => { const on = !aiBtn.classList.contains('on'); aiBtn.classList.toggle('on', on); Weather.setAiSpeed(on ? 10 : 1); });
   document.getElementById('dbgUnlock').addEventListener('click', () => { Save.lockUntil = 0; Save.write(); });
+  document.getElementById('dbgMusic').addEventListener('click', () => GameAudio.playMusic());
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
   document.getElementById('dbgView+').addEventListener('click', () => { CFG.VIEW = Math.min(12, CFG.VIEW + 1); });
   // clicks and touches inside the menu must not reach the game
@@ -1530,7 +1879,7 @@ const Debug = (() => {
       `time       ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}  (${t.toFixed(3)})\n` +
       `daylight   ${Sky.state.day.toFixed(2)}\n` +
       `looking at ${tg ? World.INFO[tg.b].name + ' ' + tg.x + ',' + tg.y + ',' + tg.z : '—'}\n` +
-      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() +
+      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() + '\n' + GameAudio.info() +
       (Save.locked() ? `\nlocked out ${Math.ceil((Save.lockUntil - Date.now()) / 1000)}s` : '');
   }
   return { update, get timeSpeed() { return timeSpeed; } };
@@ -1641,6 +1990,21 @@ Events.on('kick', () => {
   showLock();
 });
 if (Save.locked()) showLock();
+// music / sound / credits buttons on the title screen (they must not start the game)
+{
+  const credits = document.getElementById('credits'), mBtn = document.getElementById('optMusic'), sBtn = document.getElementById('optSound');
+  const label = () => { mBtn.textContent = 'Music: ' + (GameAudio.opts.music ? 'on' : 'off'); sBtn.textContent = 'Sound: ' + (GameAudio.opts.sound ? 'on' : 'off'); };
+  const act = { optMusic: () => GameAudio.setOpt('music', !GameAudio.opts.music), optSound: () => GameAudio.setOpt('sound', !GameAudio.opts.sound),
+                optCredits: () => credits.classList.remove('hide') };
+  for (const id in act) {
+    const el = document.getElementById(id);
+    el.addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); act[id](); label(); });
+    el.addEventListener('click', e => { e.stopPropagation(); act[id](); label(); });
+  }
+  const close = e => { e.stopPropagation(); e.preventDefault(); credits.classList.add('hide'); };
+  credits.addEventListener('touchend', close); credits.addEventListener('click', close);
+  label();
+}
 // hidden developer door: hold the title for 2.5 s to open the debug menu (phones have no F3 key on this screen)
 {
   const h1 = overlay.querySelector('h1'); let pressT = 0;

@@ -4,7 +4,7 @@ A calm, slightly uncanny block-building game for Android phones (it also plays i
 The world feels familiar and almost normal, until you start noticing small things that are wrong.
 
 The whole game is one HTML file (`web/index.html`) built with Three.js. Every texture is painted in
-code, so there are no image files.
+code, so there are no image files. The sounds are real recordings under free licenses (see CREDITS.md).
 
 ## What's in the game so far
 
@@ -32,10 +32,21 @@ code, so there are no image files.
 - Rare strange moments: rain that slows down or freezes in the air, fog that thickens only where you
   look, a small cloud that stays exactly above you, and moments where the wind simply stops
 
+**Phase 3: sound and music**
+- Real recorded sounds (not synthesized): rain, heavy rain, wind, thunder, footsteps for every block,
+  digging and placing, birds, crickets, an owl, and water dripping in caves
+- The sounds react to the world: indoors everything is muffled, mines echo, thunder comes from the
+  direction the lightning struck and arrives later the farther away it was, and the wind picks up on
+  high ground
+- Music played live on a real grand piano (recorded samples). A slow composer writes each piece as you
+  play, picking a mood from the time of day, the weather and where you are. Long silences in between
+- Scary sounds: during stillness every sound of the world cuts out (except your own footsteps), frozen
+  rain gets stuck like a scratched CD, slow rain drops in pitch, crickets go quiet one by one as the
+  moon dies, birds sing at a false dawn and then stop mid-song, and the forbidden sun rings in your ears
+- Music and sound can be switched off on the title screen. Sound credits: [CREDITS.md](CREDITS.md)
+
 ## Coming next
 
-3. **Music and sound:** gentle generated piano and pads that react to weather and time, synthesized
-   rain, wind, thunder and footsteps
 4. **The uncanny director:** a hidden unease that slowly grows and makes strange weather and music
    events happen more often
 5. **Polish**
@@ -84,6 +95,8 @@ cd android
 ```
 web/index.html      The game (HTML + CSS + JavaScript, one file)
 web/three.min.js    Three.js r128, bundled so the app works offline (the same file as on cdnjs)
+web/sounds.js       All sounds in one file (generated from sounds/ by tools/pack_sounds.py)
+sounds/             The sound recordings (.ogg); credits in CREDITS.md
 android/            Android app that shows the game full screen in a WebView
 .github/workflows/  CI that builds the APK
 ```
