@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A grass block: green top, dirt sides. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:fillColor="#5FA038" android:pathData="M24,4 L44,14 L24,24 L4,14 Z" />
+    <path android:fillColor="#6B4C32" android:pathData="M4,14 L24,24 L24,46 L4,36 Z" />
+    <path android:fillColor="#553B27" android:pathData="M24,24 L44,14 L44,36 L24,46 Z" />
+    <path android:fillColor="#4E8A2C" android:pathData="M4,14 L24,24 L24,29 L20,27 L16,29 L12,25 L8,26 L4,22 Z" />
+    <path android:fillColor="#3F7424" android:pathData="M24,24 L44,14 L44,21 L40,24 L36,22 L32,26 L28,25 L24,29 Z" />
+</vector>
