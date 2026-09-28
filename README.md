@@ -139,9 +139,11 @@ code, so there are no image files. The sounds are real recordings under free lic
 - **A rebuilt inventory.** Put a finger on an item and drag it to its place: the item lifts off and follows
   your finger, the slot under it lights up, and it lands with a little pop. Drop it on another item to
   swap or merge stacks, drop it on nothing to send it back, drop it outside the window to throw it away.
-  Hold for a moment to take half a stack; put a second finger on a slot to put down one. Point at an item
+  Items are in your hand the moment you press, like a mouse. The ½ button takes half of the next stack; put a second finger on a slot to put down one. Point at an item
   to see its name, uses left or food value. Your character stands in the inventory (turn them with a
   finger). Tap-tap still works too
+
+**7.4:** dragging now works like a mouse (press and the item is in your hand, no waiting), and the first-person hand was reworked: it lags behind when you turn, dips when you change items, sways when you walk and swings in an arc.
 
 ## Coming next
 

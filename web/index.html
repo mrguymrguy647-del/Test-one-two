@@ -255,7 +255,7 @@
 <div id="toast" class="hud"></div>
 <div id="sleepFade"></div><div id="sleepHint">Tap to wake up</div>
 <div id="dragIcon" class="hide"><canvas width="32" height="32"></canvas><b></b></div>
-<div id="inv" class="hide"><div class="panel"><header><h2 id="invTitle">Inventory</h2><span id="invHeld"></span><button id="invRecipes">Recipes</button><button id="invClose" aria-label="Close">✕</button></header><div class="invBody"><div class="invLeft" id="invLeft"></div><div class="invRight"><div class="slots" id="invMain"></div><div class="slots bar" id="invBar"></div></div></div><p class="invHint" id="invHint"></p></div></div>
+<div id="inv" class="hide"><div class="panel"><header><h2 id="invTitle">Inventory</h2><span id="invHeld"></span><button id="invHalf" title="Take half of the next stack">½</button><button id="invRecipes">Recipes</button><button id="invClose" aria-label="Close">✕</button></header><div class="invBody"><div class="invLeft" id="invLeft"></div><div class="invRight"><div class="slots" id="invMain"></div><div class="slots bar" id="invBar"></div></div></div><p class="invHint" id="invHint"></p></div></div>
 <button id="flyBtn" class="tbtn hud touchonly" aria-label="Fly"><svg viewBox="0 0 24 24"><path d="M12 2l6 7h-4v5h-4V9H6zM4 17c3-2 5-2 8 0s5 2 8 0v3c-3 2-5 2-8 0s-5-2-8 0z"/></svg></button>
 <div id="vitals" class="hud hide"><canvas id="vHearts" width="99" height="9"></canvas><div class="vright"><canvas id="vAir" width="99" height="9"></canvas><canvas id="vFood" width="99" height="9"></canvas></div></div>
 <div id="hurt"></div>
@@ -441,7 +441,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '7.3';
+const GAME_VERSION = '7.4';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -3014,7 +3014,7 @@ const Inventory = (() => {
     // title, what you're holding, and the hint
     titleEl.textContent = mode === 'craft3' ? 'Crafting table' : mode === 'furnace' ? 'Furnace' : 'Inventory';
     renderHeld();
-    hintEl.textContent = (touchMode ? 'Hold an item and drag it to a slot · hold a moment to take half · a second finger puts one down' : 'Drag items with the mouse · right-click takes half or puts one down') +
+    hintEl.textContent = (touchMode ? 'Press an item and drag it to a slot · ½ takes half · a second finger puts one down' : 'Drag items with the mouse · right-click takes half or puts one down') +
       (cursor ? (survivalMode() ? ' · drop it outside to throw it' : ' · drop it outside to get rid of it') : '');
     recBtn.classList.toggle('hide', !(mode === 'craft2' || mode === 'craft3'));
     recBtn.classList.toggle('on', showRecipes);
@@ -3081,11 +3081,11 @@ const Inventory = (() => {
   }
   // ================= picking things up with your finger and putting them where they belong =================
   const floatEl = document.getElementById('dragIcon'), floatCv = floatEl.querySelector('canvas'), floatN = floatEl.querySelector('b');
-  let drag = null, dragEnd = 0, hoverEl = null, hoverStack = null, pvDrag = null, pvTurn = 0.55, pvDirty = true, pvBusy = false;
+  let halfMode = false, drag = null, dragEnd = 0, hoverEl = null, hoverStack = null, pvDrag = null, pvTurn = 0.55, pvDirty = true, pvBusy = false;
   const ptr = { x: 0, y: 0 };
   const slotAt = (x, y) => { const e = document.elementFromPoint(x, y), s = e && e.closest ? e.closest('.islot') : null; return s && s._el || null; };
   const inPanel = (x, y) => { const r = invEl.querySelector('.panel').getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
-  function placeFloat() { floatEl.style.transform = `translate(${ptr.x}px, ${ptr.y - (touchMode ? 38 : 0)}px)`; }
+  function placeFloat() { floatEl.style.transform = `translate(${ptr.x}px, ${ptr.y - (touchMode ? 22 : 0)}px)`; }
   function syncFloat() {
     const show = isOpen && !!cursor;
     floatEl.classList.toggle('hide', !show);
@@ -3135,18 +3135,18 @@ const Inventory = (() => {
     if (e.button === 2) { tap(ref, true); return; }
     if (drag && drag.carry && e.pointerId !== drag.pid) { tap(ref, true); pop(el); return; }      // a second finger puts one down
     if (drag) return;
-    const d = drag = { ref, el, pid: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, carry: false, long: false, had: !!cursor, timer: 0 };
-    if (!cursor) d.timer = setTimeout(() => { if (drag === d && !d.moved) { d.long = true; tap(ref, true); d.carry = !!cursor; if (d.carry) placeFloat(); } }, 380);
-    setHover(el);
+    const d = drag = { ref, el, pid: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, carry: false, had: !!cursor, timer: 0 };
+    if (!cursor) {                     // like a mouse: it is in your hand the moment you press, and follows you
+      tap(ref, halfMode); if (halfMode) { halfMode = false; halfBtn.classList.remove('on'); }
+      d.carry = !!cursor;
+    }
+    placeFloat(); setHover(el);
   });
   addEventListener('pointermove', e => {
     if (!isOpen) return;
     ptr.x = e.clientX; ptr.y = e.clientY;
     if (pvDrag) { pvTurn = pvDrag.turn + (e.clientX - pvDrag.x) * 0.025; if (!pvBusy) { pvBusy = true; requestAnimationFrame(() => { pvBusy = false; drawPreview(); }); } return; }
-    if (drag && e.pointerId === drag.pid && !drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 8) {
-      drag.moved = true; clearTimeout(drag.timer);
-      if (!drag.carry && !drag.had && !cursor) { tap(drag.ref, false); drag.carry = !!cursor; }     // pulled it out of its slot
-    }
+    if (drag && e.pointerId === drag.pid && !drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
     if (cursor) placeFloat();
     setHover(slotAt(e.clientX, e.clientY));
   });
@@ -3169,6 +3169,8 @@ const Inventory = (() => {
   }
   addEventListener('pointerup', e => endPtr(e, false));
   addEventListener('pointercancel', e => endPtr(e, true));
+  const halfBtn = document.getElementById('invHalf');
+  halfBtn.addEventListener('click', e => { e.stopPropagation(); GameAudio.ui('tick'); halfMode = !halfMode; halfBtn.classList.toggle('on', halfMode); });
   // a picture of you, which you can turn around
   const pvCanvas = document.createElement('canvas'); pvCanvas.width = 128; pvCanvas.height = 192; pvCanvas.className = 'pv';
   function drawPreview() { pvDirty = false; try { Avatar.preview(pvCanvas, pvTurn); } catch (e) {} }
@@ -4817,7 +4819,7 @@ const Avatar = (() => {
   function syncHeld() {
     const s = Inventory.held(), id = s ? s.id : null;
     if (id === heldId) return;
-    heldId = id;
+    heldId = id; heldChanged = true;
     if (id) { itemMat.map = Inventory.iconOf(id).mat.map; itemMat.needsUpdate = true; }
     item3.visible = !!id; if (item1) item1.visible = !!id;
   }
@@ -4831,16 +4833,17 @@ const Avatar = (() => {
   const arm1 = box(4, 12, 4, 'arm', handMat); arm1.geometry.translate(0, -6 * S, 0);   // hangs from its top
   const item1Holder = new THREE.Group();
   const handPivot = new THREE.Group(); handPivot.add(arm1); handRig.add(handPivot);
-  const HAND = { x: 0.28, y: -0.42, z: -0.15, rx: 1.75, ry: 0.15, rz: 0.05, s: 1 };
+  const HAND = { x: 0.3, y: -0.4, z: -0.2, rx: 1.65, ry: 0.12, rz: 0.05, s: 0.95 };
   arm1.add(item1Holder);
   const item1 = makeItem(item1Holder, 0.5, 0, 0.0, -0.26, -Math.PI / 2); item1.rotation.set(-Math.PI / 2, 0, 0.7);
-  let handOn = false;
+  let handOn = false, heldChanged = false;
+  const hl = { x: 0, y: 0, yaw: 0, pitch: 0 };
 
   // ---- the state that drives the pose
-  const st = { ph: 0, legs: 0, arms: 0, lean: 0, air: 0, swim: 0, hurt: 0, dieT: 0, swing: 0, up: 0, spread: 0, blink: 0, t: 0, headYaw: 0, sleep: 0, fall: 0, view: Settings.v.cam | 0, dist: 0, prevY: 0, wasDead: false, kick: 0, lie: 0 };
+  const st = { ph: 0, legs: 0, arms: 0, lean: 0, air: 0, swim: 0, hurt: 0, dieT: 0, swing: 0, up: 0, spread: 0, blink: 0, t: 0, headYaw: 0, sleep: 0, fall: 0, view: Settings.v.cam | 0, dist: 0, prevY: 0, wasDead: false, kick: 0, lie: 0, equip: 0 };
   Events.on('hurt', () => { st.hurt = 0.55; });
-  Events.on('swing', () => { st.swing = 1; });
-  Events.on('dig', () => { st.swing = 1; });
+  Events.on('swing', () => { if (st.swing < 0.4) st.swing = 1; });
+  Events.on('dig', () => { if (st.swing < 0.4) st.swing = 1; });
   const view = { get: () => st.view };
   function setView(v) { st.view = ((v % 3) + 3) % 3; Settings.set('cam', st.view); document.getElementById('cross').style.visibility = st.view === 2 ? 'hidden' : ''; }
 
@@ -4996,8 +4999,15 @@ const Avatar = (() => {
     if (handOn) {
       const bob = Math.sin(st.ph) * Math.min(1, sp / 5) * (P.onGround ? 1 : 0.2), sway = Math.sin(st.t * 1.3) * 0.004;
       const tt = 1 - st.swing, sw = st.swing > 0 ? Math.sin(tt * Math.PI) : 0, sq = st.swing > 0 ? Math.sin(tt * Math.PI * 2) : 0;
-      handRig.position.set(HAND.x + Math.cos(st.ph * 0.5) * 0.02 * Math.min(1, sp / 5) - sw * 0.08, HAND.y + Math.abs(bob) * 0.03 + sway + sw * 0.03 - st.hurt * 0.15, HAND.z - sw * 0.1);
-      handPivot.rotation.set(HAND.rx + sq * 0.6, HAND.ry + sw * 0.3, HAND.rz + sw * 0.1);
+      // the hand lags a little behind where you turn, dips when you change what you hold, and sways as you walk
+      const dyaw = Math.atan2(Math.sin(P.yaw - hl.yaw), Math.cos(P.yaw - hl.yaw)), dpit = P.pitch - hl.pitch; hl.yaw = P.yaw; hl.pitch = P.pitch;
+      hl.x = clamp(hl.x + dyaw * 0.5, -0.12, 0.12); hl.y = clamp(hl.y - dpit * 0.4, -0.1, 0.1);
+      const dec = Math.exp(-dt * 9); hl.x *= dec; hl.y *= dec;
+      if (heldChanged) { st.equip = 1; heldChanged = false; }
+      st.equip = Math.max(0, st.equip - dt * 4.5);
+      const dip = st.equip * st.equip * 0.4;
+      handRig.position.set(HAND.x + hl.x + Math.cos(st.ph * 0.5) * 0.015 * Math.min(1, sp / 5) - sw * 0.1, HAND.y + hl.y - dip + Math.abs(bob) * 0.025 + sway - sw * 0.02 - st.hurt * 0.15, HAND.z - sw * 0.14);
+      handPivot.rotation.set(HAND.rx - sq * 0.55 - sw * 0.25, HAND.ry + sw * 0.35, HAND.rz + sw * 0.08 + hl.x * 0.6);
       arm1.scale.setScalar(HAND.s); item1Holder.scale.setScalar(1 / HAND.s); item1Holder.position.set(0, -12 * S * HAND.s, 0.12);
       handCam.aspect = innerWidth / innerHeight; handCam.fov = camera.fov * 0.86; handCam.updateProjectionMatrix();
       handAmb.intensity = lerpA(0.14, 0.62, day) * (0.6 + 0.4 * SkyFX.light) + SkyFX.flash * 0.6; handSun.intensity = lerpA(0.02, 0.4, day) * SkyFX.light;
