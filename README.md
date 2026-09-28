@@ -145,6 +145,8 @@ code, so there are no image files. The sounds are real recordings under free lic
 
 **7.4:** dragging now works like a mouse (press and the item is in your hand, no waiting), and the first-person hand was reworked: it lags behind when you turn, dips when you change items, sways when you walk and swings in an arc.
 
+**7.5:** you can climb out of water onto a bank (swim into it and you hop up). Breaking things is alive: grass sprays blades and clumps, dirt crumbles, sand sprays grains and a dust cloud, gravel stones bounce, stone chips and sparks, logs splinter, leaves drift down, glass shatters and glitters, wool floats as fluff, planks splinter, furnaces spit embers. Digging throws crumbs off the face you work on, and placing a block puffs dust.
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update

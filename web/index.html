@@ -441,7 +441,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '7.4';
+const GAME_VERSION = '7.5';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -1553,6 +1553,11 @@ const Player = (() => {
     if (Settings.v.autoJump && blocked && wasGround && !p.fly && Math.hypot(f, s) > 0.2) {
       const tx = p.x + wx / speed * 0.4, tz = p.z + wz / speed * 0.4;
       if (hits(tx, p.y, tz) && !hits(tx, p.y + 1.05, tz) && !hits(p.x, p.y + 1.05, p.z)) p.vy = 8.6;
+    }
+    // swimming into a bank: hop out of the water onto it (you could get stuck against a one-block ledge)
+    if (p.inWater && blocked && (f || s)) {
+      const tx = p.x + wx / speed * 0.45, tz = p.z + wz / speed * 0.45;
+      if (hits(tx, p.y, tz) && !hits(tx, p.y + 1.75, tz) && !hits(p.x, p.y + 1.75, p.z)) p.vy = Math.max(p.vy, 11);
     }
     if (p.y < -30) { if (!survivalMode()) spawn(); else { Vitals.damage(99, 'void'); if (p.y < -60) { p.y = -60; p.vy = 0; } } }
 
@@ -5050,6 +5055,103 @@ const Avatar = (() => {
 })();
 
 /* =====================================================================
+   FX — bits and pieces that fly when you dig, break and build: every kind of block breaks in its own way
+   ===================================================================== */
+const Fx = (() => {
+  const MAX = 520, B = World.B, TILE = Tex.TILE;
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), MAX);
+  mesh.frustumCulled = false; mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.count = 0; scene.add(mesh);
+  const ps = [], M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), S = new THREE.Vector3(), V = new THREE.Vector3(), Cc = new THREE.Color();
+  const rnd = (a, b) => a + Math.random() * (b - a), cache = {}, cx = World.atlasCanvas.getContext('2d');
+  function pal(tile) {           // a handful of real colours from a block's texture
+    if (cache[tile]) return cache[tile];
+    const r = Tex.rect(tile), d = cx.getImageData(r[0], r[1], r[2], r[3]).data, out = [];
+    for (let i = 0; i < 40; i++) { const k = (Math.random() * r[2] * r[3] | 0) * 4; if (d[k + 3] > 127) out.push([d[k] / 255, d[k + 1] / 255, d[k + 2] / 255]); }
+    return cache[tile] = out.length ? out : [[0.5, 0.5, 0.5]];
+  }
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  // o: colors, n, size [a, b], speed [a, b], up, grav, life [a, b], drag, bounce, spin, sx/sy/sz (shape), sway, puff, spread
+  function emit(x, y, z, o) {
+    for (let i = 0; i < o.n; i++) {
+      if (ps.length >= MAX) ps.shift();
+      const a = Math.random() * 6.283, sp = rnd(o.speed[0], o.speed[1]), sz = rnd(o.size[0], o.size[1]), sd = o.spread || 0.3;
+      ps.push({ x: x + rnd(-sd, sd), y: y + rnd(-sd, sd), z: z + rnd(-sd, sd), vx: Math.cos(a) * sp, vy: rnd(0.3, 1) * (o.up || 0), vz: Math.sin(a) * sp,
+        s: sz, t: 0, life: rnd(o.life[0], o.life[1]), g: o.grav === undefined ? 14 : o.grav, drag: o.drag || 0, bounce: o.bounce || 0, sway: o.sway || 0, puff: !!o.puff,
+        ax: rnd(0, 6), ay: rnd(0, 6), az: rnd(0, 6), sp: (o.spin || 0) * rnd(-1, 1), sx: o.sx || 1, sy: o.sy || 1, szz: o.sz || 1, c: pick(o.colors), ph: rnd(0, 6.28) });
+    }
+  }
+  const DUST = [[0.82, 0.8, 0.74], [0.74, 0.72, 0.66]], SPARK = [[1, 0.92, 0.55], [1, 0.72, 0.3], [1, 1, 0.85]];
+  function breakFx(b, x, y, z) {
+    const X = x + 0.5, Y = y + 0.5, Z = z + 0.5, I = World.INFO[b] || World.INFO[B.STONE], top = pal(I.tex[0]), side = pal(I.tex[2]);
+    const chunk = (cols, n, big) => emit(X, Y, Z, { colors: cols, n, size: big || [0.07, 0.14], speed: [1, 3], up: 3, grav: 18, life: [0.5, 0.9], bounce: 0.35, spin: 9 });
+    const dust = (cols, n, s) => emit(X, Y, Z, { colors: cols, n, size: [s || 0.3, (s || 0.3) * 1.5], speed: [0.2, 0.9], up: 0.7, grav: -0.3, life: [0.45, 0.8], puff: true, spread: 0.4 });
+    switch (b) {
+      case B.GRASS:                                                // 1. blades and clumps
+        emit(X, Y + 0.3, Z, { colors: pal(TILE.grassTop), n: 16, size: [0.04, 0.07], sy: 3.4, speed: [1, 3], up: 3, grav: 12, life: [0.6, 1], spin: 8, bounce: 0.15 });
+        chunk(pal(TILE.dirt), 9); dust([[0.6, 0.78, 0.5]], 3, 0.25); break;
+      case B.DIRT: chunk(side, 16, [0.08, 0.15]); dust([[0.5, 0.4, 0.3], [0.42, 0.33, 0.25]], 5); break;              // 2. clumps
+      case B.SAND:                                                 // 3. a spray of grains and a pale cloud
+        emit(X, Y, Z, { colors: top, n: 48, size: [0.03, 0.06], speed: [0.5, 2.4], up: 1.4, grav: 11, drag: 1.1, life: [0.7, 1.2], spread: 0.4 });
+        dust([[0.9, 0.86, 0.72]], 7, 0.4); break;
+      case B.GRAVEL: chunk(side, 13, [0.09, 0.17]); dust([[0.6, 0.6, 0.6]], 4); break;                              // 4. heavy stones that bounce
+      case B.STONE: case B.FURNACE:                                // 5. chips, sparks and grey dust
+        chunk(side, 12);
+        emit(X, Y, Z, { colors: SPARK, n: b === B.FURNACE ? 14 : 8, size: [0.03, 0.045], speed: [2.5, 5.5], up: 2.5, grav: b === B.FURNACE ? -1.2 : 9, life: [0.18, 0.5], spread: 0.15 });
+        dust([[0.62, 0.64, 0.68]], 4); break;
+      case B.LOG:                                                  // 6. long splinters and bark
+        emit(X, Y, Z, { colors: pal(TILE.logTop), n: 12, size: [0.05, 0.08], sz: 4, speed: [1, 3], up: 3, grav: 16, life: [0.6, 1], spin: 10, bounce: 0.25 });
+        chunk(pal(TILE.logSide), 9, [0.06, 0.11]); break;
+      case B.LEAVES:                                               // 7. leaves that drift down
+        emit(X, Y, Z, { colors: side, n: 26, size: [0.07, 0.12], sy: 0.25, speed: [0.5, 2], up: 1.6, grav: 2.4, drag: 1.4, sway: 7, spin: 5, life: [1.1, 1.9], spread: 0.45 }); break;
+      case B.GLASS:                                                // 8. shards that glitter
+        emit(X, Y, Z, { colors: [[0.85, 0.95, 1], [0.7, 0.88, 0.95], [1, 1, 1]], n: 22, size: [0.04, 0.1], sy: 2.6, speed: [2, 5], up: 3, grav: 16, life: [0.5, 1], spin: 14, bounce: 0.3 });
+        emit(X, Y, Z, { colors: [[1, 1, 1]], n: 8, size: [0.03, 0.04], speed: [0.4, 1.4], up: 1, grav: -0.5, life: [0.5, 0.9] }); break;
+      case B.WOOL:                                                 // 9. fluff that floats
+        emit(X, Y, Z, { colors: [[0.95, 0.93, 0.88], [0.86, 0.84, 0.78], [1, 1, 1]], n: 14, size: [0.1, 0.2], speed: [0.3, 1.2], up: 1.6, grav: 0.8, drag: 2, sway: 3, life: [0.9, 1.5], puff: true, spread: 0.4 }); break;
+      case B.PLANKS: case B.TABLE:                                 // 10. splinters and a glint of nails
+        emit(X, Y, Z, { colors: pal(TILE.planks), n: 14, size: [0.05, 0.08], sz: 3.5, speed: [1, 3], up: 3, grav: 16, life: [0.6, 1], spin: 10, bounce: 0.25 });
+        emit(X, Y, Z, { colors: [[0.75, 0.77, 0.8]], n: 3, size: [0.03, 0.04], sz: 2, speed: [1, 2.5], up: 3, grav: 16, life: [0.5, 0.8], spin: 12 });
+        chunk(side, 5, [0.05, 0.1]); break;
+      default: chunk(side, 14); dust(DUST, 3);
+    }
+  }
+  function crumbs(m) {              // a few bits fly off the face you are working on
+    const I = World.INFO[m.b]; if (!I) return;
+    const P = Player.p, dx = P.x - (m.x + 0.5), dz = P.z - (m.z + 0.5), l = Math.hypot(dx, dz) || 1;
+    const fx = m.x + 0.5 + dx / l * 0.52, fz = m.z + 0.5 + dz / l * 0.52, fy = m.y + rnd(0.2, 0.8);
+    const cols = m.b === B.GRASS ? pal(TILE.grassTop) : pal(I.tex[2]);
+    emit(fx, fy, fz, { colors: cols, n: m.b === B.LEAVES ? 2 : 4, size: [0.04, 0.08], speed: [0.4, 1.5], up: 1.3, grav: m.b === B.LEAVES ? 3 : 14, life: [0.35, 0.7], bounce: 0.2, spread: 0.3, sway: m.b === B.LEAVES ? 4 : 0 });
+    if (m.b === B.STONE || m.b === B.FURNACE) emit(fx, fy, fz, { colors: SPARK, n: 2, size: [0.03, 0.04], speed: [1.5, 3], up: 1.5, grav: 8, life: [0.12, 0.3], spread: 0.1 });
+    if (m.b === B.SAND || m.b === B.GRAVEL) emit(fx, fy, fz, { colors: [[0.85, 0.82, 0.7]], n: 1, size: [0.2, 0.3], speed: [0.1, 0.4], up: 0.4, grav: -0.2, life: [0.3, 0.5], puff: true });
+  }
+  Events.on('break', t => { if (t && t.b) breakFx(t.b, t.x, t.y, t.z); });
+  Events.on('dig', m => crumbs(m));
+  Events.on('place', t => emit(t.x + 0.5, t.y + 0.5, t.z + 0.5, { colors: DUST, n: 4, size: [0.2, 0.3], speed: [0.3, 0.9], up: 0.3, grav: 0, life: [0.25, 0.4], puff: true, spread: 0.35 }));
+
+  function update(dt) {
+    const light = 0.3 + 0.7 * Sky.state.day; mesh.material.color.setScalar(light);
+    let n = 0;
+    for (let i = ps.length - 1; i >= 0; i--) {
+      const p = ps[i]; p.t += dt;
+      if (p.t >= p.life) { ps[i] = ps[ps.length - 1]; ps.pop(); continue; }
+      p.vy -= p.g * dt; if (p.drag) { const k = Math.exp(-p.drag * dt); p.vx *= k; p.vz *= k; if (p.g < 5) p.vy *= k; }
+      if (p.sway) { p.vx += Math.sin(p.t * 5 + p.ph) * p.sway * dt; p.vz += Math.cos(p.t * 4 + p.ph) * p.sway * dt; }
+      const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt, nz = p.z + p.vz * dt;
+      if (p.g > 3 && World.solid(Math.floor(nx), Math.floor(ny), Math.floor(nz))) {
+        if (World.solid(Math.floor(p.x), Math.floor(ny), Math.floor(p.z))) { p.vy = -p.vy * p.bounce; p.vx *= 0.6; p.vz *= 0.6; if (Math.abs(p.vy) < 0.6) p.vy = 0; }
+        else { p.vx = -p.vx * 0.3; p.vz = -p.vz * 0.3; p.y = ny; }
+      } else { p.x = nx; p.y = ny; p.z = nz; }
+      p.ax += p.sp * dt; p.ay += p.sp * 0.7 * dt;
+      const k = p.t / p.life, sc = p.puff ? p.s * (0.5 + 1.6 * k) * (1 - k * k) : p.s * (k > 0.65 ? (1 - k) / 0.35 : 1);
+      E.set(p.ax, p.ay, p.az); Q.setFromEuler(E); S.set(sc * p.sx, sc * p.sy, sc * p.szz); V.set(p.x, p.y, p.z);
+      M.compose(V, Q, S); mesh.setMatrixAt(n, M); Cc.setRGB(p.c[0], p.c[1], p.c[2]); mesh.setColorAt(n, Cc); n++;
+    }
+    mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  return { update, count: () => ps.length, burst: breakFx };
+})();
+
+/* =====================================================================
    DIRECTOR — Phase 4
    ===================================================================== */
 const Director = { update() {} };
@@ -5584,6 +5686,7 @@ function step() {
   // behind the main menu the view slowly turns; when you die, you fall over
   if (!Player.locked && Menu.cur === 'scrMain') { menuSpin += dt * 0.025; camera.rotation.y = p.yaw + menuSpin; }
   Avatar.update(dt, gdt);
+  Fx.update(dt);
   Sky.update(dt, Player.locked ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);
