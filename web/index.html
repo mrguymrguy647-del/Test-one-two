@@ -416,7 +416,7 @@
   <h3>Game mode &amp; survival</h3>
   <div class="btns">
     <button data-gmode="creative">Creative</button><button data-gmode="survival">Survival</button><button data-gmode="hardcore">Hardcore</button>
-    <button id="dbgHeal">Heal</button><button id="dbgHurt">Hurt</button><button id="dbgHungry">Hungry</button><button id="dbgBlocks">Give blocks</button><button id="dbgTools">Give tools</button>
+    <button id="dbgHeal">Heal</button><button id="dbgHurt">Hurt</button><button id="dbgHungry">Hungry</button><button id="dbgBlocks">Give blocks</button><button data-cave="deep">Deep (hallucinate)</button><button data-cave="exit">Fake exit</button><button data-cave="figure">Figure</button><button data-cave="mirage">Mirage</button><button data-cave="leave">Leave fake world</button><button id="dbgTools">Give tools</button>
   </div>
 </div>
 
@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.0';
+const GAME_VERSION = '8.1';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -956,11 +956,168 @@ const World = (() => {
   const key = (cx, cz) => cx + ',' + cz;
   const idx = (x, y, z) => (y * CS + z) * CS + x;
   const group = new THREE.Group();
-  const editsByChunk = new Map();   // chunk key -> Map(block index -> block), re-applied whenever a chunk is generated
+  let editsByChunk = new Map();   // chunk key -> Map(block index -> block), re-applied whenever a chunk is generated
+  let fake = false, realEdits = null;   // in the false world the real world's edits are put aside
+
+  // ---- caves: winding tunnels that begin at the surface and lead down into the dark
+  const RG = 128, caveCache = new Map();
+  function wormsOf(rx, rz) {
+    const key = rx + ',' + rz;
+    let list = caveCache.get(key); if (list) return list;
+    list = [];
+    const n = hash2(rx, rz, seed + 610) < 0.3 ? 1 : hash2(rx, rz, seed + 611) < 0.5 ? 2 : 3;
+    for (let i = 0; i < n; i++) {
+      const r = mulberry32((hash2(rx, rz, seed + 700 + i) * 4294967295) >>> 0);
+      let sx = 0, sz = 0, sh = 0;
+      for (let t = 0; t < 14 && !sh; t++) { sx = rx * RG + Math.floor(r() * RG); sz = rz * RG + Math.floor(r() * RG); sh = heightAt(sx, sz); if (sh <= SEA + 3) sh = 0; }
+      if (!sh || Math.hypot(sx, sz) < 30) continue;
+      let x = sx + 0.5, y = sh, z = sz + 0.5, hd = r() * 6.283, pt = -0.42;
+      const tgt = 10 + Math.floor(r() * 9), pts = [], N = 84, branchAt = [26 + Math.floor(r() * 10), 52 + Math.floor(r() * 10)];
+      for (let s2 = 0; s2 < N; s2++) {
+        pts.push([x, y, z, (s2 < 6 ? 2.6 : 2.0) + 0.8 * Math.sin(s2 * 0.31 + i), s2]);
+        hd += (r() - 0.5) * 0.6;
+        if (y > tgt + 3) pt += (-0.42 - pt) * 0.2; else pt = clamp(pt + (r() - 0.5) * 0.35, -0.4, 0.3);
+        if (y < 7) pt = Math.abs(pt);
+        const cp = Math.cos(pt); x += Math.cos(hd) * cp * 1.5; z += Math.sin(hd) * cp * 1.5; y += Math.sin(pt) * 1.5;
+        if (s2 > 8 && y > heightAt(Math.floor(x), Math.floor(z)) - 5) pt = Math.min(pt, -0.15);
+        if (branchAt.indexOf(s2) >= 0) {                                             // a side tunnel
+          let bx = x, by = y, bz = z, bh = hd + (r() < 0.5 ? 1.2 : -1.2), bp = 0;
+          for (let b = 0; b < 24; b++) { pts.push([bx, by, bz, 1.6, 20 + b]); bh += (r() - 0.5) * 0.7; bp = clamp(bp + (r() - 0.5) * 0.3, -0.3, 0.3); bx += Math.cos(bh) * 1.4; bz += Math.sin(bh) * 1.4; by += bp * 1.4; }
+        }
+      }
+      pts.push([x, y, z, 3.8, N]);                                                    // a small chamber at the end
+      const w = { pts, exit: null };
+      if (hash2(rx, rz, seed + 720 + i) < 0.34 && y < 26 && heightAt(Math.floor(x), Math.floor(z)) > SEA + 4) w.exit = { x, y, z, id: rx + ',' + rz + ':' + i };
+      list.push(w);
+    }
+    caveCache.set(key, list); return list;
+  }
+  function carveCaves(data, x0, z0, hmap) {
+    const rx0 = Math.floor(x0 / RG), rz0 = Math.floor(z0 / RG), cxm = x0 + CS / 2, czm = z0 + CS / 2;
+    for (let rz = rz0 - 1; rz <= rz0 + 1; rz++) for (let rx = rx0 - 1; rx <= rx0 + 1; rx++) for (const w of wormsOf(rx, rz)) for (const p of w.pts) {
+      const r = p[3];
+      if (Math.abs(p[0] - cxm) > CS / 2 + r + 1 || Math.abs(p[2] - czm) > CS / 2 + r + 1) continue;
+      const entrance = p[4] < 7, r2 = r * r;
+      for (let y = Math.max(1, Math.floor(p[1] - r)); y <= Math.min(H - 2, Math.ceil(p[1] + r)); y++)
+        for (let z = Math.max(z0, Math.floor(p[2] - r)); z <= Math.min(z0 + CS - 1, Math.ceil(p[2] + r)); z++)
+          for (let x = Math.max(x0, Math.floor(p[0] - r)); x <= Math.min(x0 + CS - 1, Math.ceil(p[0] + r)); x++) {
+            const dx = x + 0.5 - p[0], dy = y + 0.5 - p[1], dz = z + 0.5 - p[2];
+            if (dx * dx + dy * dy + dz * dz > r2) continue;
+            const hcol = hmap[(z - z0) * CS + x - x0];
+            if (!entrance && (y >= hcol - 1 || (hcol <= SEA + 1 && y > hcol - 4))) continue;   // the ground above stays
+            const i = idx(x - x0, y, z - z0), b = data[i];
+            if (b === WATER || b === LEAVES || b === LOG) continue;
+            data[i] = AIR;
+          }
+    }
+  }
+  function exitsNear(px, pz, rad) {
+    const out = [], rx0 = Math.floor(px / RG), rz0 = Math.floor(pz / RG);
+    if (fake) return out;
+    for (let rz = rz0 - 1; rz <= rz0 + 1; rz++) for (let rx = rx0 - 1; rx <= rx0 + 1; rx++) for (const w of wormsOf(rx, rz)) if (w.exit && Math.hypot(w.exit.x - px, w.exit.z - pz) < rad) out.push(w.exit);
+    return out;
+  }
+
+  // ---- the false world: an abandoned village and a ruined castle in every region
+  const structCache = new Map(), HR = (x, y, z, s2) => hash3(x, y, z, seed + s2) / 4294967296;
+  function house(x, z, base, w, d, h, i) {
+    const x0 = x - (w >> 1), z0 = z - (d >> 1);
+    return { x0, x1: x0 + w - 1, z0, z1: z0 + d - 1, base, top: base + h + 1, low: 0, at(wx, y, wz) {
+      const lx = wx - x0, lz = wz - z0, dy = y - base, edge = lx === 0 || lx === w - 1 || lz === 0 || lz === d - 1, rh = HR(wx, y, wz, 910 + i);
+      if (dy === 0) return edge ? STONE : (rh < 0.7 ? PLANKS : GRASS);
+      if (dy === h + 1) return rh < 0.4 ? PLANKS : AIR;
+      if (!edge || (lz === 0 && lx === (w >> 1) && dy <= 2)) return AIR;
+      if (rh < 0.06 + 0.55 * Math.pow(dy / h, 1.6)) return AIR;                       // fallen in
+      if ((lx === 0 || lx === w - 1) && (lz === 0 || lz === d - 1)) return LOG;
+      if (dy === 2 && ((lx === (w >> 1) && lz === d - 1) || (lz === (d >> 1) && (lx === 0 || lx === w - 1)))) return rh < 0.5 ? GLASS : AIR;
+      return (i & 1) && dy === 1 ? STONE : PLANKS;
+    } };
+  }
+  function well(cx, cz, base) {
+    return { x0: cx - 1, x1: cx + 1, z0: cz - 1, z1: cz + 1, base, top: base + 2, low: -3, at(wx, y, wz) {
+      const dy = y - base, mid = wx === cx && wz === cz;
+      if (mid) return dy <= 0 ? AIR : -1;
+      return dy >= -3 && dy <= 1 ? STONE : -1;
+    } };
+  }
+  function castle(x0, z0, base) {
+    return { x0, x1: x0 + 26, z0, z1: z0 + 26, base, top: base + 15, low: 0, at(wx, y, wz) {
+      const lx = wx - x0, lz = wz - z0, dy = y - base, rh = HR(wx, y, wz, 931);
+      const tx = lx < 5 ? 0 : lx > 21 ? 1 : -1, tz = lz < 5 ? 0 : lz > 21 ? 1 : -1;
+      if (tx >= 0 && tz >= 0) {                                                        // a corner tower
+        const th = 8 + Math.floor(HR(tx, tz, 0, 930) * 6), a = lx - (tx ? 22 : 0), b = lz - (tz ? 22 : 0), edge = a === 0 || a === 4 || b === 0 || b === 4;
+        if (dy === 0) return STONE;
+        if (dy > th) return AIR;
+        if (!edge || (dy === 4 && (a === 2 || b === 2))) return AIR;
+        return rh < 0.05 + 0.6 * Math.pow(dy / th, 2) ? AIR : STONE;
+      }
+      const wall = lx < 2 || lx > 24 || lz < 2 || lz > 24;
+      if (dy === 0) return wall || rh < 0.5 ? STONE : GRASS;
+      if (wall) {
+        if (lz < 2 && lx >= 12 && lx <= 14 && dy <= 4) return AIR;                    // the gate
+        const seg = Math.floor((lx + lz) / 5), breach = HR(seg, 0, 0, 932) < 0.22, eff = breach ? 2 + Math.floor(HR(seg, 1, 0, 932) * 3) : 7;
+        if (dy > eff + 1) return AIR;
+        if (dy === eff + 1) return !breach && ((lx + lz) & 1) ? STONE : AIR;
+        return rh < 0.03 + 0.3 * Math.pow(dy / 7, 2) ? AIR : STONE;
+      }
+      if (lx >= 9 && lx <= 17 && lz >= 9 && lz <= 17) {                               // the keep
+        const edge = lx === 9 || lx === 17 || lz === 9 || lz === 17;
+        if (dy > 11) return AIR;
+        if (!edge) return dy === 5 ? (rh < 0.55 ? PLANKS : AIR) : AIR;
+        if (lz === 9 && lx === 13 && dy <= 3) return AIR;
+        if ((dy === 3 || dy === 7) && (lx === 13 || lz === 13)) return rh < 0.6 ? GLASS : AIR;
+        return rh < 0.04 + 0.5 * Math.pow(dy / 11, 2) ? AIR : STONE;
+      }
+      return AIR;
+    } };
+  }
+  function structs(rx, rz) {
+    const key = rx + ',' + rz; let list = structCache.get(key); if (list) return list;
+    list = [];
+    const r = mulberry32((hash2(rx, rz, seed + 900) * 4294967295) >>> 0), origin = rx === 0 && rz === 0, gb = (x, z) => Math.max(SEA + 2, heightAt(x, z));
+    if (origin || hash2(rx, rz, seed + 901) < 0.5) {
+      const cx = rx * RG + 64, cz = rz * RG + 36;
+      list.push(well(cx, cz, gb(cx, cz)));
+      const n = 6 + Math.floor(r() * 4);
+      for (let i = 0; i < n; i++) { const a = i / n * 6.283 + r() * 0.4, d = 15 + r() * 7, hx = Math.round(cx + Math.cos(a) * d), hz = Math.round(cz + Math.sin(a) * d); list.push(house(hx, hz, gb(hx, hz), 5 + Math.floor(r() * 3), 5 + Math.floor(r() * 2), 3 + Math.floor(r() * 2), i)); }
+    }
+    if (origin || hash2(rx, rz, seed + 902) < 0.3) { const cx = rx * RG + 64, cz = rz * RG + 96; list.push(castle(cx - 13, cz - 13, gb(cx, cz))); }
+    structCache.set(key, list); return list;
+  }
+  function applyStructs(data, x0, z0, hmap) {
+    for (const st of structs(Math.floor(x0 / RG), Math.floor(z0 / RG))) {
+      if (st.x1 < x0 || st.x0 >= x0 + CS || st.z1 < z0 || st.z0 >= z0 + CS) continue;
+      for (let wz = Math.max(z0, st.z0); wz <= Math.min(z0 + CS - 1, st.z1); wz++) for (let wx = Math.max(x0, st.x0); wx <= Math.min(x0 + CS - 1, st.x1); wx++) {
+        const lx = wx - x0, lz = wz - z0, h = hmap[lz * CS + lx];
+        for (let y = h + 1; y <= st.base; y++) data[idx(lx, y, lz)] = y === st.base ? GRASS : DIRT;
+        if (h < st.base) data[idx(lx, h, lz)] = DIRT;
+        for (let y = st.base + 1; y <= Math.min(H - 1, Math.max(h, st.top)); y++) data[idx(lx, y, lz)] = AIR;
+        for (let y = Math.max(1, st.base + st.low); y <= Math.min(H - 1, st.top); y++) { const v = st.at(wx, y, wz); if (v >= 0) data[idx(lx, y, lz)] = v; }
+      }
+    }
+  }
+  function fakeSpawn() {          // in the open, near the well
+    const list = structs(0, 0);
+    for (let r = 5; r < 14; r += 1.5) for (let a = 0; a < 6.283; a += 0.4) {
+      const x = Math.round(64 + Math.cos(a) * r), z = Math.round(36 + Math.sin(a) * r);
+      if (list.some(st => x >= st.x0 - 3 && x <= st.x1 + 3 && z >= st.z0 - 3 && z <= st.z1 + 3)) continue;
+      return { x, z, y: Math.max(SEA + 2, heightAt(x, z)) + 1 };
+    }
+    return { x: 64, z: 36, y: Math.max(SEA + 2, heightAt(64, 36)) + 8 };
+  }
+  // swap to another world (the false one, or back): the chunks go, the world's own edits come or go
+  function switchRealm(newSeed, toFake, edits) {
+    if (toFake && !fake) realEdits = editsByChunk;
+    for (const c of chunks.values()) disposeMesh(c);
+    chunks.clear(); structCache.clear(); caveCache.clear();
+    if (toFake) { editsByChunk = new Map(); importEditsInto(editsByChunk, edits); } else { editsByChunk = realEdits || new Map(); realEdits = null; }
+    fake = toFake; setSeed(newSeed);
+  }
   function generate(cx, cz) {
-    const data = new Uint8Array(CS * CS * H), x0 = cx * CS, z0 = cz * CS;
+    const data = new Uint8Array(CS * CS * H), x0 = cx * CS, z0 = cz * CS, hmap = new Int16Array(CS * CS);
     for (let z = 0; z < CS; z++) for (let x = 0; x < CS; x++) {
       const wx = x0 + x, wz = z0 + z, h = heightAt(wx, wz);
+      hmap[z * CS + x] = h;
       const beach = h <= SEA + 1, deep = h < SEA - 3;
       for (let y = 0; y <= Math.max(h, SEA); y++) {
         let b;
@@ -972,6 +1129,7 @@ const World = (() => {
         data[idx(x, y, z)] = b;
       }
     }
+    carveCaves(data, x0, z0, hmap);
     // trees: look a little past the edges so crowns that spill over from neighbours still appear
     for (let tz = z0 - 2; tz < z0 + CS + 2; tz++) for (let tx = x0 - 2; tx < x0 + CS + 2; tx++) {
       if (!treeAt(tx, tz)) continue;
@@ -988,13 +1146,14 @@ const World = (() => {
         const rad = dy < 0 ? 2 : 1;
         for (let dz = -rad; dz <= rad; dz++) for (let dx = -rad; dx <= rad; dx++) {
           if (Math.abs(dx) === rad && Math.abs(dz) === rad && (dy === 1 || hash2(tx + dx, tz + dz, seed + dy) < 0.5)) continue;
-          set(tx + dx, top + dy, tz + dz, LEAVES, true);
+          if (!fake) set(tx + dx, top + dy, tz + dz, LEAVES, true);          // (the false world has dead trees)
         }
       }
-      set(tx, top + 2, tz, LEAVES, true);
+      if (!fake) set(tx, top + 2, tz, LEAVES, true);
       for (let y = h + 1; y <= top; y++) set(tx, y, tz, LOG, false);
       set(tx, h, tz, DIRT, false);
     }
+    if (fake) applyStructs(data, x0, z0, hmap);
     const ed = editsByChunk.get(key(cx, cz));
     if (ed) for (const [i, b] of ed) data[i] = b;
     const c = { cx, cz, data, group: null, dirty: true, edited: !!ed };
@@ -1185,12 +1344,15 @@ const World = (() => {
       out[j * n + i] = top;
     }
   }
-  const exportEdits = () => [...editsByChunk].map(([k, m]) => [k, [].concat(...m)]);
-  function importEdits(list) {
-    editsByChunk.clear();
-    for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); editsByChunk.set(k, m); }
+  const dumpEdits = e => [...e].map(([k, m]) => [k, [].concat(...m)]);
+  const exportEdits = () => dumpEdits(fake && realEdits ? realEdits : editsByChunk);      // (always the real world's)
+  const exportFakeEdits = () => fake ? dumpEdits(editsByChunk) : [];
+  function importEditsInto(target, list) {
+    target.clear();
+    for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); target.set(k, m); }
   }
-  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
+  const importEdits = list => importEditsInto(editsByChunk, list);
+  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits, exportFakeEdits, switchRealm, exitsNear, fakeSpawn, get fake() { return fake; } };
 })();
 
 /* =====================================================================
@@ -1206,7 +1368,7 @@ document.body.prepend(renderer.domElement);
 scene.add(World.group);
 
 // What the weather wants the sky to look like; written by WEATHER, read here every frame.
-const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, moonPhase: 4, falseDawn: 0, forbidden: 0 };
+const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, moonPhase: 4, falseDawn: 0, forbidden: 0, cave: 0, caveDeep: 0 };
 
 const Sky = (() => {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
@@ -1318,6 +1480,7 @@ const Sky = (() => {
   const NIGHT = { top: C(0x05070d), horizon: C(0x121826), bottom: C(0x07090e) };
   const tmp = { top: new THREE.Color(), horizon: new THREE.Color(), bottom: new THREE.Color() };
   const stormCol = new THREE.Color(), mistCol = new THREE.Color(), sickCol = C(0x9fae86), flashCol = C(0xdfe7ff), white = C(0xffffff);
+  const caveBlack = new THREE.Color(0.008, 0.01, 0.016);
   let time = 0.06;            // 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight
   const state = { day: 1, ambient: 0.62, sunDir: new THREE.Vector3(), fogColor: new THREE.Color() };
 
@@ -1389,6 +1552,11 @@ const Sky = (() => {
     const nightAmbient = lerp(0.04, 0.28, F.moonLife) + F.falseDawn * 0.12;
     hemi.intensity = lerp(nightAmbient, 0.62 * (0.6 + 0.4 * F.light), day) + F.flash * 0.9;
     hemi.color.copy(tmp.top).lerp(white, 0.5);
+    if (F.cave > 0.001) {          // underground: black fog closes in, and the deeper the closer
+      scene.fog.color.lerp(caveBlack, F.cave * 0.93);
+      scene.fog.far = lerp(scene.fog.far, 40 - 20 * F.caveDeep, F.cave); scene.fog.near = lerp(scene.fog.near, 3, F.cave);
+      hemi.intensity *= 1 - 0.86 * F.cave; sunLight.intensity *= 1 - F.cave;
+    }
     state.ambient = hemi.intensity;       // the animals are filled with this much light from inside
   }
   return { update, state, get time() { return time; }, set time(v) { time = v; } };
@@ -1535,11 +1703,11 @@ const Player = (() => {
     }
     const on = locked && !Vitals.dead;       // on the menu (or dead) your hands are off the controls
     const f = on ? clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) + touch.mz, -1, 1) : 0, s = on ? clamp((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + touch.mx, -1, 1) : 0;
-    const run = on && (keys.ShiftLeft || touch.run), jump = on && (keys.Space || touch.jump), down = on && (keys.ShiftLeft || touch.down);
+    const run = on && (keys.ShiftLeft || touch.run) && Cave.k < 0.6, jump = on && (keys.Space || touch.jump), down = on && (keys.ShiftLeft || touch.down);
     const len = Math.max(1, Math.hypot(f, s));
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     p.inWater = World.get(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z)) === World.B.WATER;
-    const speed = p.fly ? 12 : p.inWater ? 2.8 : run ? 6.2 : 4.3;
+    const speed = (p.fly ? 12 : p.inWater ? 2.8 : run ? 6.2 : 4.3) * (p.fly ? 1 : Cave.slow);
     const wx = (-sy * f + cy * s) / len * speed, wz = (-cy * f - sy * s) / len * speed;
     const acc = p.onGround || p.fly ? 14 : p.inWater ? 5 : 3.5;
     p.vx += (wx - p.vx) * Math.min(1, dt * acc); p.vz += (wz - p.vz) * Math.min(1, dt * acc);
@@ -2342,6 +2510,7 @@ const GameAudio = (() => {
   const B = World.B, rand = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
   let ac = null, ready = false, loaded = 0, total = 0;
   const buf = {};
+  let silenceOn = false;
 
   // ---------------- the mixer ----------------
   // your own sounds (sfx) ─────────────────────────────┐
@@ -2613,7 +2782,8 @@ const GameAudio = (() => {
     setLoop('rain_heavy', smoothstep(0.45, 0.95, w.rain) * 0.3, w.timeScale || 0.001, frozen, dt);
     setLoop('wind', clamp(0.03 + w.wind * 0.3 + high * 0.12 + w.snow * 0.08, 0, 0.5) * (w.event === 'stillness' ? 0 : 1), 1, false, dt);
     // stillness: every sound of the world cuts out at once (your own steps don't)
-    const hush = w.event === 'stillness' ? 0 : 1 - w.stare * 0.85;
+    const hush = w.event === 'stillness' || silenceOn ? 0 : 1 - w.stare * 0.85;
+    sfx.gain.setTargetAtTime(silenceOn ? 0 : 1, now, 0.05);
     still.gain.setTargetAtTime(hush, now, w.event === 'stillness' ? 0.05 : 0.6);
     ring.gain.setTargetAtTime(Math.pow(w.stare, 1.5) * 0.05, now, 0.3);
     // thunder waits for the sound to arrive
@@ -2682,7 +2852,7 @@ const GameAudio = (() => {
     eat() { if (ac) for (let i = 0; i < 3; i++) play(i % 2 ? 'dig_snappy1' : 'dig_crumbly1', { gain: 0.22, rate: rand(1.3, 1.6), at: ac.currentTime + i * 0.17 }); },
     start, update, info, level, setVolume, stopMusic,
     playMusic() { if (ac) { musicT = 0; piece = null; } },
-    set wrongChance(v) { wrongChance = v; },
+    set wrongChance(v) { wrongChance = v; }, set silence(v) { silenceOn = !!v; },
     get ready() { return ready; },
   };
 })();
@@ -4388,8 +4558,11 @@ const Animals = (() => {
     return { x, z, n: f.n, far: Math.hypot(x - a.x, z - a.z), leader: f.leader, leaderD: f.leader ? Math.hypot(f.leader.x - a.x, f.leader.z - a.z) : 0, mate };
   }
   const playerPt = { x: 0, y: 0, z: 0 };
+  let off = false;
+  function clearAll() { for (const a of animals.slice()) remove(a); loaded.clear(); deer.a = null; }
   function update(dt) {
     if (!dt) return;
+    if (off) { if (animals.length) clearAll(); return; }
     const P = Player.p, night = 1 - Sky.state.day, u = 1 + Weather.unease, w = Weather.sound(), wind = World.U.uWind.value;
     fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     hitCool -= dt;
@@ -4480,7 +4653,7 @@ const Animals = (() => {
       `creepy     next ~${Math.max(0, creepT).toFixed(0)}s${stareT ? '  STARE' : ''}${follow ? '  FOLLOWED' : ''}${rainFreeze ? '  rain-freeze' : ''}${stillness ? '  STILL' : ''}`;
   }
   return {
-    update, info, exportState, importState, animals,
+    update, info, exportState, importState, animals, setEnabled(v) { off = !v; if (off) clearAll(); },
     // debug helpers
     spawnNear(kind) {
       const P = Player.p, x = P.x - Math.sin(P.yaw) * 4, z = P.z - Math.cos(P.yaw) * 4, y = groundSpot(x, z, P.y);
@@ -4591,6 +4764,7 @@ const Vitals = (() => {
     let rate = 0.0022 + (sp > 0.5 ? (sp > 5 ? 0.016 : 0.0045) : 0);       // a lot slower than before: a full stomach lasts an hour of walking
     if (poison > 0) { poison -= dt; rate += 0.04; }
     if (GAME.mode === 'hardcore') rate *= 1.25;
+    rate *= 1 + Cave.k * 1.2;                                                  // the deep takes more out of you
     if (wasGround && !P.onGround && P.vy > 5) ex += 0.012;                     // a jump
     wasGround = P.onGround;
     ex += rate * dt;
@@ -5200,7 +5374,7 @@ const Painting = (() => {
   }
   function update(dt) {
     scanT -= dt; if (scanT > 0) return; scanT = 1;
-    const off = navigator.onLine === false;
+    const off = navigator.onLine === false && !Realm.fake;
     if (!off) { for (const id of [...list.keys()]) remove(id); return; }
     const P = Player.p, pcx = Math.floor(P.x / CFG.CHUNK), pcz = Math.floor(P.z / CFG.CHUNK);
     for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
@@ -5213,6 +5387,289 @@ const Painting = (() => {
   }
   function light(k) { const f = Math.min(1, k * 2.4); face.emissive.setRGB(f, f, f); wood.emissive.setRGB(0.54 * k, 0.42 * k, 0.26 * k); }
   return { update, light, make, spawnNear() { const P = Player.p; return make(P.x - Math.sin(P.yaw) * 4, P.y, P.z - Math.cos(P.yaw) * 4, P.yaw); } };
+})();
+
+/* =====================================================================
+   CAVE — the deeper you go, the darker it gets, the heavier you feel, and the less you can trust what you see and hear.
+   Some tunnels end in a doorway of daylight. Not all of them lead out.
+   ===================================================================== */
+const Cave = (() => {
+  const B = World.B, rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+  const st = { k: 0, dark: 0, hT: 14, plugT: 30, plugs: 0, pulse: null, distort: 0 };
+  const consumed = new Set();
+  // ---- a doorway of light at the end of a tunnel (a real one, or a trick of the mind)
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,240,190,.9)'); g.addColorStop(1, 'rgba(255,220,150,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const lamp = new THREE.PointLight(0xffd9a0, 0, 18, 1.5);      // a little glow around you, so the dark is only mostly dark (it is created at the start so nothing hitches later)
+  scene.add(lamp);
+  const lights = [];
+  function makeLight(x, y, z, kind, ex) {
+    const g = new THREE.Group();
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 2.8), new THREE.MeshBasicMaterial({ color: 0xfff3cc, fog: false, side: THREE.DoubleSide, transparent: true }));
+    door.position.y = 1.4; g.add(door);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    glow.scale.set(7, 7, 1); glow.position.y = 1.4; g.add(glow);
+    g.position.set(x, y, z); scene.add(g);
+    const L = { g, door, glow, kind, ex, x, y, z, t: 0, fade: 0, life: kind === 'mirage' ? rnd(30, 60) : 1e9 };
+    lights.push(L); return L;
+  }
+  function dropLight(L) { scene.remove(L.g); L.door.geometry.dispose(); lights.splice(lights.indexOf(L), 1); }
+  // ---- a figure that stands in the dark and watches (it is not there when you look)
+  function makeFigure() {
+    const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0x050506 });
+    const box = (w, h, d, x, y, z, mat) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || m); o.position.set(x, y, z); g.add(o); return o; };
+    box(0.25, 0.8, 0.28, -0.15, 0.4, 0); box(0.25, 0.8, 0.28, 0.15, 0.4, 0); box(0.55, 0.8, 0.3, 0, 1.2, 0); box(0.2, 0.75, 0.22, -0.4, 1.15, 0); box(0.2, 0.75, 0.22, 0.4, 1.15, 0); box(0.5, 0.5, 0.5, 0, 1.85, 0);
+    const eye = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
+    box(0.1, 0.05, 0.02, -0.12, 1.9, 0.26, eye); box(0.1, 0.05, 0.02, 0.12, 1.9, 0.26, eye);
+    return g;
+  }
+  let figure = null;
+  const eye = new THREE.Vector3(), tv = new THREE.Vector3();
+  function clearAir(x, y, z) { return !World.solid(Math.floor(x), Math.floor(y), Math.floor(z)) && !World.solid(Math.floor(x), Math.floor(y) + 1, Math.floor(z)); }
+  function seen(x, y, z, cone) { tv.set(x - Player.eyePos.x, y - Player.eyePos.y, z - Player.eyePos.z); const d = tv.length(); return d > 0.01 && Player.aimDir.dot(tv) / d > cone; }
+  function los(x, y, z) {          // an open line from your eyes to a spot
+    const e = Player.eyePos, dx = x - e.x, dy = y - e.y, dz = z - e.z, n = Math.ceil(Math.hypot(dx, dy, dz) / 0.6);
+    for (let i = 1; i < n; i++) if (World.solid(Math.floor(e.x + dx * i / n), Math.floor(e.y + dy * i / n), Math.floor(e.z + dz * i / n))) return false;
+    return true;
+  }
+  function spot(dmin, dmax) {      // somewhere to stand in the tunnel ahead or beside you, in plain view
+    const P = Player.p;
+    for (let t = 0; t < 30; t++) {
+      const a = Math.random() * 6.283, d = rnd(dmin, dmax), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d;
+      for (let y = Math.floor(P.y) + 3; y >= Math.floor(P.y) - 4; y--) {
+        if (World.solid(Math.floor(x), y - 1, Math.floor(z)) && clearAir(x, y, z) && los(x, y + 1.4, z)) return { x, y, z };
+      }
+    }
+    return null;
+  }
+  // ---- the things you hear and see that are not there
+  function sound(name, gain, rate, behind) {
+    const P = Player.p, a = P.yaw + (behind ? 0 : rnd(-2.5, 2.5)) + (behind ? 0 : 0), d = rnd(4, 10);
+    const bx = P.x + (behind ? Math.sin(P.yaw) * d : Math.cos(a) * d), bz = P.z + (behind ? Math.cos(P.yaw) * d : Math.sin(a) * d);
+    GameAudio.animal(name, bx, bz, gain, rate);
+  }
+  const H = {
+    steps() { let n = 0; const f = () => { sound('step_hard', 0.7, rnd(0.85, 1), true); if (++n < 5) setTimeout(f, 380 + Math.random() * 60); }; f(); },      // someone walking behind you
+    whisper() { sound('owl', 0.35, 0.42, false); },
+    digging() { let n = 0; const f = () => { sound('dig_cracky', 0.7, rnd(0.8, 1), false); if (++n < 4) setTimeout(f, 520); }; f(); },                  // somebody mining, far off
+    drip() { sound('drip', 0.6, rnd(0.6, 0.9), false); },
+    figure() {
+      if (figure) return;
+      const s = spot(11, 20); if (!s) return;
+      figure = { g: makeFigure(), t: 0, look: 0, x: s.x, y: s.y, z: s.z };
+      figure.g.position.set(s.x, s.y, s.z); scene.add(figure.g);
+    },
+    mirage() {
+      if (lights.some(l => l.kind === 'mirage')) return;
+      const s = spot(14, 26); if (!s) return;
+      makeLight(s.x, s.y, s.z, 'mirage');
+      sound('bird', 0.5, 1, false);                                                      // and birds, somewhere
+    },
+    distort() { st.pulse = { t: 0, dur: rnd(1.2, 2.4), amp: 0.25 + st.k * 0.45 }; },
+  };
+  function hallucinate() {
+    const k = st.k, w = [['steps', 3], ['whisper', 2], ['drip', 1], ['distort', k > 0.25 ? 2 : 0], ['digging', k > 0.3 ? 2 : 0], ['figure', k > 0.4 ? 2.4 : 0], ['mirage', k > 0.3 ? 1.6 : 0]];
+    let total = 0; for (const x of w) total += x[1];
+    let r = Math.random() * total;
+    for (const [n, q] of w) { r -= q; if (r <= 0) { H[n](); Events.emit('hallucination', { kind: n, depth: k }); return; } }
+  }
+  // ---- the way back closes behind you
+  function plug() {
+    const P = Player.p, e = Player.eyePos, f = Player.aimDir;
+    for (let t = 0; t < 40; t++) {
+      const a = Math.random() * 6.283, d = rnd(6, 13), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d;
+      if ((Math.cos(a) * f.x + Math.sin(a) * f.z) > -0.15) continue;                    // behind you
+      for (let y = Math.floor(P.y) + 2; y >= Math.floor(P.y) - 3; y--) {
+        if (!(World.solid(Math.floor(x), y - 1, Math.floor(z)) && clearAir(x, y, z)) || seen(x, y + 1, z, 0.2)) continue;
+        for (let dz = -3; dz <= 3; dz++) for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          if (dx * dx + dy * dy + dz * dz > 7.5) continue;
+          const bx = Math.floor(x) + dx, by = y + dy, bz = Math.floor(z) + dz;
+          if (World.get(bx, by, bz) === B.AIR && Math.hypot(bx + 0.5 - P.x, bz + 0.5 - P.z) > 3) World.set(bx, by, bz, B.STONE);
+        }
+        Events.emit('caveIn', { depth: st.k });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function update(dt) {
+    const P = Player.p, ctx = Weather.ctx;
+    if (Realm.fake) {
+      st.k = st.dark = 0; SkyFX.cave = 0; SkyFX.caveDeep = 0; st.distort = 0; lamp.intensity = 0;
+      for (const l of lights.slice()) dropLight(l);
+      if (figure) { scene.remove(figure.g); figure = null; }
+      return;
+    }
+    const h = World.heightAt(Math.floor(P.x), Math.floor(P.z)), depth = ctx.inMine ? Math.max(0, h - P.y) : 0;
+    const tk = clamp((depth - 5) / 30, 0, 1), td = ctx.inMine ? clamp((depth - 2) / 5, 0, 1) : 0;
+    st.k += (tk - st.k) * Math.min(1, dt * (tk > st.k ? 0.25 : 0.6));
+    st.dark += (td - st.dark) * Math.min(1, dt * 1.5);
+    SkyFX.cave = st.dark; SkyFX.caveDeep = st.k;
+    lamp.position.copy(Player.eyePos); lamp.intensity = st.dark * (1.3 - 0.65 * st.k) * (0.94 + 0.06 * Math.sin(performance.now() / 130));
+    // hallucinations
+    if (Player.locked && st.k > 0.1 && !Vitals.dead) { st.hT -= dt; if (st.hT <= 0) { st.hT = rnd(14, 30) * (1.2 - st.k); hallucinate(); } }
+    // the way back closes (survival only)
+    if (survivalMode() && Player.locked && st.k > 0.35 && st.plugs < 8) { st.plugT -= dt; if (st.plugT <= 0) { st.plugT = rnd(28, 60) / st.k; if (Math.random() < st.k && plug()) st.plugs++; } }
+    if (st.k < 0.1) st.plugs = 0;
+    // distortion pulses
+    if (st.pulse) { st.pulse.t += dt; st.distort = st.pulse.amp * Math.sin(Math.PI * clamp(st.pulse.t / st.pulse.dur, 0, 1)); if (st.pulse.t >= st.pulse.dur) { st.pulse = null; st.distort = 0; } } else st.distort = 0;
+    // the figure
+    if (figure) {
+      figure.t += dt;
+      const dx = P.x - figure.x, dz = P.z - figure.z, dist = Math.hypot(dx, dz);
+      figure.g.rotation.y = Math.atan2(dx, dz);
+      if (seen(figure.x, figure.y + 1.5, figure.z, 0.93)) figure.look += dt; else figure.look = Math.max(0, figure.look - dt * 0.5);
+      if (figure.look > 0.7 || dist < 7 || figure.t > 40) { scene.remove(figure.g); figure = null; }
+    }
+    // doorways: real ones at the end of some tunnels, and mirages
+    if (Player.locked) {
+      light.t -= dt;
+      if (light.t <= 0) {
+        light.t = 1;
+        if (ctx.inMine || depth > 0) for (const ex of World.exitsNear(P.x, P.z, 70)) {
+          if (consumed.has(ex.id) || lights.some(l => l.ex && l.ex.id === ex.id) || !World.chunks.has(Math.floor(ex.x / CFG.CHUNK) + ',' + Math.floor(ex.z / CFG.CHUNK))) continue;
+          let y = Math.floor(ex.y); while (y > 1 && !World.solid(Math.floor(ex.x), y - 1, Math.floor(ex.z))) y--;
+          makeLight(ex.x, y, ex.z, 'exit', ex);
+        }
+      }
+    }
+    for (const L of lights.slice()) {
+      L.t += dt; L.fade = Math.min(1, L.fade + dt * 0.8);
+      const dx = P.x - L.x, dz = P.z - L.z, dist = Math.hypot(dx, dz);
+      L.g.rotation.y = Math.atan2(dx, dz);
+      const flick = 0.85 + 0.15 * Math.sin(L.t * 9 + L.x);
+      L.door.material.opacity = L.fade * flick; L.glow.material.opacity = L.fade * 0.7 * flick;
+      if (L.kind === 'mirage') {
+        if (dist < 5 || L.t > L.life || !ctx.inMine) { dropLight(L); continue; }     // it is not there when you come close
+      } else {
+        if (dist > 110 || consumed.has(L.ex.id)) { dropLight(L); continue; }
+        if (dist < 1.3 && Math.abs(P.y - L.y) < 2.5 && !Realm.busy) Realm.enter(L.ex);
+      }
+    }
+  }
+  const light = { t: 0 };
+  return {
+    update, consumed, post: () => st.distort,
+    get k() { return st.k; }, get slow() { return survivalMode() ? 1 - 0.28 * st.k : 1; },
+    // debug
+    hallucinate, force(kind) { if (H[kind]) H[kind](); }, setDepth(k) { st.k = k; },
+    exportState() { return { consumed: [...consumed] }; }, importState(s) { consumed.clear(); if (s && s.consumed) for (const id of s.consumed) consumed.add(id); },
+    debugExit() { const P = Player.p; const x = P.x - Math.sin(P.yaw) * 6, z = P.z - Math.cos(P.yaw) * 6; makeLight(x, P.y, z, 'exit', { id: 'debug' + Math.random(), x, y: P.y, z }); },
+  };
+})();
+
+/* =====================================================================
+   REALM — the false world. It has your sky's dusk but not your ground; the only way out is a door made of silence
+   ===================================================================== */
+const Realm = (() => {
+  let fake = false, snap = null, busy = false, realSeed = 0, exitInfo = null, hintT = 0, hints = 0, door = null;
+  const mk = (id, css) => { const d = document.createElement('div'); d.id = id; d.style.cssText = css; document.body.appendChild(d); return d; };
+  const fade = mk('realmFade', 'position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:8;transition:opacity .9s');
+  const say = mk('whisper', 'position:fixed;left:50%;bottom:26%;transform:translateX(-50%);max-width:80vw;text-align:center;font:italic 17px var(--font);letter-spacing:.06em;color:#d9d2b4;text-shadow:0 1px 6px #000;opacity:0;transition:opacity 1.6s;pointer-events:none;z-index:7');
+  function whisper(text, ms) { say.textContent = text; say.style.opacity = 1; clearTimeout(whisper.t); whisper.t = setTimeout(() => { say.style.opacity = 0; }, ms || 5200); }
+  const fakeSeedOf = id => { let h = 17; for (const ch of id + '/' + World.getSeed()) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; };
+  const doorGlass = 'glass';
+
+  function arrive(edits) {                                      // (the switch itself)
+    Bed.clear(); Animals.setEnabled(false);
+    World.switchRealm(fakeSeedOf(exitInfo.id), true, edits);
+    Sky.time = 0.5; Weather.force('overcast'); Weather.update(30);
+  }
+  function enter(ex) {
+    if (fake || busy) return;
+    busy = true; exitInfo = ex; fade.style.opacity = 1; GameAudio.silence = true;
+    setTimeout(() => {
+      const p = Player.p;
+      realSeed = World.getSeed();
+      snap = { p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }, time: Sky.time, weather: Weather.exportState(), bed: Bed.exportState(), ex };
+      fake = true; arrive(null);
+      const sp = World.fakeSpawn();
+      Object.assign(p, { x: sp.x + 0.5, y: sp.y, z: sp.z + 0.5, vx: 0, vy: 0, vz: 0, yaw: 3.14, pitch: 0, fly: false });
+      // something is left for you by the well
+      for (const [id, n] of [['glass', 6], ['stone', 16]]) Inventory.drop(id, sp.x - 1.5, sp.y + 0.2, sp.z + 2.5, n);
+      Save.write();
+      waitReady(() => { fade.style.opacity = 0; GameAudio.silence = false; whisper('This is not your world.', 6000); hintT = 70; hints = 0; busy = false; Events.emit('realm', { fake: true }); });
+    }, 950);
+  }
+  function waitReady(f) { const t = setInterval(() => { if (World.pendingNear(Player.p.x, Player.p.z) === 0) { clearInterval(t); setTimeout(f, 300); } }, 200); }
+  function leave() {
+    if (!fake || busy) return;
+    busy = true; fade.style.transition = 'opacity .5s'; fade.style.opacity = 1;
+    setTimeout(() => {
+      if (door) { scene.remove(door.mesh); door = null; }
+      Cave.consumed.add(snap.ex.id);
+      World.switchRealm(realSeed, false);
+      fake = false; Animals.setEnabled(true);
+      Sky.time = snap.time; Weather.importState(snap.weather, snap.p); Weather.auto();
+      Bed.importState(snap.bed);
+      const p = Player.p, e = snap.ex;
+      Object.assign(p, { x: e.x, y: e.y - 2.4, z: e.z, vx: 0, vy: 0, vz: 0, yaw: snap.p.yaw, pitch: 0 });
+      snap = null; Save.write();
+      waitReady(() => { fade.style.opacity = 0; fade.style.transition = 'opacity .9s'; busy = false; Events.emit('realm', { fake: false });
+        Events.emit('stillness', { on: true }); setTimeout(() => { Events.emit('stillness', { on: false }); GameAudio.silence = false; }, 4000);   // the silence lasts a little longer
+      });
+    }, 700);
+  }
+  // resuming a saved false world (you closed the game in there)
+  function resume(f, real) {
+    if (!f || !real) return;
+    fake = true; realSeed = World.getSeed(); exitInfo = f.ex;
+    snap = { p: real.p, time: real.time, weather: real.weather, bed: real.bed, ex: f.ex };
+    arrive(f.edits);
+    Object.assign(Player.p, f.p, { vx: 0, vy: 0, vz: 0 });
+    hintT = 60;
+  }
+  function saveView() { return fake && snap ? { p: snap.p, time: snap.time, weather: snap.weather, bed: snap.bed, fake: { ex: snap.ex, edits: World.exportFakeEdits(), p: { x: Player.p.x, y: Player.p.y, z: Player.p.z, yaw: Player.p.yaw, pitch: Player.p.pitch } } } : null; }
+
+  // ---- the door of silence: a frame of stone, four wide and five tall, filled with glass
+  const doorMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } }, side: THREE.DoubleSide, fog: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uTime; varying vec2 vUv;
+      float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() { vec2 c = vUv - 0.5; float s = step(0.955, h(floor(vUv * vec2(20.0, 30.0)) + floor(uTime * 5.0))) * 0.85;
+        float rim = smoothstep(0.34, 0.5, max(abs(c.x) * 1.0, abs(c.y) * 0.67)); float swirl = 0.04 * (0.5 + 0.5 * sin(length(c) * 24.0 - uTime * 2.0));
+        gl_FragColor = vec4(vec3(s + rim * 0.35 + swirl), 1.0); }`,
+  });
+  function frameAt(ox, oy, oz, axis) {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 5; j++) {
+      const b = World.get(ox + (axis === 'x' ? i : 0), oy + j, oz + (axis === 'z' ? i : 0)), border = i === 0 || i === 3 || j === 0 || j === 4;
+      if (b !== (border ? World.B.STONE : World.B.GLASS)) return false;
+    }
+    return true;
+  }
+  function tryDoor(px, py, pz) {
+    if (!fake || door) return;
+    for (const axis of ['x', 'z']) for (let a = 0; a < 4; a++) for (let b = 0; b < 5; b++) {
+      const ox = axis === 'x' ? px - a : px, oz = axis === 'z' ? pz - a : pz, oy = py - b;
+      if (frameAt(ox, oy, oz, axis)) { openDoor(ox, oy, oz, axis); return; }
+    }
+  }
+  function openDoor(ox, oy, oz, axis) {
+    for (let i = 1; i <= 2; i++) for (let j = 1; j <= 3; j++) World.set(ox + (axis === 'x' ? i : 0), oy + j, oz + (axis === 'z' ? i : 0), World.B.AIR);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 3), doorMat);
+    const cx = axis === 'x' ? ox + 2 : ox + 0.5, cz = axis === 'z' ? oz + 2 : oz + 0.5;
+    mesh.position.set(cx, oy + 2.5, cz); if (axis === 'z') mesh.rotation.y = Math.PI / 2; scene.add(mesh);
+    door = { mesh, cx, cy: oy, cz, axis };
+    GameAudio.silence = true; Events.emit('stillness', { on: true });                     // it opens without a sound
+    setTimeout(() => Events.emit('stillness', { on: false }), 3500);
+    whisper('', 1); Events.emit('stillnessDoor', {});
+  }
+  Events.on('place', t => { if (fake && t.b === World.B.STONE || fake && t.b === World.B.GLASS) tryDoor(t.x, t.y, t.z); });
+  function update(dt) {
+    doorMat.uniforms.uTime.value += dt;
+    if (!fake) return;
+    hintT -= dt;
+    if (hintT <= 0 && !door && Player.locked) {
+      const lines = ['A door of silence: a frame of stone, four wide, five tall, filled with glass.', 'It opens without a sound. Walk through it.', 'Nothing here is yours to keep.'];
+      whisper(lines[Math.min(hints, lines.length - 1)], 7000); hints++; hintT = 120;
+    }
+    if (door) {
+      const P = Player.p, lat = door.axis === 'x' ? P.x - door.cx : P.z - door.cz, nor = door.axis === 'x' ? P.z - door.cz : P.x - door.cx;
+      if (Math.abs(lat) < 1 && Math.abs(nor) < 0.45 && P.y > door.cy + 0.6 && P.y < door.cy + 4 && !busy) leave();
+    }
+  }
+  return { update, enter, leave, resume, saveView, tryDoor, whisper, get fake() { return fake; }, get busy() { return busy; }, get realSeed() { return realSeed; } };
 })();
 
 /* =====================================================================
@@ -5261,6 +5718,7 @@ const Debug = (() => {
   document.getElementById('dbgHeal').addEventListener('click', () => Vitals.heal());
   document.getElementById('dbgHurt').addEventListener('click', () => Vitals.damage(4, 'fall'));
   document.getElementById('dbgHungry').addEventListener('click', () => Vitals.setFood(2));
+  el.querySelectorAll('[data-cave]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.cave; if (k === 'deep') { Cave.setDepth(0.8); Cave.hallucinate(); } else if (k === 'exit') Cave.debugExit(); else if (k === 'leave') Realm.leave(); else Cave.force(k); }));
   document.getElementById('dbgBlocks').addEventListener('click', () => Inventory.giveBlocks());
   document.getElementById('dbgTools').addEventListener('click', () => Inventory.giveTools());
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
@@ -5335,10 +5793,10 @@ const Save = (() => {
   let warned = false;
   function write() {
     if (GAME.temp || GAME.dead || !GAME.id) return;
-    const p = Player.p, days = Weather.exportState().days;
-    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: World.getSeed(), edits: World.exportEdits(),
-      p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly }, time: Sky.time, weather: Weather.exportState(),
-      animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState(), bed: Bed.exportState() });
+    const rv = Realm.saveView(), p = rv ? rv.p : Player.p, days = Weather.exportState().days;
+    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: Realm.fake ? Realm.realSeed : World.getSeed(), edits: World.exportEdits(), fake: rv ? rv.fake : undefined, cave: Cave.exportState(),
+      p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: false }, time: rv ? rv.time : Sky.time, weather: rv ? rv.weather : Weather.exportState(),
+      animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState(), bed: rv ? rv.bed : Bed.exportState() });
     Worlds.update(GAME.id, { played: Date.now(), day: days });
     if (!ok && !warned) { warned = true; Inventory.toast('Storage is full: delete a world to keep saving'); }
   }
@@ -5380,6 +5838,8 @@ try { enterAfterLoad = sessionStorage.getItem('stainless-enter') === '1'; sessio
   Vitals.importState(saved && saved.vitals);
   Inventory.importFurnaces(saved && saved.furnaces);
   Bed.importState(saved && saved.bed);
+  Cave.importState(saved && saved.cave);
+  if (saved && saved.fake) Realm.resume(saved.fake, saved);
 }
 World.update(Player.p.x, Player.p.z);
 
@@ -5806,8 +6266,8 @@ function step() {
   if (!Player.locked && Menu.cur === 'scrMain') { menuSpin += dt * 0.025; camera.rotation.y = p.yaw + menuSpin; }
   Avatar.update(dt, gdt);
   Fx.update(dt);
-  Painting.update(dt); Painting.light(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day));
-  Sky.update(dt, Player.locked ? Debug.timeSpeed : 0);
+  Cave.update(gdt); Realm.update(dt); Painting.update(dt); Painting.light(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day));
+  Sky.update(dt, Player.locked && !Realm.fake ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);
   Inventory.update(gdt);
@@ -5816,7 +6276,7 @@ function step() {
   Director.update(gdt);
   Debug.update(dt);
   fpsT += dt; if (fpsT > 0.5) { fpsT = 0; if (Settings.v.fps) fpsEl.textContent = Debug.fps + ' fps'; }
-  Post.render(Weather.post.amt, Weather.post.black, clock.elapsedTime);
+  Post.render(Math.max(Weather.post.amt, Cave.post()), Weather.post.black, clock.elapsedTime);
   saveT += gdt; if (saveT > 10) { saveT = 0; Save.write(); }
 }
 frame();

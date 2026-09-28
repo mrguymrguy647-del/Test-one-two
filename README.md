@@ -158,6 +158,23 @@ code, so there are no image files. The sounds are real recordings under free lic
 - **Update notice.** On the main menu, when you are online, the game checks for a newer version and shows
   "Version x.y is ready · tap to download"
 
+**8.1: the caves**
+- **Real caves.** Winding tunnels begin as openings in the ground and lead down to a chamber. They are dark:
+  the deeper you go, the closer the black fog, with only a small glow around you
+- **The deeper, the harder to leave.** You move slower and can no longer sprint, you get hungry faster, and
+  now and then the way back closes behind you (survival), a tunnel you were sure was open turns to stone
+- **You start to see and hear things:** footsteps behind you, someone mining far away, a whisper, drips, a
+  dark figure standing in the tunnel with white eyes that is gone when you look at it or come close, a doorway
+  of daylight (with birdsong) that fades as you get near, and waves of distortion
+- **A false exit.** Some tunnels end in a doorway of light that looks like a way out. It is not: it takes you
+  to a **false world**, an endless dusk with an abandoned village and a ruined castle, no animals, dead trees.
+  The exit is used up afterwards
+- **The stillness door.** The only way home is to build one there: a frame of stone **four wide and five
+  tall**, with **glass** filling the inside (two by three). When the last block goes in, everything falls
+  silent and the frame turns to a door with no sound. Walk through it and you are back where you left, and
+  the door is gone. Some stone and glass is left for you by the well. Close the game inside and you wake up
+  in there
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update
