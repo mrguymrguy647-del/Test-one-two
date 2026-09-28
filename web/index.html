@@ -133,6 +133,13 @@
   body:not(.playing) .hud { visibility: hidden; }
   body:not(.playing) #hotbar, body:not(.playing) #cross, body:not(.playing) #blockname { visibility: hidden; }
   #bagBtn { right: calc(66px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #camBtn { right: calc(118px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #sleepFade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 3; }
+  #sleepHint { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font: 14px var(--mono); color: var(--ink); letter-spacing: .08em; opacity: 0; transition: opacity 1s; pointer-events: none; z-index: 4; }
+  #sleepHint.on { opacity: .75; }
+  #dragIcon { position: fixed; left: 0; top: 0; z-index: 9; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; filter: drop-shadow(0 7px 5px rgba(0, 0, 0, .55)); }
+  #dragIcon canvas { width: 100%; height: 100%; image-rendering: pixelated; transform: scale(1.12) rotate(-4deg); }
+  #dragIcon b { position: absolute; right: 0; bottom: -2px; font: 700 12px/1.2 var(--mono); color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
   #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px;
     font: 14px var(--mono); color: var(--ink); text-shadow: 0 1px 3px #000; pointer-events: none; z-index: 4; }
   #toast div { transition: opacity .8s; }
@@ -151,10 +158,17 @@
   .invLeft { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 176px; min-height: calc(var(--s) * 3 + 12px); }
   .slots { display: grid; grid-template-columns: repeat(9, var(--s)); gap: 3px; }
   .slots.bar { margin-top: 8px; }
-  .islot { width: var(--s); height: var(--s); position: relative; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .16); border-radius: 3px; cursor: pointer; touch-action: none; }
-  .islot canvas { position: absolute; left: 3px; top: 3px; width: calc(100% - 6px); height: calc(100% - 6px); image-rendering: pixelated; pointer-events: none; }
-  .islot b { position: absolute; right: 2px; bottom: 0; font: 600 11px/1.2 var(--mono); color: var(--ink); text-shadow: 0 1px 2px #000; pointer-events: none; }
-  .islot i { position: absolute; left: 4px; bottom: 3px; height: 2px; display: none; pointer-events: none; }
+  .islot { width: var(--s); height: var(--s); position: relative; background: linear-gradient(#242a31, #1b2026); border: 1px solid #0a0c0e; border-radius: 4px; cursor: pointer; touch-action: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 -4px 6px rgba(0, 0, 0, .32); transition: background .1s, box-shadow .1s; }
+  .islot.hover { background: linear-gradient(#333b44, #262c34); box-shadow: inset 0 0 0 2px var(--accent), 0 0 8px rgba(217, 210, 180, .25); }
+  .islot.hover.no { box-shadow: inset 0 0 0 2px #c0463c; }
+  .islot.pop canvas { animation: slotpop .2s ease-out; }
+  @keyframes slotpop { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  canvas.pv { width: 64px; height: 96px; touch-action: none; cursor: grab; background: radial-gradient(ellipse at 50% 60%, rgba(255, 255, 255, .09), rgba(255, 255, 255, .02) 70%); border: 1px solid rgba(255, 255, 255, .1); border-radius: 6px; }
+  #inv .panel { background: linear-gradient(#171b20, #101317); box-shadow: 0 10px 40px rgba(0, 0, 0, .6); }
+  .islot canvas { position: absolute; left: 3px; top: 3px; width: calc(100% - 6px); height: calc(100% - 6px); image-rendering: pixelated; pointer-events: none; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .5)); }
+  .islot b { position: absolute; right: 2px; bottom: 0; font: 700 11px/1.2 var(--mono); color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000; pointer-events: none; }
+  .islot i { position: absolute; left: 4px; bottom: 3px; height: 3px; display: none; pointer-events: none; border-radius: 1px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); }
   .islot.sel { border-color: var(--accent); }
   .islot.result { border-color: rgba(217, 210, 180, .5); background: rgba(217, 210, 180, .1); }
   .craftRow { display: flex; align-items: center; gap: 10px; }
@@ -187,7 +201,7 @@
   body.lefty #jumpBtn { right: auto; left: calc(26px + env(safe-area-inset-left, 0px)); }
   body.lefty #downBtn { right: auto; left: calc(110px + env(safe-area-inset-left, 0px)); }
   body.lefty #flyBtn { right: auto; left: calc(38px + env(safe-area-inset-left, 0px)); }
-  #vitals { position: fixed; left: 50%; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: flex-end; gap: 22px; pointer-events: none; z-index: 2; }
+  #vitals { position: fixed; left: 50%; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; align-items: flex-end; gap: 22px; pointer-events: none; z-index: 2; }
   #vitals canvas { width: 198px; height: 18px; image-rendering: pixelated; }
   #vitals .vright { display: flex; flex-direction: column; gap: 3px; }
   #vitals.low #vHearts { animation: lowhp .5s steps(2) infinite; }
@@ -237,10 +251,13 @@
 <button id="pauseBtn" class="tbtn hud touchonly" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
 <button id="dbgBtn" class="tbtn hud touchonly" aria-label="Debug menu">F3</button>
 <button id="bagBtn" class="tbtn hud touchonly" aria-label="Bag"><svg viewBox="0 0 24 24"><path d="M9 6a3 3 0 0 1 6 0h3l2 14H4L6 6zm2 0h2a1 1 0 0 0-2 0z"/></svg></button>
+<button id="camBtn" class="tbtn hud touchonly" aria-label="Camera"><svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 10c4 0 8 2 8 5v3H4v-3c0-3 4-5 8-5z"/></svg></button>
 <div id="toast" class="hud"></div>
+<div id="sleepFade"></div><div id="sleepHint">Tap to wake up</div>
+<div id="dragIcon" class="hide"><canvas width="32" height="32"></canvas><b></b></div>
 <div id="inv" class="hide"><div class="panel"><header><h2 id="invTitle">Inventory</h2><span id="invHeld"></span><button id="invRecipes">Recipes</button><button id="invClose" aria-label="Close">✕</button></header><div class="invBody"><div class="invLeft" id="invLeft"></div><div class="invRight"><div class="slots" id="invMain"></div><div class="slots bar" id="invBar"></div></div></div><p class="invHint" id="invHint"></p></div></div>
 <button id="flyBtn" class="tbtn hud touchonly" aria-label="Fly"><svg viewBox="0 0 24 24"><path d="M12 2l6 7h-4v5h-4V9H6zM4 17c3-2 5-2 8 0s5 2 8 0v3c-3 2-5 2-8 0s-5-2-8 0z"/></svg></button>
-<div id="vitals" class="hud hide"><canvas id="vHearts" width="99" height="8"></canvas><div class="vright"><canvas id="vAir" width="99" height="8"></canvas><canvas id="vFood" width="99" height="8"></canvas></div></div>
+<div id="vitals" class="hud hide"><canvas id="vHearts" width="99" height="9"></canvas><div class="vright"><canvas id="vAir" width="99" height="9"></canvas><canvas id="vFood" width="99" height="9"></canvas></div></div>
 <div id="hurt"></div>
 <div id="fps" class="hud hide"></div>
 <div id="hotbar"></div>
@@ -424,7 +441,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '7.2';
+const GAME_VERSION = '7.3';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -434,7 +451,7 @@ const survivalMode = () => GAME.mode !== 'creative';
    ===================================================================== */
 const Settings = (() => {
   const KEY = 'stainless-settings';
-  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true };
+  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true, skin: 0, cam: 0, hand: true };
   const v = Object.assign({}, DEF);
   try {
     const old = JSON.parse(localStorage.getItem('stillness-audio') || 'null');   // Phase 3's music/sound switches
@@ -1379,6 +1396,85 @@ const Sky = (() => {
 /* =====================================================================
    PLAYER — first-person controls, physics, collision, block interaction
    ===================================================================== */
+/* =====================================================================
+   SKIN — the player's skin, painted in code (a 64 x 64 sheet in the classic layout: head, body, arms, legs)
+   ===================================================================== */
+const Skin = (() => {
+  const W = 64, H = 64;
+  const PRESETS = [
+    { name: 'Traveler', skin: [226, 180, 148], hair: [58, 44, 38], jacket: [72, 90, 110], trim: [56, 72, 90], scarf: [176, 96, 66], pants: [58, 62, 74], boots: [74, 54, 42], eyes: [58, 98, 132] },
+    { name: 'Ranger', skin: [196, 148, 116], hair: [42, 34, 30], jacket: [82, 102, 74], trim: [62, 80, 58], scarf: [204, 176, 96], pants: [92, 78, 62], boots: [58, 46, 38], eyes: [74, 112, 72] },
+    { name: 'Night owl', skin: [238, 208, 190], hair: [200, 200, 214], jacket: [70, 60, 96], trim: [54, 46, 76], scarf: [122, 152, 194], pants: [42, 42, 58], boots: [52, 46, 64], eyes: [150, 92, 172] },
+    { name: 'Ember', skin: [162, 112, 86], hair: [150, 62, 42], jacket: [130, 68, 54], trim: [102, 52, 42], scarf: [226, 192, 124], pants: [54, 50, 58], boots: [42, 38, 38], eyes: [128, 84, 44] },
+  ];
+  // where each box's faces live on the sheet: [x, y, width, height, depth] for the box, laid out like the classic skin
+  const BOX = { head: [0, 0, 8, 8, 8], body: [16, 16, 8, 12, 4], arm: [40, 16, 4, 12, 4], leg: [0, 16, 4, 12, 4] };
+  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+  const g = canvas.getContext('2d');
+  const mul = (c, k) => [clamp(c[0] * k, 0, 255), clamp(c[1] * k, 0, 255), clamp(c[2] * k, 0, 255)];
+  const hex = c => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+  function faces(name) {   // the six rectangles of a box on the sheet: px, nx, py, ny, pz (front), nz (back)
+    const [tx, ty, w, h, d] = BOX[name];
+    return { px: [tx + d + w, ty + d, d, h], nx: [tx, ty + d, d, h], py: [tx + d, ty, w, d], ny: [tx + d + w, ty, w, d], pz: [tx + d, ty + d, w, h], nz: [tx + d + w + d, ty + d, w, h] };
+  }
+  function paint(index) {
+    const P = PRESETS[index % PRESETS.length], r = mulberry32(31 + index * 17);
+    g.clearRect(0, 0, W, H);
+    const dot = (x, y, c) => { g.fillStyle = hex(c); g.fillRect(x, y, 1, 1); };
+    const fill = (x, y, w, h, c, grain) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) dot(x + i, y + j, grain ? mul(c, 1 - grain / 2 + r() * grain) : c); };
+    const F = { head: faces('head'), body: faces('body'), arm: faces('arm'), leg: faces('leg') };
+    const skinC = P.skin, shade = mul(P.skin, 0.84), hairC = P.hair, hairD = mul(P.hair, 0.72);
+
+    // ---- head: hair on top and behind, a face at the front
+    for (const k of ['py', 'nz', 'px', 'nx']) { const [x, y, w, h] = F.head[k]; fill(x, y, w, h, skinC, 0.04); }
+    fill(...F.head.py, hairC, 0.16);
+    fill(F.head.ny[0], F.head.ny[1], 8, 8, shade, 0.04);
+    { const [x, y] = F.head.nz; fill(x, y, 8, 6, hairC, 0.16); fill(x, y + 6, 8, 2, skinC, 0.04); fill(x, y, 8, 1, hairD); }
+    for (const k of ['px', 'nx']) { const [x, y] = F.head[k]; fill(x, y, 8, 3, hairC, 0.16); fill(x + 6, y + 3, 2, 1, hairC, 0.1); dot(x + 3, y + 4, shade); dot(x + 4, y + 4, shade); dot(x + 3, y + 5, shade); }   // hair, an ear
+    const face = (eyesOpen) => {
+      const [x, y] = F.head.pz;
+      fill(x, y, 8, 8, skinC, 0.04);
+      fill(x, y, 8, 2, hairC, 0.16); dot(x, y + 2, hairC); dot(x + 1, y + 2, hairD); dot(x + 6, y + 2, hairD); dot(x + 7, y + 2, hairC); dot(x + 3, y + 2, hairD); dot(x + 4, y + 2, hairC);   // a fringe
+      dot(x + 1, y + 3, hairD); dot(x + 2, y + 3, hairD); dot(x + 5, y + 3, hairD); dot(x + 6, y + 3, hairD);                                                                                // brows
+      if (eyesOpen) { dot(x + 1, y + 4, [245, 245, 248]); dot(x + 2, y + 4, P.eyes); dot(x + 5, y + 4, P.eyes); dot(x + 6, y + 4, [245, 245, 248]); dot(x + 2, y + 5, mul(skinC, 0.94)); dot(x + 5, y + 5, mul(skinC, 0.94)); }
+      else { for (const i of [1, 2, 5, 6]) dot(x + i, y + 4, mul(skinC, 0.62)); dot(x + 1, y + 5, mul(skinC, 0.8)); dot(x + 6, y + 5, mul(skinC, 0.8)); }
+      dot(x + 3, y + 5, shade); dot(x + 4, y + 5, shade);                                                          // the nose
+      dot(x + 3, y + 6, mul(skinC, 0.66)); dot(x + 4, y + 6, mul(skinC, 0.66)); dot(x + 2, y + 6, mul(skinC, 0.9)); dot(x + 5, y + 6, mul(skinC, 0.9));   // the mouth
+      dot(x + 0, y + 5, mul(skinC, 0.94)); dot(x + 7, y + 5, mul(skinC, 0.94));
+    };
+    face(true);
+    // the same face with its eyes shut, kept aside on the sheet for sleeping and blinking
+    { const keep = F.head.pz; F.head.closed = [40, 0, 8, 8]; F.head.pz = F.head.closed; face(false); F.head.pz = keep; }
+
+    // ---- body: a jacket with a scarf, zip, pockets and a belt
+    for (const k of ['py', 'ny', 'px', 'nx', 'pz', 'nz']) { const [x, y, w, h] = F.body[k]; fill(x, y, w, h, P.jacket, 0.07); }
+    { const [x, y] = F.body.pz;
+      fill(x + 3, y + 2, 1, 10, mul(P.jacket, 1.3)); fill(x + 4, y + 2, 1, 10, mul(P.jacket, 0.7));               // the zip
+      fill(x, y + 8, 2, 1, P.trim); fill(x + 6, y + 8, 2, 1, P.trim); fill(x, y + 9, 1, 1, P.trim); fill(x + 7, y + 9, 1, 1, P.trim);   // pockets
+      fill(x, y + 10, 8, 1, mul(P.trim, 0.7)); dot(x + 3, y + 10, [196, 178, 120]); dot(x + 4, y + 10, [156, 140, 92]);                  // a belt with a buckle
+      fill(x, y + 11, 8, 1, P.trim);                                                                                             // the hem
+      fill(x, y, 8, 3, P.scarf, 0.12); fill(x, y + 2, 8, 1, mul(P.scarf, 0.78)); fill(x + 5, y + 3, 2, 4, P.scarf, 0.12); fill(x + 5, y + 6, 2, 1, mul(P.scarf, 0.7)); }
+    { const [x, y] = F.body.nz; fill(x, y, 8, 3, P.scarf, 0.12); fill(x, y + 2, 8, 1, mul(P.scarf, 0.78)); fill(x, y + 3, 8, 2, P.trim, 0.08); fill(x, y + 10, 8, 1, mul(P.trim, 0.7)); fill(x, y + 11, 8, 1, P.trim); }
+    for (const k of ['px', 'nx']) { const [x, y] = F.body[k]; fill(x, y, 4, 2, P.scarf, 0.12); fill(x, y + 10, 4, 1, mul(P.trim, 0.7)); fill(x, y + 11, 4, 1, P.trim); }
+    fill(...F.body.py, P.scarf, 0.1);
+
+    // ---- arms: long sleeves, a cuff, bare hands
+    for (const k of ['px', 'nx', 'pz', 'nz']) { const [x, y, w] = F.arm[k]; fill(x, y, w, 12, P.jacket, 0.07); fill(x, y + 8, w, 1, P.trim); fill(x, y + 9, w, 3, skinC, 0.05); fill(x, y + 11, w, 1, shade); fill(x, y, w, 1, mul(P.jacket, 1.12)); }
+    fill(...F.arm.py, P.jacket, 0.07); fill(...F.arm.ny, skinC, 0.05);
+    // ---- legs: trousers and boots
+    for (const k of ['px', 'nx', 'pz', 'nz']) { const [x, y, w] = F.leg[k]; fill(x, y, w, 12, P.pants, 0.07); fill(x, y + 8, w, 1, mul(P.boots, 1.3)); fill(x, y + 9, w, 3, P.boots, 0.08); fill(x, y + 11, w, 1, mul(P.boots, 0.6)); dot(x + (w >> 1), y + 3, mul(P.pants, 0.86)); }
+    fill(...F.leg.py, P.pants, 0.07); fill(...F.leg.ny, mul(P.boots, 0.6), 0.06);
+    tex.needsUpdate = true;
+  }
+  const tex = new THREE.CanvasTexture(canvas); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
+  let current = -1;
+  return {
+    W, H, PRESETS, BOX, canvas, tex, faces,
+    set(i) { i = ((i | 0) % PRESETS.length + PRESETS.length) % PRESETS.length; if (i !== current) { current = i; paint(i); } },
+    get index() { return current; },
+  };
+})();
+
 const Player = (() => {
   const p = { x: 0, y: 40, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hw: 0.3, h: 1.8, eye: 1.62, onGround: false, fly: false, inWater: false };
   const keys = {};
@@ -1390,8 +1486,16 @@ const Player = (() => {
     for (let by = Math.floor(y); by <= Math.floor(y + p.h); by++)
       for (let bz = Math.floor(z - p.hw); bz <= Math.floor(z + p.hw); bz++)
         for (let bx = Math.floor(x - p.hw); bx <= Math.floor(x + p.hw); bx++)
-          if (World.solid(bx, by, bz)) return true;
+          if (World.solid(bx, by, bz) || Bed.blocks(bx, by, bz, y)) return true;
     return false;
+  }
+  // where you stand after coming down onto layer fy: on the ground, or on a bed (which is only half a block high)
+  function landY(fy) {
+    if (!Bed.any) return fy + 1;
+    let bed = false;
+    for (let bz = Math.floor(p.z - p.hw); bz <= Math.floor(p.z + p.hw); bz++)
+      for (let bx = Math.floor(p.x - p.hw); bx <= Math.floor(p.x + p.hw); bx++) { if (World.solid(bx, fy, bz)) return fy + 1; if (Bed.cellAt(bx, fy, bz)) bed = true; }
+    return bed ? fy + Bed.H : fy + 1;
   }
   function move(axis, d) {
     if (!d) return false;
@@ -1399,7 +1503,7 @@ const Player = (() => {
     for (let i = 0; i < steps; i++) {
       p[axis] += s;
       if (!hits(p.x, p.y, p.z)) continue;
-      if (axis === 'y') { if (s < 0) { p.y = Math.floor(p.y) + 1; p.onGround = true; } else p.y = Math.floor(p.y + p.h) - p.h - 0.001; p.vy = 0; }
+      if (axis === 'y') { if (s < 0) { p.y = landY(Math.floor(p.y)); p.onGround = true; } else p.y = Math.floor(p.y + p.h) - p.h - 0.001; p.vy = 0; }
       else { p[axis] = s > 0 ? Math.floor(p[axis] + p.hw) - p.hw - 0.001 : Math.floor(p[axis] - p.hw) + 1 + p.hw + 0.001; p['v' + axis] = 0; }
       return true;
     }
@@ -1413,7 +1517,21 @@ const Player = (() => {
     }
   }
 
+  // where you look from and along what: the aim, whichever way the camera is looking at you
+  const eyePos = new THREE.Vector3(), aimDir = new THREE.Vector3();
+  function refreshAim() {
+    eyePos.set(p.x, p.y + p.eye, p.z);
+    const cp = Math.cos(p.pitch);
+    aimDir.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
+  }
   function update(dt) {
+    refreshAim();
+    if (Bed.sleeping) {          // asleep: you don't move; any move wakes you
+      p.vx = p.vy = p.vz = 0; target = null; outline.visible = false; if (mining) mineStop();
+      if (locked && (touch.jump || Math.abs(touch.mx) > 0.3 || Math.abs(touch.mz) > 0.3 || keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || keys.Space)) Bed.wake();
+      camera.position.set(p.x, p.y + p.eye, p.z); camera.rotation.set(p.pitch, p.yaw, 0);
+      return;
+    }
     const on = locked && !Vitals.dead;       // on the menu (or dead) your hands are off the controls
     const f = on ? clamp((keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) + touch.mz, -1, 1) : 0, s = on ? clamp((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + touch.mx, -1, 1) : 0;
     const run = on && (keys.ShiftLeft || touch.run), jump = on && (keys.Space || touch.jump), down = on && (keys.ShiftLeft || touch.down);
@@ -1478,6 +1596,13 @@ const Player = (() => {
       return;
     }
     if (!target) { mineStop(); return; }
+    if (target.bed) {                         // a bed comes up quickly, whatever you hold
+      if (!mining || mining.bed !== target.bed) mining = { bed: target.bed, x: target.x, y: target.y, z: target.z, t: 0, dig: 0 };
+      mining.t += dt; mining.dig -= dt;
+      if (mining.dig <= 0) { mining.dig = 0.25; Events.emit('dig', { x: target.x, y: target.y, z: target.z, b: World.B.PLANKS }); }
+      if (mining.t >= 0.6) { const b = target.bed; mineStop(); pickUpBed(b); }
+      return;
+    }
     if (!mining || mining.x !== target.x || mining.y !== target.y || mining.z !== target.z) mining = { x: target.x, y: target.y, z: target.z, b: target.b, t: 0, dig: 0 };
     mining.t += dt; mining.dig -= dt;
     if (mining.dig <= 0) { mining.dig = 0.25; Events.emit('dig', mining); }
@@ -1492,11 +1617,19 @@ const Player = (() => {
     crackMat.map = crackTex[Math.min(7, Math.floor(f * 8))];
     crack.position.set(mining.x + 0.5, mining.y + 0.5, mining.z + 0.5); crack.visible = true;
   }
-  function startBreak() { breakHeld = true; if (!survivalMode()) { act('break'); actCool = 0.3; } }
+  function startBreak() { if (Bed.sleeping) { Bed.wake(); return; } breakHeld = true; if (!survivalMode()) { act('break'); actCool = 0.3; } }
 
+  function pickUpBed(b) {
+    Events.emit('break', { x: b.x, y: b.y, z: b.z, b: World.B.PLANKS });
+    Bed.remove(b);
+    if (survivalMode()) Inventory.drop('bed', b.x + 0.5, b.y + 0.4, b.z + 0.5, 1);
+  }
   // ---- looking at blocks: voxel ray march (DDA)
   function raycast() {
-    const o = camera.position, d = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const o = eyePos, d = aimDir, hit = blockRay(o, d), bh = Bed.any ? Bed.raycast(o, d, hit ? hit.t : CFG.REACH) : null;
+    return bh || hit;
+  }
+  function blockRay(o, d) {
     let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
     const sx = Math.sign(d.x), sy = Math.sign(d.y), sz = Math.sign(d.z);
     const tdx = Math.abs(1 / d.x), tdy = Math.abs(1 / d.y), tdz = Math.abs(1 / d.z);
@@ -1517,22 +1650,32 @@ const Player = (() => {
   scene.add(outline);
   let target = null;
   function updateHighlight() {
+    refreshAim();
     target = locked ? raycast() : null;
     outline.visible = !!target;
     if (target) outline.position.set(target.x + 0.5, target.y + 0.5, target.z + 0.5);
   }
   let hook = null, lastSpace = 0;     // the animals get the first look at what you're aiming at
   function act(kind) {
+    Events.emit('swing');
     if (hook && hook(kind, target ? target.t : CFG.REACH)) return;
     if (kind === 'break') {           // creative: gone at once, nothing drops
       if (!target) return;
+      if (target.bed) { pickUpBed(target.bed); return; }
       World.set(target.x, target.y, target.z, World.B.AIR); Events.emit('break', target); Inventory.blockBroken(target, false);
       return;
     }
-    // use: a crafting table or a furnace opens, food gets eaten, a block gets placed
+    // use: a bed (sleep), a crafting table or a furnace opens, food gets eaten, a block gets placed
+    if (target && target.bed) { Bed.use(target.bed); return; }
     if (target && (target.b === World.B.TABLE || target.b === World.B.FURNACE)) { Inventory.openBlock(target); return; }
     if (Inventory.eatHeld()) return;
     const held = Inventory.held(), def = held && Inventory.ITEM[held.id];
+    if (def && def.bed) {             // a bed: the foot where you point, the head further on
+      if (!target) return;
+      if (Bed.tryPlace(target.px, target.py, target.pz, p.yaw)) { Inventory.useHeld(); Events.emit('place', { x: target.px, y: target.py, z: target.pz, b: World.B.PLANKS }); }
+      else Inventory.toast('There is no room for a bed here');
+      return;
+    }
     if (!target || !def || def.block === undefined) return;
     const { px, py, pz } = target, b = def.block;
     const inside = px + 1 > p.x - p.hw && px < p.x + p.hw && pz + 1 > p.z - p.hw && pz < p.z + p.hw && py + 1 > p.y && py < p.y + p.h;
@@ -1547,6 +1690,7 @@ const Player = (() => {
     if (e.target && e.target.tagName === 'INPUT') return;
     keys[e.code] = true;
     if (/^Digit[1-9]$/.test(e.code)) Inventory.select(+e.code.slice(5) - 1);
+    if ((e.code === 'F5' || e.code === 'KeyV') && locked) { e.preventDefault(); Avatar.cycleView(); }
     if (e.code === 'Space' && locked) {
       e.preventDefault();
       // creative: Space twice quickly to fly (and again to land)
@@ -1588,7 +1732,8 @@ const Player = (() => {
     // touch: hold to break, tap to place
     beginBreak: startBreak,
     endBreak() { breakHeld = false; },
-    tap() { updateHighlight(); act('place'); },
+    tap() { if (Bed.sleeping) { Bed.wake(); return; } updateHighlight(); act('place'); },
+    eyePos, aimDir, refreshAim,
     get locked() { return locked; }, set locked(v) { locked = v; if (!v) breakHeld = placeHeld = false; },
     get target() { return target; },
   };
@@ -2160,10 +2305,10 @@ const Post = (() => {
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false; pscene.add(quad);
   function render(amt, black, t) {
-    if (amt < 0.005 && black < 0.005) { renderer.render(scene, camera); return; }
+    if (amt < 0.005 && black < 0.005) { renderer.render(scene, camera); Avatar.overlay(); return; }
     renderer.getDrawingBufferSize(size);
     if (!rt || rt.width !== size.x || rt.height !== size.y) { if (rt) rt.dispose(); rt = new THREE.WebGLRenderTarget(size.x, size.y); }
-    renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null);
+    renderer.setRenderTarget(rt); renderer.render(scene, camera); Avatar.overlay(); renderer.setRenderTarget(null);
     const u = mat.uniforms; u.tDiffuse.value = rt.texture; u.uAmt.value = amt; u.uBlack.value = black; u.uTime.value = t;
     renderer.render(pscene, pcam);
   }
@@ -2542,6 +2687,7 @@ const Inventory = (() => {
   Object.assign(ITEM.log, { fuel: 15 }); Object.assign(ITEM.planks, { fuel: 15 }); Object.assign(ITEM.table, { fuel: 15 });
   Object.assign(ITEM.wool, { fuel: 5 }); Object.assign(ITEM.sand, { smelt: 'glass' });
   item('stick', 'Stick', { fuel: 5 });
+  item('bed', 'Bed', { stack: 1, bed: true });
   item('leather', 'Leather'); item('feather', 'Feather'); item('egg', 'Egg', { stack: 16 });
   item('beef', 'Raw beef', { food: 3, smelt: 'steak' }); item('steak', 'Steak', { food: 8 });
   item('pork', 'Raw pork', { food: 3, smelt: 'cooked_pork' }); item('cooked_pork', 'Cooked pork', { food: 8 });
@@ -2560,12 +2706,13 @@ const Inventory = (() => {
   };
 
   // ================= recipes (P planks, S stone, s stick, L log) =================
-  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log' };
+  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log', w: 'wool' };
   const RECIPES = [
     { out: ['planks', 4], shape: ['L'] },
     { out: ['stick', 4], shape: ['P', 'P'] },
     { out: ['table', 1], shape: ['PP', 'PP'] },
     { out: ['furnace', 1], shape: ['SSS', 'S S', 'SSS'] },
+    { out: ['bed', 1], shape: ['www', 'PPP'] },
   ];
   for (const [m, c] of [['wood', 'P'], ['stone', 'S']]) RECIPES.push(
     { out: [m + '_pickaxe', 1], shape: [c + c + c, ' s ', ' s '] },
@@ -2620,6 +2767,9 @@ const Inventory = (() => {
       '...1222222221...', '...1222222221...', '....12222221....', '.....111111.....', '................']],
   };
   const ART = {};
+  ART.bed = [['#5a3d22', '#b8342f', '#f2efe6'], [
+    '................', '.11.............', '.11.333.........', '.11.3333222222..', '.1132222222222..', '.1122222222222..', '.1111111111111..',
+    '.1111111111111..', '.11..........11.', '.11..........11.', '.11..........11.', '................']];
   for (const k in ART0) ART[k] = [ART0[k].slice(0, 3), ART0[k][3]];
   ART.steak = [['#3f2414', '#7a4a2a', '#c49a70'], ART0.beef[3]];
   ART.cooked_pork = [['#5b3522', '#a8704a', '#e0bf98'], ART0.pork[3]];
@@ -2792,17 +2942,7 @@ const Inventory = (() => {
     const n = document.createElement('b'), d = document.createElement('i');
     s.append(c, n, d);
     const el = { s, c, n, d, ref };
-    let t = 0, long = false;
-    s.addEventListener('pointerdown', e => {
-      e.preventDefault(); e.stopPropagation();
-      if (e.button === 2) { tap(ref, true); return; }
-      long = false; clearTimeout(t);
-      t = setTimeout(() => { long = true; tap(ref, true); }, 380);                       // hold: split a stack / put down one
-    });
-    s.addEventListener('pointerup', e => { e.stopPropagation(); clearTimeout(t); if (!long && e.button !== 2) tap(ref, false); });
-    s.addEventListener('pointercancel', () => clearTimeout(t));
-    s.addEventListener('pointerleave', () => clearTimeout(t));
-    s.addEventListener('contextmenu', e => e.preventDefault());
+    s._el = el;
     return el;
   }
   // the 36 inventory slots are made once
@@ -2873,13 +3013,9 @@ const Inventory = (() => {
   function render() {
     // title, what you're holding, and the hint
     titleEl.textContent = mode === 'craft3' ? 'Crafting table' : mode === 'furnace' ? 'Furnace' : 'Inventory';
-    heldEl.textContent = '';
-    if (cursor) {
-      const c = document.createElement('canvas'); c.width = c.height = 16; c.getContext('2d').drawImage(iconOf(cursor.id).canvas, 0, 0, 16, 16);
-      heldEl.append(c, document.createTextNode(` ${cursor.n > 1 ? cursor.n + ' ' : ''}${ITEM[cursor.id].name}`));
-    }
-    hintEl.textContent = (touchMode ? 'Tap to pick up and put down · hold to split or put one' : 'Click to pick up and put down · right-click to split or put one') +
-      (cursor ? (survivalMode() ? ' · tap outside to throw it' : ' · tap outside to get rid of it') : '');
+    renderHeld();
+    hintEl.textContent = (touchMode ? 'Hold an item and drag it to a slot · hold a moment to take half · a second finger puts one down' : 'Drag items with the mouse · right-click takes half or puts one down') +
+      (cursor ? (survivalMode() ? ' · drop it outside to throw it' : ' · drop it outside to get rid of it') : '');
     recBtn.classList.toggle('hide', !(mode === 'craft2' || mode === 'craft3'));
     recBtn.classList.toggle('on', showRecipes);
     const top = leftEl.firstChild && leftEl.firstChild.scrollTop || 0;
@@ -2909,11 +3045,13 @@ const Inventory = (() => {
       const r = match(cells, n), res = mkSlot({ kind: 'result' }, 'result'); paint(res, r ? { id: r.out[0], n: r.out[1] } : null);
       const arrow = document.createElement('div'); arrow.className = 'arrow'; arrow.textContent = '→';
       const row = document.createElement('div'); row.className = 'craftRow'; row.append(g, arrow, res.s);
+      if (n === 2) { row.prepend(pvCanvas); if (pvDirty) drawPreview(); }
       leftEl.appendChild(row);
       if (n === 2) { const p = document.createElement('p'); p.className = 'fnote'; p.textContent = 'Bigger things need a crafting table (4 planks).'; leftEl.appendChild(p); }
     }
     mainSlots.forEach(el => paint(el, slots[el.ref.i]));
     barSlots.forEach(el => { paint(el, slots[el.ref.i]); el.s.classList.toggle('sel', el.ref.i === sel); });
+    syncFloat();
   }
   function renderRecipes() {
     const list = document.createElement('div'); list.className = 'recipes scroll';
@@ -2941,19 +3079,113 @@ const Inventory = (() => {
     if (fl) fl.style.height = (f.burn > 0 ? Math.max(0.05, f.burn / f.burnMax) * 100 : 0) + '%';
     if (pr) pr.style.width = Math.min(100, f.cook / COOK * 100) + '%';
   }
+  // ================= picking things up with your finger and putting them where they belong =================
+  const floatEl = document.getElementById('dragIcon'), floatCv = floatEl.querySelector('canvas'), floatN = floatEl.querySelector('b');
+  let drag = null, dragEnd = 0, hoverEl = null, hoverStack = null, pvDrag = null, pvTurn = 0.55, pvDirty = true, pvBusy = false;
+  const ptr = { x: 0, y: 0 };
+  const slotAt = (x, y) => { const e = document.elementFromPoint(x, y), s = e && e.closest ? e.closest('.islot') : null; return s && s._el || null; };
+  const inPanel = (x, y) => { const r = invEl.querySelector('.panel').getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+  function placeFloat() { floatEl.style.transform = `translate(${ptr.x}px, ${ptr.y - (touchMode ? 38 : 0)}px)`; }
+  function syncFloat() {
+    const show = isOpen && !!cursor;
+    floatEl.classList.toggle('hide', !show);
+    if (!show) return;
+    const x = floatCv.getContext('2d'); x.clearRect(0, 0, 32, 32); x.imageSmoothingEnabled = false; x.drawImage(iconOf(cursor.id).canvas, 0, 0, 32, 32);
+    floatN.textContent = cursor.n > 1 ? cursor.n : ''; placeFloat();
+  }
+  function renderHeld() {            // in the header: what is in your hand, or what you are pointing at
+    heldEl.textContent = '';
+    const st = cursor || hoverStack;
+    if (!st || !ITEM[st.id]) return;
+    const d = ITEM[st.id], c = document.createElement('canvas'); c.width = c.height = 16; c.getContext('2d').drawImage(iconOf(st.id).canvas, 0, 0, 16, 16);
+    let extra = '';
+    if (d.dur) extra = ` · ${Math.max(0, d.dur - (st.d || 0))}/${d.dur} uses`; else if (d.food !== undefined) extra = ` · hunger +${d.food / 2}`; else if (d.fuel) extra = ' · fuel';
+    heldEl.append(c, document.createTextNode(` ${st.n > 1 ? st.n + ' ' : ''}${d.name}${extra}`));
+  }
+  function setHover(el) {
+    if (hoverEl && hoverEl.s) hoverEl.s.classList.remove('hover', 'no');
+    hoverEl = el;
+    let st = null;
+    if (el) {
+      el.s.classList.add('hover');
+      if (cursor && el.ref.accept && !el.ref.accept(cursor.id)) el.s.classList.add('no');
+      if (!cursor) st = el.ref.arr ? el.ref.arr[el.ref.i] : el.ref.kind === 'palette' ? { id: el.ref.id, n: 1 } : null;
+    }
+    if (st !== hoverStack && !(st && hoverStack && st.id === hoverStack.id && st.n === hoverStack.n)) { hoverStack = st; renderHeld(); }
+  }
+  function pop(el) { if (!el) return; el.s.classList.remove('pop'); void el.s.offsetWidth; el.s.classList.add('pop'); }
+  function putBack(ref) {            // let go over nothing: it goes back where it came from
+    if (!cursor) return;
+    if (ref.arr) {
+      const s = ref.arr[ref.i];
+      if (!s) { ref.arr[ref.i] = cursor; cursor = null; }
+      else if (s.id === cursor.id && s.n + cursor.n <= maxOf(s.id)) { s.n += cursor.n; cursor = null; }
+    } else if (ref.kind === 'palette') cursor = null;
+    if (cursor) { const left = add(cursor.id, cursor.n, cursor.d); cursor = left ? { id: cursor.id, n: left, d: cursor.d } : null; }
+    changed();
+  }
+  invEl.addEventListener('pointerdown', e => {
+    if (e.target === pvCanvas) { pvDrag = { x: e.clientX, turn: pvTurn }; e.preventDefault(); return; }
+    const s = e.target.closest ? e.target.closest('.islot') : null;
+    if (!s || !s._el) return;
+    e.preventDefault(); e.stopPropagation();
+    try { s.releasePointerCapture(e.pointerId); } catch (x) {}
+    ptr.x = e.clientX; ptr.y = e.clientY;
+    const el = s._el, ref = el.ref;
+    if (e.button === 2) { tap(ref, true); return; }
+    if (drag && drag.carry && e.pointerId !== drag.pid) { tap(ref, true); pop(el); return; }      // a second finger puts one down
+    if (drag) return;
+    const d = drag = { ref, el, pid: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, carry: false, long: false, had: !!cursor, timer: 0 };
+    if (!cursor) d.timer = setTimeout(() => { if (drag === d && !d.moved) { d.long = true; tap(ref, true); d.carry = !!cursor; if (d.carry) placeFloat(); } }, 380);
+    setHover(el);
+  });
+  addEventListener('pointermove', e => {
+    if (!isOpen) return;
+    ptr.x = e.clientX; ptr.y = e.clientY;
+    if (pvDrag) { pvTurn = pvDrag.turn + (e.clientX - pvDrag.x) * 0.025; if (!pvBusy) { pvBusy = true; requestAnimationFrame(() => { pvBusy = false; drawPreview(); }); } return; }
+    if (drag && e.pointerId === drag.pid && !drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 8) {
+      drag.moved = true; clearTimeout(drag.timer);
+      if (!drag.carry && !drag.had && !cursor) { tap(drag.ref, false); drag.carry = !!cursor; }     // pulled it out of its slot
+    }
+    if (cursor) placeFloat();
+    setHover(slotAt(e.clientX, e.clientY));
+  });
+  function endPtr(e, cancel) {
+    if (pvDrag) { pvDrag = null; return; }
+    if (!drag || e.pointerId !== drag.pid) return;
+    clearTimeout(drag.timer);
+    const d = drag; drag = null;
+    if (d.moved) dragEnd = performance.now();
+    const t = cancel ? null : slotAt(e.clientX, e.clientY);
+    if (d.carry) {
+      if (!d.moved && !cancel) { /* held for a moment and let go on the spot: it stays in your hand */ }
+      else if (cancel) putBack(d.ref);
+      else if (t) { tap(t.ref, false); pop(t); }
+      else if (inPanel(e.clientX, e.clientY)) putBack(d.ref);
+      else throwCursor();
+    } else if (d.had) { if (t) { tap(t.ref, false); pop(t); } }
+    else if (!cancel && t && t === d.el) { tap(d.ref, false); }        // a plain tap: pick it up (tap another slot to put it down)
+    setHover(null);
+  }
+  addEventListener('pointerup', e => endPtr(e, false));
+  addEventListener('pointercancel', e => endPtr(e, true));
+  // a picture of you, which you can turn around
+  const pvCanvas = document.createElement('canvas'); pvCanvas.width = 128; pvCanvas.height = 192; pvCanvas.className = 'pv';
+  function drawPreview() { pvDirty = false; try { Avatar.preview(pvCanvas, pvTurn); } catch (e) {} }
+  Settings.on(k => { if (k === 'skin') { pvDirty = true; if (isOpen) drawPreview(); } });
   function open(m, key, at) {
     if (isOpen) return;
     mode = m || (survivalMode() ? 'craft2' : 'creative'); openKey = key || null; openAt = at || null; showRecipes = false;
-    isOpen = true; invEl.classList.remove('hide'); render();
+    isOpen = true; invEl.classList.remove('hide'); pvDirty = true; render();
     if (!touchMode) { try { document.exitPointerLock(); } catch (e) {} }
   }
   function close(fromUser) {
     if (!isOpen) return;
-    isOpen = false; invEl.classList.add('hide');
+    isOpen = false; invEl.classList.add('hide'); drag = null; pvDrag = null; setHover(null);
     // whatever you were holding and what's left in the crafting grid go back into your inventory
     for (const arr of [grid2, grid3]) for (let i = 0; i < arr.length; i++) if (arr[i]) { const s = arr[i]; arr[i] = null; give(s.id, s.n, true); }
     if (cursor) { const s = cursor; cursor = null; const left = add(s.id, s.n, s.d); if (left) drop(s.id, Player.p.x, Player.p.y + 1, Player.p.z, left, s.d); }
-    openKey = null; changed();
+    openKey = null; changed(); syncFloat();
     if (fromUser && !touchMode && Player.locked) relock();
   }
   function toggleBag(show, fromUser) { const want = show === undefined ? !isOpen : !!show; if (want) open(); else close(fromUser); }
@@ -2966,7 +3198,7 @@ const Inventory = (() => {
   document.getElementById('bagBtn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleBag(undefined, true); }, { passive: false });
   document.getElementById('invClose').addEventListener('click', e => { e.stopPropagation(); GameAudio.ui('back'); close(true); });
   recBtn.addEventListener('click', e => { e.stopPropagation(); GameAudio.ui('tick'); showRecipes = !showRecipes; render(); });
-  invEl.addEventListener('click', e => { if (e.target === invEl && !throwCursor()) close(true); });
+  invEl.addEventListener('click', e => { if (performance.now() - dragEnd < 300) return; if (e.target === invEl && !throwCursor()) close(true); });
   invEl.addEventListener('mousedown', e => e.stopPropagation());
   invEl.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
   invEl.addEventListener('contextmenu', e => e.preventDefault());
@@ -3096,10 +3328,10 @@ const Inventory = (() => {
   }
   return {
     ITEM, toast, give, add, drop, dropAll, count, held, select, useHeld, wearHeld, eatHeld, attackDamage, breakTime, blockBroken, openBlock,
-    toggleBag, update, onMode, reset, exportState, importState, exportFurnaces: () => furnaces, importFurnaces, refreshHotbar,
+    toggleBag, update, onMode, reset, exportState, importState, iconOf, exportFurnaces: () => furnaces, importFurnaces, refreshHotbar,
     get isOpen() { return isOpen; }, set relock(f) { relock = f; }, get sel() { return sel; }, get cursor() { return cursor; },
     dropCount: () => drops.length, match, RECIPES,
-    giveAll() { for (const id of ['beef', 'pork', 'mutton', 'chicken', 'milk', 'leather', 'feather', 'egg', 'stick']) give(id, 4); },
+    giveAll() { give('bed', 1);  for (const id of ['beef', 'pork', 'mutton', 'chicken', 'milk', 'leather', 'feather', 'egg', 'stick']) give(id, 4); },
     giveBlocks() { for (const id of ['grass', 'dirt', 'stone', 'sand', 'gravel', 'log', 'planks', 'glass', 'wool', 'table', 'furnace']) give(id, id === 'table' || id === 'furnace' ? 1 : 64, true); toast('+ blocks'); },
     giveTools() { for (const id in ITEM) if (ITEM[id].tool) give(id, 1, true); toast('+ tools'); },
   };
@@ -3798,7 +4030,7 @@ const Animals = (() => {
   const ray = new THREE.Ray(), lray = new THREE.Ray(), bx = new THREE.Box3(), hitP = new THREE.Vector3();
   let hitCool = 0;
   function aimed(maxDist) {
-    ray.origin.copy(camera.position); ray.direction.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    Player.refreshAim(); ray.origin.copy(Player.eyePos); ray.direction.copy(Player.aimDir);
     let best = null, bd = maxDist;
     for (const a of animals) {
       if (a.dieT || !a.model.group.visible) continue;
@@ -4258,27 +4490,33 @@ const Animals = (() => {
    ===================================================================== */
 const Vitals = (() => {
   const B = World.B;
-  let hp = 20, food = 20, air = 10, ex = 0, poison = 0, regenT = 0, starveT = 0, airT = 0, peak = null, wasGround = true, dead = false, cause = '';
+  let hp = 20, food = 20, air = 10, ex = 0, poison = 0, regenT = 0, starveT = 0, airT = 0, peak = null, wasGround = true, dead = false, cause = '', flash = 0, waveT = 0;
   const el = document.getElementById('vitals'), hurtEl = document.getElementById('hurt');
   const cv = { hp: document.getElementById('vHearts'), food: document.getElementById('vFood'), air: document.getElementById('vAir') };
 
   // ---------------- the bars: 10 little pixel icons, each worth 2 points ----------------
-  const HEART = ['.XX...XX.', 'XWXX.XXXX', 'XWXXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '...XXX...', '....X....'];
-  const LEG = ['.....XXX.', '....XXXXX', '...XXXXXX', '...XXXXX.', '..XXXX...', '.WX......', 'W.W......', '.W.......'];
-  const BUBBLE = ['..XXX..', '.X...X.', 'X.W...X', 'X.....X', 'X.....X', '.X...X.', '..XXX..'];
+  // 9 x 9 pixel icons. O outline, R/r body and its shade, H shine
+  const HEART = ['.OO...OO.', 'OHHO.ORRO', 'OHRRORRRO', 'ORRRRRRrO', '.ORRRRrO.', '..ORRrO..', '...OrO...', '....O....'];
+  const LEG = ['.....OOO.', '....OMMMO', '...OMHMMO', '...OMMMmO', '..OOMMmO.', '.OBOOmO..', 'OBBO.....', '.OO......'];
+  const BUBBLE = ['..OOOOO..', '.OBBBBBO.', 'OBWWBBBBO', 'OBWBBBBBO', 'OBBBBBBbO', '.OBBBBbO.', '..OOOOO..'];
   const C = {
-    heart: { X: '#d0302a', W: '#ffb3a8' }, food: { X: '#a8662e', W: '#efe6d6' }, sick: { X: '#6f8f2e', W: '#d8e8b0' },
-    air: { X: '#8fc3ee', W: '#ffffff' }, empty: { X: 'rgba(12,6,6,.72)', W: 'rgba(12,6,6,.72)' },
+    heart: { O: '#3b0b0e', R: '#e2393b', r: '#a51f2c', H: '#ffa79e' }, hit: { O: '#ffffff', R: '#ffffff', r: '#ffd8d2', H: '#ffffff' },
+    food: { O: '#2e170c', M: '#cf6a30', m: '#8f3f1c', H: '#f6b07a', B: '#f1e8d4' }, sick: { O: '#1d2a0f', M: '#7fa236', m: '#547022', H: '#cfe39a', B: '#dbe6c2' },
+    air: { O: '#173a5e', B: '#7fc0f2', b: '#4c93cf', W: '#ffffff' }, empty: null,
   };
-  function icon(x, rows, ox, colors, half) {
-    rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = r[i]; if (c === '.' || (half && i > 4)) continue; x.fillStyle = colors[c]; x.fillRect(ox + i, j, 1, 1); } });
+  const EMPTY = { O: 'rgba(8,4,4,.85)' }, EMPTYFILL = 'rgba(14,8,8,.55)';
+  function icon(x, rows, ox, colors, half, oy) {
+    rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = r[i]; if (c === '.' || (half === 'L' && i > 4) || (half === 'R' && i < 4)) continue; x.fillStyle = colors[c] || colors.O; x.fillRect(ox + i, j + (oy || 0), 1, 1); } });
   }
-  function bar(canvas, rows, value, full, empty, flip) {
+  function ghost(x, rows, ox, oy) {   // an empty slot in the bar: a dark outline with a dim inside
+    rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = r[i]; if (c === '.') continue; x.fillStyle = c === 'O' ? EMPTY.O : EMPTYFILL; x.fillRect(ox + i, j + (oy || 0), 1, 1); } });
+  }
+  function bar(canvas, rows, value, full, empty, flip, wave) {
     const x = canvas.getContext('2d'); x.clearRect(0, 0, canvas.width, canvas.height);
     for (let i = 0; i < 10; i++) {
-      const ox = (flip ? 9 - i : i) * 10, v = value - i * 2;
-      if (empty) icon(x, rows, ox, empty);
-      if (v >= 2) icon(x, rows, ox, full); else if (v >= 1) icon(x, rows, ox, full, true);
+      const ox = (flip ? 9 - i : i) * 10, v = value - i * 2, oy = wave ? (wave === i ? -1 : 0) + 1 : 1 - (rows === BUBBLE ? 0 : 0);
+      if (empty) ghost(x, rows, ox, oy);
+      if (v >= 2) icon(x, rows, ox, full, null, oy); else if (v >= 1) icon(x, rows, ox, full, flip ? 'R' : 'L', oy);
     }
   }
   let drawn = '';
@@ -4286,20 +4524,20 @@ const Vitals = (() => {
     const show = survivalMode() && !GAME.dead;
     el.classList.toggle('hide', !show);
     if (!show) return;
-    const a = Math.ceil(air), key = hp + '|' + food + '|' + a + '|' + (poison > 0);
+    const a = Math.ceil(air), wave = regenT > 0 && food >= 18 && hp < 20 ? Math.floor(waveT * 12) % 14 : -1, key = hp + '|' + food + '|' + a + '|' + (poison > 0) + '|' + (flash > 0) + '|' + wave;
     if (key === drawn) return;
     drawn = key;
-    bar(cv.hp, HEART, hp, C.heart, C.empty);
-    bar(cv.food, LEG, food, poison > 0 ? C.sick : C.food, C.empty, true);
+    bar(cv.hp, HEART, hp, flash > 0 ? C.hit : C.heart, true, false, wave);
+    bar(cv.food, LEG, food, poison > 0 ? C.sick : C.food, true, true);
     cv.air.style.visibility = a < 10 ? 'visible' : 'hidden';
-    bar(cv.air, BUBBLE, a * 2, C.air, null, true);
+    bar(cv.air, BUBBLE, a * 2, C.air, false, true);
     el.classList.toggle('low', hp <= 4);
   }
 
   // ---------------- getting hurt ----------------
   function damage(n, why) {
     if (!survivalMode() || dead || n <= 0 || !Player.locked) return;
-    hp = Math.max(0, hp - n);
+    hp = Math.max(0, hp - n); flash = 0.4;
     hurtEl.classList.remove('on'); void hurtEl.offsetWidth; hurtEl.classList.add('on');   // restart the red flash
     GameAudio.hurt();
     Events.emit('hurt', { n, why });
@@ -4314,6 +4552,8 @@ const Vitals = (() => {
   }
 
   function update(dt) {
+    if (flash > 0) flash = Math.max(0, flash - dt);
+    waveT += dt;
     if (!dt || dead || !survivalMode()) { draw(); return; }
     const P = Player.p;
     // falling: the higher you fall from, the more it hurts (water breaks the fall)
@@ -4329,15 +4569,15 @@ const Vitals = (() => {
     } else { airT = 0; air = Math.min(10, air + dt * 4); }
     // hunger: everything you do makes you hungrier (running most of all)
     const sp = Math.hypot(P.vx, P.vz);
-    let rate = 0.008 + (sp > 0.5 ? (sp > 5 ? 0.07 : 0.018) : 0);
-    if (poison > 0) { poison -= dt; rate += 0.08; }
+    let rate = 0.0022 + (sp > 0.5 ? (sp > 5 ? 0.016 : 0.0045) : 0);       // a lot slower than before: a full stomach lasts an hour of walking
+    if (poison > 0) { poison -= dt; rate += 0.04; }
     if (GAME.mode === 'hardcore') rate *= 1.25;
-    if (wasGround && !P.onGround && P.vy > 5) ex += 0.08;                     // a jump
+    if (wasGround && !P.onGround && P.vy > 5) ex += 0.012;                     // a jump
     wasGround = P.onGround;
     ex += rate * dt;
     while (ex >= 1) { ex -= 1; food = Math.max(0, food - 1); }
     // a full stomach heals you; an empty one hurts (in hardcore, until you die)
-    if (food >= 18 && hp < 20) { regenT += dt; if (regenT >= 4) { regenT = 0; hp++; ex += 0.6; } } else regenT = 0;
+    if (food >= 18 && hp < 20) { regenT += dt; if (regenT >= 3.5) { regenT = 0; hp++; ex += 0.15; } } else regenT = 0;
     if (food <= 0) { starveT += dt; if (starveT >= 4) { starveT = 0; if (hp > (GAME.mode === 'hardcore' ? 0 : 1)) damage(1, 'starve'); } } else starveT = 0;
     draw();
   }
@@ -4348,7 +4588,8 @@ const Vitals = (() => {
     else if (k === 'chicken' && Math.random() < 0.3) { poison = 25; Inventory.toast('That chicken was bad'); }
     draw();
   }
-  function reset() { hp = 20; food = 20; air = 10; ex = 0; poison = 0; regenT = starveT = airT = 0; peak = null; dead = false; cause = ''; drawn = ''; draw(); }
+  function onSleep() { hp = Math.min(20, hp + 6); food = Math.max(0, food - 2); drawn = ''; draw(); }
+  function reset() { flash = 0; hp = 20; food = 20; air = 10; ex = 0; poison = 0; regenT = starveT = airT = 0; peak = null; dead = false; cause = ''; drawn = ''; draw(); }
   function exportState() { return { hp, food, air, ex, poison }; }
   function importState(s) {
     reset();
@@ -4359,7 +4600,7 @@ const Vitals = (() => {
   }
   const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.' };
   return {
-    update, damage, feed, reset, respawn: reset, exportState, importState, draw,
+    update, damage, feed, reset, respawn: reset, onSleep, exportState, importState, draw,
     hungry: () => food < 20,
     get dead() { return dead; }, get cause() { return WHY[cause] || 'You died.'; },
     get hp() { return hp; }, get food() { return food; }, get air() { return air; },
@@ -4367,6 +4608,435 @@ const Vitals = (() => {
     heal() { hp = 20; food = 20; poison = 0; drawn = ''; draw(); },
     setFood(v) { food = v; drawn = ''; draw(); },
   };
+})();
+
+/* =====================================================================
+   BED — two blocks long, half a block high. Sleep in it at night to skip to the morning; it is where you wake up after dying
+   ===================================================================== */
+const Bed = (() => {
+  const H = 0.5625;
+  const beds = [], cellMap = new Map();      // beds: { x, y, z, dx, dz, group }; (x, y, z) is the foot, the head is one cell further along (dx, dz)
+  let spawnAt = null;                         // the bed you last slept in
+  const fadeEl = document.getElementById('sleepFade'), hintEl = document.getElementById('sleepHint');
+
+  // ---- how it looks: a wooden frame, a red blanket, a white pillow
+  const cv = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); fn(g, c); const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t; };
+  const woodTex = cv(16, 16, g => {
+    const r = mulberry32(5);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const k = 0.86 + r() * 0.14 - (y % 5 === 0 ? 0.1 : 0); g.fillStyle = `rgb(${142 * k | 0},${104 * k | 0},${62 * k | 0})`; g.fillRect(x, y, 1, 1); }
+  });
+  const topTex = cv(16, 32, g => {      // x: across the bed; y: from the foot (0) to the head (31)
+    const r = mulberry32(9);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 16; x++) {
+      let c = [178, 52, 48];
+      if (y >= 24) c = [232, 230, 224];                     // the sheet at the head end
+      else if (y >= 22) c = [214, 212, 206];              // the fold
+      else if (y < 2) c = [136, 36, 36];                    // the hem at the foot
+      else if ((y + 3) % 9 === 0) c = [156, 42, 42];        // the quilting
+      const k = 0.94 + r() * 0.08;
+      g.fillStyle = `rgb(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0})`; g.fillRect(x, y, 1, 1);
+    }
+    for (let x = 0; x < 16; x++) { g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(x, 22, 1, 1); }
+  });
+  const pillowTex = cv(8, 8, g => { const r = mulberry32(3); for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const k = 0.92 + r() * 0.08 - (x === 0 || x === 7 || y === 0 || y === 7 ? 0.08 : 0); g.fillStyle = `rgb(${240 * k | 0},${238 * k | 0},${232 * k | 0})`; g.fillRect(x, y, 1, 1); } });
+  const sideTex = cv(16, 8, g => { const r = mulberry32(6); for (let y = 0; y < 8; y++) for (let x = 0; x < 16; x++) { const k = 0.92 + r() * 0.08; g.fillStyle = `rgb(${y < 4 ? 168 * k | 0 : 140 * k | 0},${y < 4 ? 48 * k | 0 : 100 * k | 0},${y < 4 ? 44 * k | 0 : 60 * k | 0})`; g.fillRect(x, y, 1, 1); } });
+  const lit = [];
+  const mat = map => { const m = new THREE.MeshLambertMaterial({ map, emissiveMap: map }); World.patchFog(m); lit.push(m); return m; };
+  const mWood = mat(woodTex), mTop = mat(topTex), mPillow = mat(pillowTex), mSide = mat(sideTex);
+  const bx = (w, h, d, ms, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ms); m.position.set(x, y, z); return m; };
+  function model() {     // local +z runs from the foot to the head; the origin is the middle of the foot cell, on the floor
+    const g = new THREE.Group();
+    g.add(bx(0.98, 0.3, 1.98, mWood, 0, 0.15, 0.5));
+    g.add(bx(0.94, H - 0.3, 1.94, [mSide, mSide, mTop, mWood, mSide, mSide], 0, 0.3 + (H - 0.3) / 2, 0.5));
+    g.add(bx(0.66, 0.1, 0.4, mPillow, 0, H + 0.05, 1.18));
+    g.add(bx(1, 0.78, 0.09, mWood, 0, 0.39, 1.455));
+    return g;
+  }
+  function light(k) { for (const m of lit) m.emissive.setRGB(1, 1, 1).multiplyScalar(k); }
+
+  // ---- placing, finding and removing
+  const key = (x, y, z) => x + ',' + y + ',' + z;
+  function add(x, y, z, dx, dz) {
+    const b = { x, y, z, dx, dz, group: model() };
+    b.group.position.set(x + 0.5, y, z + 0.5); b.group.rotation.y = Math.atan2(dx, dz);
+    scene.add(b.group); beds.push(b);
+    cellMap.set(key(x, y, z), b); cellMap.set(key(x + dx, y, z + dz), b);
+    return b;
+  }
+  function remove(b) {
+    scene.remove(b.group);
+    beds.splice(beds.indexOf(b), 1);
+    cellMap.delete(key(b.x, b.y, b.z)); cellMap.delete(key(b.x + b.dx, b.y, b.z + b.dz));
+    if (spawnAt === b) spawnAt = null;
+    if (sleeping && sleepBed === b) wake();
+  }
+  function clear() { for (const b of beds.slice()) { scene.remove(b.group); } beds.length = 0; cellMap.clear(); spawnAt = null; sleeping = false; sleepBed = null; sleepT = 0; }
+  const cellAt = (x, y, z) => cellMap.size ? cellMap.get(key(x, y, z)) : undefined;
+  // where a bed would go if you tapped the top of block (px, py, pz) while facing (yaw): the foot there, the head further on
+  function tryPlace(px, py, pz, yaw) {
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const dx = Math.abs(fx) > Math.abs(fz) ? Math.sign(fx) : 0, dz = dx ? 0 : Math.sign(fz);
+    const free = (x, z) => { const b = World.get(x, py, z); return (b === World.B.AIR) && !cellAt(x, py, z) && World.solid(x, py - 1, z) && !World.solid(x, py + 1, z); };
+    if (!free(px, pz) || !free(px + dx, pz + dz)) return null;
+    const P = Player.p;
+    for (const [x, z] of [[px, pz], [px + dx, pz + dz]]) if (P.x + P.hw > x && P.x - P.hw < x + 1 && P.z + P.hw > z && P.z - P.hw < z + 1 && P.y < py + 1 && P.y + P.h > py) return null;
+    return add(px, py, pz, dx, dz);
+  }
+  // for the player's body: is this cell (partly) taken by a bed, at the height of the feet?
+  const blocks = (bx, by, bz, feetY) => !!cellAt(bx, by, bz) && feetY < by + H;
+
+  // ---- looking at it: the nearest bed the ray hits
+  function raycast(o, d, maxT) {
+    let best = null, bt = maxT;
+    for (const b of beds) {
+      const x0 = Math.min(b.x, b.x + b.dx), z0 = Math.min(b.z, b.z + b.dz), x1 = Math.max(b.x, b.x + b.dx) + 1, z1 = Math.max(b.z, b.z + b.dz) + 1;
+      let t0 = 0, t1 = bt;
+      for (const [oo, dd, lo, hi] of [[o.x, d.x, x0, x1], [o.y, d.y, b.y, b.y + H], [o.z, d.z, z0, z1]]) {
+        if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) { t1 = -1; break; } continue; }
+        let a = (lo - oo) / dd, c = (hi - oo) / dd; if (a > c) { const s = a; a = c; c = s; }
+        t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) { t1 = -1; break; }
+      }
+      if (t1 >= 0 && t0 <= t1 && t0 < bt) { bt = t0; best = b; }
+    }
+    return best ? { bed: best, t: bt, x: best.x, y: best.y, z: best.z, px: best.x, py: best.y + 1, pz: best.z, b: -1 } : null;
+  }
+
+  // ---- sleeping
+  let sleeping = false, sleepBed = null, sleepT = 0, skipped = false, ry = 0;
+  const T_LIE = 1.0, T_FADE = 2.6, T_SKIP = 3.4, T_END = 4.6;
+  function feetOf(b) { return { x: b.x + 0.5 - 0.35 * b.dx, y: b.y + H, z: b.z + 0.5 - 0.35 * b.dz }; }
+  function use(b) {
+    if (sleeping) return;
+    if (Sky.state.day > 0.45) { Inventory.toast('You can only sleep at night'); return; }
+    const P = Player.p, f = feetOf(b);
+    if (Math.hypot(P.x - f.x, P.z - f.z) > 4) return;
+    sleeping = true; sleepBed = b; sleepT = 0; skipped = false; spawnAt = b;
+    ry = Math.atan2(-b.dx, -b.dz);            // the body lies with its head toward the pillow
+    Object.assign(P, { x: f.x, y: f.y, z: f.z, vx: 0, vy: 0, vz: 0 }); P.fly = false;
+    P.yaw = Math.atan2(-b.dx, -b.dz) + Math.PI; P.pitch = 0;
+    Inventory.toast('Sleeping…');
+    hintEl.classList.add('on');
+    Events.emit('sleep', { start: true });
+  }
+  function standBeside(b) {
+    const P = Player.p, px = -b.dz, pz = b.dx;
+    const spots = [[-b.dx, -b.dz], [px, pz], [-px, -pz], [-b.dx * 2, -b.dz * 2], [b.dx * 2, b.dz * 2]];
+    for (const [sx, sz] of spots) {
+      const x = b.x + sx, z = b.z + sz;
+      for (let y = b.y + 1; y >= b.y - 1; y--) if (World.solid(x, y - 1, z) && !World.solid(x, y, z) && !World.solid(x, y + 1, z) && !cellAt(x, y, z)) { Object.assign(P, { x: x + 0.5, y, z: z + 0.5, vx: 0, vy: 0, vz: 0 }); return; }
+    }
+    Object.assign(P, { x: b.x + 0.5, y: b.y + H + 0.05, z: b.z + 0.5, vx: 0, vy: 0, vz: 0 });
+  }
+  function wake() {
+    if (!sleeping) return;
+    sleeping = false; hintEl.classList.remove('on'); fadeEl.style.opacity = 0;
+    standBeside(sleepBed); sleepT = 0;
+    if (skipped) Events.emit('sleep', { start: false, morning: true });
+  }
+  function update(dt) {
+    if (!sleeping) { fadeEl.style.opacity = 0; return; }
+    sleepT += dt;
+    const f = sleepT < T_FADE ? smoothstep(T_LIE, T_FADE, sleepT) : sleepT < T_SKIP ? 1 : 1 - smoothstep(T_SKIP, T_END, sleepT);
+    fadeEl.style.opacity = f.toFixed(3);
+    if (sleepT >= T_FADE && !skipped) {           // the night is over
+      skipped = true;
+      if (Sky.time > 0.4) Sky.time = 0.02;
+      Vitals.onSleep();
+    }
+    if (sleepT >= T_END) wake();
+  }
+  const state = () => ({ k: sleeping ? smoothstep(0, T_LIE, sleepT) : 0, ry, bed: sleepBed });
+  function respawnPos() {          // where you come back to after dying: beside your bed, if it is still there
+    if (!spawnAt || beds.indexOf(spawnAt) < 0) return false;
+    standBeside(spawnAt);
+    return true;
+  }
+  function exportState() { return { beds: beds.map(b => [b.x, b.y, b.z, b.dx, b.dz]), spawn: spawnAt ? beds.indexOf(spawnAt) : -1 }; }
+  function importState(s) {
+    clear();
+    if (!s || !Array.isArray(s.beds)) return;
+    for (const a of s.beds) if (a.length === 5) add(a[0], a[1], a[2], a[3], a[4]);
+    spawnAt = s.spawn >= 0 ? beds[s.spawn] || null : null;
+  }
+  Events.on('hurt', () => { if (sleeping) wake(); });
+  return { H, add, remove, tryPlace, blocks, cellAt, raycast, use, wake, update, state, light, respawnPos, exportState, importState, clear, get any() { return beds.length > 0; }, get sleeping() { return sleeping; }, get list() { return beds; } };
+})();
+
+/* =====================================================================
+   AVATAR — you: a skin, a body that walks, runs, jumps, falls, swims, sleeps, gets hurt and dies; a camera behind you
+   (or in front), and in the first person a hand with what you hold
+   ===================================================================== */
+const Avatar = (() => {
+  const S = 1.8 / 32;                              // one skin pixel, in metres: the body is 32 pixels tall
+  const CLOSED = [40, 0, 8, 8];                    // the face with its eyes shut (on the sheet)
+  const OPEN = Skin.faces('head').pz;
+  Skin.set(Settings.v.skin || 0);
+
+  function box(w, h, d, name, mat) {
+    const g = new THREE.BoxGeometry(w * S, h * S, d * S), uv = g.attributes.uv, F = Skin.faces(name);
+    ['px', 'nx', 'py', 'ny', 'pz', 'nz'].forEach((k, fi) => {
+      const [x0, y0, fw, fh] = F[k];
+      for (let v = 0; v < 4; v++) { const i = fi * 4 + v; uv.setXY(i, (x0 + uv.getX(i) * fw) / Skin.W, 1 - (y0 + (1 - uv.getY(i)) * fh) / Skin.H); }
+    });
+    return new THREE.Mesh(g, mat);
+  }
+  function eyes(head, closed) {     // swap the face on the front of the head
+    const uv = head.geometry.attributes.uv, r = closed ? CLOSED : OPEN;
+    for (let v = 0; v < 4; v++) { const i = 16 + v; uv.setXY(i, (r[0] + (v & 1) * r[2]) / Skin.W, 1 - (r[1] + (v >> 1) * r[3]) / Skin.H); }
+    uv.needsUpdate = true;
+  }
+  // ---- the rig: root (position, turn) > lying (falls over) > lean (bends at the hip) > torso, head, arms; legs hang from lying
+  function makeRig(mat) {
+    const root = new THREE.Group(), lying = new THREE.Group(), lean = new THREE.Group(), R = {};
+    root.add(lying); lying.add(lean); lean.position.y = 12 * S;
+    const limb = (name, x, y, parent, dy) => { const p = new THREE.Group(); p.position.set(x * S, y * S, 0); const m = box(4, 12, 4, name, mat); m.position.y = dy * S; p.add(m); parent.add(p); return p; };
+    R.legR = limb('leg', -2, 12, lying, -6); R.legL = limb('leg', 2, 12, lying, -6);
+    const torso = box(8, 12, 4, 'body', mat); torso.position.y = 6 * S; lean.add(torso);
+    R.neck = new THREE.Group(); R.neck.position.y = 12 * S; lean.add(R.neck);
+    R.head = box(8, 8, 8, 'head', mat); R.head.position.y = 4 * S; R.neck.add(R.head);
+    R.armR = limb('arm', -6, 10, lean, -4); R.armL = limb('arm', 6, 10, lean, -4);
+    // what is in the right hand
+    R.hand = new THREE.Group(); R.hand.position.set(0, -9.5 * S, 3.2 * S); R.armR.add(R.hand);
+    Object.assign(R, { root, lying, lean, torso });
+    return R;
+  }
+  const bodyMat = new THREE.MeshLambertMaterial({ map: Skin.tex, emissiveMap: Skin.tex });
+  World.patchFog(bodyMat);
+  const rig = makeRig(bodyMat);
+  rig.root.visible = false; rig.root.frustumCulled = false;
+  scene.add(rig.root);
+
+  // ---- the item in the hand (a picture on a plane, like the things on the ground)
+  const itemMat = new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.3, side: THREE.DoubleSide });
+  const itemGeo = new THREE.PlaneGeometry(1, 1);
+  function makeItem(parent, size, x, y, z, rx) {
+    const m = new THREE.Mesh(itemGeo, itemMat); m.scale.set(size, size, 1); m.position.set(x, y, z); m.rotation.set(rx, Math.PI / 2, 0); m.visible = false; parent.add(m); return m;
+  }
+  const item3 = makeItem(rig.hand, 0.5, 0, 0.05, 0.16, 0.5);
+  let heldId = null;
+  function syncHeld() {
+    const s = Inventory.held(), id = s ? s.id : null;
+    if (id === heldId) return;
+    heldId = id;
+    if (id) { itemMat.map = Inventory.iconOf(id).mat.map; itemMat.needsUpdate = true; }
+    item3.visible = !!id; if (item1) item1.visible = !!id;
+  }
+
+  // ---- the first-person hand, in a scene of its own that is drawn over the world
+  const handScene = new THREE.Scene(), handCam = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 10);
+  const handAmb = new THREE.AmbientLight(0xffffff, 0.8), handSun = new THREE.DirectionalLight(0xffffff, 0.5);
+  handSun.position.set(-1, 2, 1); handScene.add(handAmb, handSun);
+  const handMat = new THREE.MeshLambertMaterial({ map: Skin.tex });
+  const handRig = new THREE.Group(); handScene.add(handRig);
+  const arm1 = box(4, 12, 4, 'arm', handMat); arm1.geometry.translate(0, -6 * S, 0);   // hangs from its top
+  const item1Holder = new THREE.Group();
+  const handPivot = new THREE.Group(); handPivot.add(arm1); handRig.add(handPivot);
+  const HAND = { x: 0.28, y: -0.42, z: -0.15, rx: 1.75, ry: 0.15, rz: 0.05, s: 1 };
+  arm1.add(item1Holder);
+  const item1 = makeItem(item1Holder, 0.5, 0, 0.0, -0.26, -Math.PI / 2); item1.rotation.set(-Math.PI / 2, 0, 0.7);
+  let handOn = false;
+
+  // ---- the state that drives the pose
+  const st = { ph: 0, legs: 0, arms: 0, lean: 0, air: 0, swim: 0, hurt: 0, dieT: 0, swing: 0, up: 0, spread: 0, blink: 0, t: 0, headYaw: 0, sleep: 0, fall: 0, view: Settings.v.cam | 0, dist: 0, prevY: 0, wasDead: false, kick: 0, lie: 0 };
+  Events.on('hurt', () => { st.hurt = 0.55; });
+  Events.on('swing', () => { st.swing = 1; });
+  Events.on('dig', () => { st.swing = 1; });
+  const view = { get: () => st.view };
+  function setView(v) { st.view = ((v % 3) + 3) % 3; Settings.set('cam', st.view); document.getElementById('cross').style.visibility = st.view === 2 ? 'hidden' : ''; }
+
+  const lerpA = (a, b, k) => a + (b - a) * k;
+  const HURT_RED = new THREE.Color(1, 0.5, 0.5);
+  function pose(R, dt, P, sp, mode) {
+    // mode: 'first' | 'third'; targets first, then ease toward them
+    const k = 1 - Math.exp(-dt * 14), dead = Vitals.dead, sl = Bed.state().k, sleeping = Bed.sleeping;
+    const inWater = P.inWater && World.get(Math.floor(P.x), Math.floor(P.y + 1.0), Math.floor(P.z)) === World.B.WATER;
+    const ground = P.onGround || P.fly && false;
+    const run = sp > 5;
+    const moving = sp > 0.5;
+    const flying = P.fly && !P.onGround;
+    // walk cycle
+    if (moving && (ground || inWater || flying)) st.ph += dt * sp * (inWater ? 1.6 : 2.2);
+    else if (!moving) st.ph += dt * 1.5;
+    let tLegs = moving && ground ? (run ? 1.0 : 0.66) : 0, tArms = moving && ground ? (run ? 1.15 : 0.7) : 0.04, tLean = moving && ground ? (run ? 0.3 : 0.05) : 0;
+    const airborne = !ground && !inWater && !flying && !dead && !sleeping;
+    let jumping = airborne && P.vy > 0.5, falling = airborne && P.vy <= 0.5;
+    const bigFall = airborne && P.vy < -13;
+    st.legs = lerpA(st.legs, tLegs, k); st.arms = lerpA(st.arms, tArms, k); st.lean = lerpA(st.lean, flying ? clamp(sp * 0.04, 0, 0.5) : tLean, k);
+    st.air = lerpA(st.air, airborne ? 1 : 0, 1 - Math.exp(-dt * 12));
+    st.swim = lerpA(st.swim, inWater && !dead && !sleeping ? 1 : 0, 1 - Math.exp(-dt * 6));
+    st.hurt = Math.max(0, st.hurt - dt);
+    if (st.swing > 0) st.swing = Math.max(0, st.swing - dt * 3.6);
+    // lying down: dying or sleeping
+    if (dead) st.dieT += dt; else st.dieT = 0;
+    const dieK = dead ? Math.min(1, st.dieT / 0.75) : 0, die = dieK < 1 ? Math.sin(dieK * Math.PI / 2) : 1;
+    const bounce = dead && st.dieT > 0.75 ? Math.exp(-(st.dieT - 0.75) * 7) * Math.sin((st.dieT - 0.75) * 17) * 0.06 : 0;
+    const lieAng = -Math.PI / 2 * Math.max(die, sl) + bounce;
+    // ---- put the numbers on the parts
+    const sw = Math.sin(st.ph), sw2 = Math.sin(st.ph + Math.PI);
+    R.legR.rotation.set(sw * 0.95 * st.legs, 0, 0); R.legL.rotation.set(sw2 * 0.95 * st.legs, 0, 0);
+    R.armL.rotation.set(sw * 1.0 * st.arms, 0, 0.04); R.armR.rotation.set(sw2 * 1.0 * st.arms, 0, -0.04);
+    // idle: breathing, a little sway
+    const br = Math.sin(st.t * 1.7) * 0.025;
+    if (!moving && ground) { R.armL.rotation.z += 0.03 + br; R.armR.rotation.z -= 0.03 + br; R.lean.position.y = 12 * S + br * 0.03; } else R.lean.position.y = 12 * S;
+    // jumping and falling: arms up and out, legs apart
+    if (st.air > 0.01) {
+      const a = st.air, flail = Math.sin(st.t * (bigFall ? 26 : 15));
+      if (jumping) { R.armL.rotation.x = lerpA(R.armL.rotation.x, -2.5, a); R.armR.rotation.x = lerpA(R.armR.rotation.x, -2.5, a); R.armL.rotation.z = 0.2 * a; R.armR.rotation.z = -0.2 * a; R.legR.rotation.x = lerpA(R.legR.rotation.x, -0.5, a); R.legL.rotation.x = lerpA(R.legL.rotation.x, 0.25, a); }
+      else {
+        const wide = bigFall ? 0.5 : 0.28;
+        R.armL.rotation.x = lerpA(R.armL.rotation.x, -0.3 + flail * 0.25, a); R.armR.rotation.x = lerpA(R.armR.rotation.x, -0.3 - flail * 0.25, a);
+        R.armL.rotation.z = lerpA(R.armL.rotation.z, 2.0 + flail * 0.12, a); R.armR.rotation.z = lerpA(R.armR.rotation.z, -2.0 - flail * 0.12, a);
+        R.legR.rotation.x = lerpA(R.legR.rotation.x, flail * 0.2, a); R.legL.rotation.x = lerpA(R.legL.rotation.x, -flail * 0.2, a);
+        R.legR.rotation.z = -wide * a; R.legL.rotation.z = wide * a;
+      }
+    } else { R.legR.rotation.z = 0; R.legL.rotation.z = 0; }
+    // swimming: face down, arms reaching, legs kicking
+    let leanX = st.lean;
+    if (st.swim > 0.01) {
+      const s = st.swim, stroke = st.t * (moving ? 6 : 2.4);
+      leanX = lerpA(leanX, 1.2, s);
+      R.armL.rotation.set(lerpA(R.armL.rotation.x, -2.6 + Math.cos(stroke) * 0.7, s), 0, lerpA(R.armL.rotation.z, 0.1, s));
+      R.armR.rotation.set(lerpA(R.armR.rotation.x, -2.6 - Math.cos(stroke) * 0.7, s), 0, lerpA(R.armR.rotation.z, -0.1, s));
+      R.legR.rotation.x = lerpA(R.legR.rotation.x, Math.sin(stroke * 1.8) * 0.5, s); R.legL.rotation.x = lerpA(R.legL.rotation.x, -Math.sin(stroke * 1.8) * 0.5, s);
+    }
+    // getting hurt: the body snaps back, the head jerks
+    const hk = st.hurt / 0.55, flinch = Math.sin(hk * Math.PI) * hk;
+    leanX -= 0.42 * flinch;
+    R.neck.rotation.x = -0.35 * flinch;
+    // dying and sleeping: arms flop out or lie along the body
+    if (die > 0 && !sleeping) {
+      R.armL.rotation.set(lerpA(R.armL.rotation.x, -0.4, die), 0, lerpA(R.armL.rotation.z, 1.3, die)); R.armR.rotation.set(lerpA(R.armR.rotation.x, -0.2, die), 0, lerpA(R.armR.rotation.z, -1.5, die));
+      R.legR.rotation.set(lerpA(R.legR.rotation.x, 0, die), 0, lerpA(R.legR.rotation.z, -0.18, die)); R.legL.rotation.set(lerpA(R.legL.rotation.x, 0, die), 0, lerpA(R.legL.rotation.z, 0.12, die));
+      leanX = lerpA(leanX, 0, die);
+    }
+    if (sl > 0 && sleeping) {
+      R.armL.rotation.set(lerpA(R.armL.rotation.x, 0, sl), 0, lerpA(R.armL.rotation.z, 0.08, sl)); R.armR.rotation.set(lerpA(R.armR.rotation.x, 0, sl), 0, lerpA(R.armR.rotation.z, -0.08, sl));
+      R.legR.rotation.set(lerpA(R.legR.rotation.x, 0, sl), 0, lerpA(R.legR.rotation.z, -0.03, sl)); R.legL.rotation.set(lerpA(R.legL.rotation.x, 0, sl), 0, lerpA(R.legL.rotation.z, 0.03, sl));
+      leanX = lerpA(leanX, 0, sl);
+      R.armL.rotation.x += Math.sin(st.t * 1.4) * 0.02 * sl;     // slow breathing
+    }
+    R.lean.rotation.x = leanX;
+    // arm swing when you hit or place something
+    if (st.swing > 0 && !dead && !sleeping) { const a = st.swing, s = Math.sin((1 - a) * Math.PI); R.armR.rotation.x = -1.7 * s - 0.2 * (1 - a) * 0; R.armR.rotation.z = -0.1 - 0.35 * s; R.lean.rotation.y = -0.22 * s; } else R.lean.rotation.y = 0;
+    // the head follows where you look
+    const pitch = Player.p.pitch;
+    R.neck.rotation.x += -clamp(pitch, -1.2, 1.2) * (dead || sleeping ? 0 : 1) * (st.swim > 0.5 ? 0.3 : 0.8);
+    R.lying.rotation.x = lieAng;
+    R.lying.position.y = 4 * S * Math.max(die, sl) * 0.98 + 0.02 * Math.max(die, sl);
+    R.lying.position.z = 0;
+    // eyes: shut when asleep, dead or every few seconds
+    st.blink -= dt; let shut = sleeping || dead;
+    if (!shut) { if (st.blink < 0) { if (st.blink < -0.12) st.blink = 2.5 + Math.random() * 4; shut = true; } }
+    if (R.head.userData.shut !== shut) { R.head.userData.shut = shut; eyes(R.head, shut); }
+    return { leanX };
+  }
+
+  // ---- the camera: 0 first person, 1 behind, 2 in front
+  const camTmp = new THREE.Vector3(), aimPt = new THREE.Vector3();
+  function pushBack(from, dir, dist) {       // as far along dir as it can go without going into a block
+    const step = 0.12; let d = 0;
+    while (d < dist) { const n = d + step; if (World.solid(Math.floor(from.x + dir.x * n), Math.floor(from.y + dir.y * n), Math.floor(from.z + dir.z * n))) break; d = n; }
+    return Math.max(0.4, d - 0.22);
+  }
+  function placeCamera(dt, dead, sleeping) {
+    Player.refreshAim(); const P = Player.p, e = Player.eyePos, d = Player.aimDir;
+    const third = (st.view > 0 && Menu.cur !== 'scrMain') || dead || sleeping;
+    const want = !third ? 0 : sleeping ? 3.2 : dead ? 3.2 : st.view === 2 ? 3.0 : 3.6;
+    st.dist = lerpA(st.dist, want, 1 - Math.exp(-dt * (dead ? 2.5 : 7)));
+    if (!third && st.dist < 0.06) return false;
+    if (sleeping) {
+      const B = Bed.state().bed, f = B ? { x: B.x + 0.5 + B.dx * 0.5, z: B.z + 0.5 + B.dz * 0.5, y: B.y + Bed.H } : { x: P.x, z: P.z, y: P.y };
+      const sx = B ? -B.dz : 1, sz = B ? B.dx : 0;
+      camera.position.set(f.x + sx * 2.3, f.y + 2.4, f.z + sz * 2.3); camera.lookAt(f.x, f.y + 0.3, f.z);
+      return true;
+    }
+    if (dead) {
+      const a = P.yaw + Math.PI + Math.min(st.dieT, 4) * 0.25;
+      camera.position.set(P.x + Math.sin(a) * st.dist, P.y + 0.9 + st.dist * 0.75 + Math.min(st.dieT, 3) * 0.15, P.z + Math.cos(a) * st.dist);
+      camera.lookAt(P.x, P.y + 0.2, P.z);
+      return true;
+    }
+    const s = st.view === 2 ? -1 : 1;         // in front: the camera looks back at you
+    camTmp.copy(d).multiplyScalar(-s);
+    const shoulder = st.view === 1 ? 0.45 : 0;
+    // to the right of the head and a little above, then aimed at the spot you are looking at
+    const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
+    const back = pushBack(e, camTmp, st.dist);
+    camera.position.set(e.x + camTmp.x * back + rx * shoulder * (back / st.dist), e.y + camTmp.y * back + 0.18 * (back / st.dist), e.z + camTmp.z * back + rz * shoulder * (back / st.dist));
+    if (st.view === 2) { camera.lookAt(e.x, e.y - 0.2, e.z); }
+    else { aimPt.copy(e).addScaledVector(d, 30); camera.lookAt(aimPt); }
+    return true;
+  }
+
+  // ---- once a frame
+  function update(dt, gdt) {
+    const P = Player.p, dead = Vitals.dead, sleeping = Bed.sleeping;
+    st.t += dt;
+    if (!dead && st.wasDead) { st.view = Settings.v.cam | 0; }
+    st.wasDead = dead;
+    syncHeld();
+    const sp = Math.hypot(P.vx, P.vz);
+    const camActive = placeCamera(dt, dead, sleeping);
+    const showBody = (Player.locked || dead) && (camActive || st.view > 0);
+    rig.root.visible = showBody;
+    // lighting: like the animals, filled from inside by daylight
+    const day = Sky.state.day, k = Sky.state.ambient * (0.18 + 0.3 * day);
+    const tint = st.hurt > 0.2 ? 1 : 0;
+    bodyMat.emissive.setRGB(k, k * (tint ? 0.35 : 1), k * (tint ? 0.35 : 1)); bodyMat.color.copy(tint ? HURT_RED : WHITE);
+    Bed.light(k);
+    const bright = clamp(0.2 + 0.8 * day, 0.2, 1);
+    itemMat.color.setRGB(bright, bright, bright);
+    const bs = Bed.state();
+    rig.root.position.set(P.x, P.y, P.z);
+    rig.root.rotation.y = sleeping || bs.k > 0 ? bs.ry : P.yaw + Math.PI;
+    if (showBody) pose(rig, dt, P, sp, 'third');
+    else pose(rig, dt, P, sp, 'first');
+    // the first-person hand
+    handOn = Player.locked && !dead && !sleeping && st.view === 0 && Settings.v.hand !== false;
+    if (handOn) {
+      const bob = Math.sin(st.ph) * Math.min(1, sp / 5) * (P.onGround ? 1 : 0.2), sway = Math.sin(st.t * 1.3) * 0.004;
+      const tt = 1 - st.swing, sw = st.swing > 0 ? Math.sin(tt * Math.PI) : 0, sq = st.swing > 0 ? Math.sin(tt * Math.PI * 2) : 0;
+      handRig.position.set(HAND.x + Math.cos(st.ph * 0.5) * 0.02 * Math.min(1, sp / 5) - sw * 0.08, HAND.y + Math.abs(bob) * 0.03 + sway + sw * 0.03 - st.hurt * 0.15, HAND.z - sw * 0.1);
+      handPivot.rotation.set(HAND.rx + sq * 0.6, HAND.ry + sw * 0.3, HAND.rz + sw * 0.1);
+      arm1.scale.setScalar(HAND.s); item1Holder.scale.setScalar(1 / HAND.s); item1Holder.position.set(0, -12 * S * HAND.s, 0.12);
+      handCam.aspect = innerWidth / innerHeight; handCam.fov = camera.fov * 0.86; handCam.updateProjectionMatrix();
+      handAmb.intensity = lerpA(0.14, 0.62, day) * (0.6 + 0.4 * SkyFX.light) + SkyFX.flash * 0.6; handSun.intensity = lerpA(0.02, 0.4, day) * SkyFX.light;
+      handMat.emissive.setRGB(k * 0.22, k * 0.22, k * 0.22); handMat.emissiveMap = Skin.tex;
+      handMat.color.copy(tint ? HURT_RED : WHITE);
+    }
+    Bed.update(dt);
+  }
+  const WHITE = new THREE.Color(1, 1, 1);
+  const item1v = item1;
+  function overlay() {
+    if (!handOn) return;
+    renderer.autoClear = false; renderer.clearDepth(); renderer.render(handScene, handCam); renderer.autoClear = true;
+  }
+
+  // ---- a picture of you for the inventory (drawn once into a target and copied to a small canvas)
+  let pv = null;
+  function preview(canvas, turn) {
+    if (!pv) {
+      const sc = new THREE.Scene(), m = new THREE.MeshLambertMaterial({ map: Skin.tex });
+      const R = makeRig(m); sc.add(R.root);
+      sc.add(new THREE.AmbientLight(0xffffff, 0.75)); const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(-1, 2, 2); sc.add(dl);
+      const cam = new THREE.PerspectiveCamera(30, canvas.width / canvas.height, 0.1, 20); cam.position.set(0, 0.98, 5.1); cam.lookAt(0, 0.9, 0);
+      pv = { sc, R, cam, rt: new THREE.WebGLRenderTarget(canvas.width, canvas.height), buf: new Uint8Array(canvas.width * canvas.height * 4), img: new ImageData(canvas.width, canvas.height) };
+    }
+    const R = pv.R;
+    R.root.rotation.y = turn; R.armL.rotation.set(0.05, 0, 0.09); R.armR.rotation.set(-0.05, 0, -0.09); R.legR.rotation.z = -0.03; R.legL.rotation.z = 0.03; R.neck.rotation.x = 0;
+    const s = Inventory.held(); R.hand.visible = false;
+    const oc = new THREE.Color(); renderer.getClearColor(oc); const oa = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0); renderer.setRenderTarget(pv.rt); renderer.clear(); renderer.render(pv.sc, pv.cam); renderer.setRenderTarget(null); renderer.setClearColor(oc, oa);
+    renderer.readRenderTargetPixels(pv.rt, 0, 0, canvas.width, canvas.height, pv.buf);
+    const w = canvas.width, h = canvas.height, d = pv.img.data;
+    for (let y = 0; y < h; y++) d.set(pv.buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+    canvas.getContext('2d').putImageData(pv.img, 0, 0);
+  }
+
+  Settings.on((k, v) => { if (k === 'skin') Skin.set(v); });
+  document.getElementById('cross').style.visibility = st.view === 2 ? 'hidden' : '';
+  return { update, overlay, preview, HAND, item1, setView, cycleView() { setView(st.view + 1); }, get view() { return st.view; }, get thirdPerson() { return rig.root.visible; }, st, rig, swing() { st.swing = 1; } };
 })();
 
 /* =====================================================================
@@ -4492,7 +5162,7 @@ const Save = (() => {
     const p = Player.p, days = Weather.exportState().days;
     const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: World.getSeed(), edits: World.exportEdits(),
       p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly }, time: Sky.time, weather: Weather.exportState(),
-      animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState() });
+      animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState(), bed: Bed.exportState() });
     Worlds.update(GAME.id, { played: Date.now(), day: days });
     if (!ok && !warned) { warned = true; Inventory.toast('Storage is full: delete a world to keep saving'); }
   }
@@ -4533,6 +5203,7 @@ try { enterAfterLoad = sessionStorage.getItem('stainless-enter') === '1'; sessio
   Inventory.importState(saved && (saved.inv || (saved.animals && saved.animals.inv ? { items: saved.animals.inv } : null)));
   Vitals.importState(saved && saved.vitals);
   Inventory.importFurnaces(saved && saved.furnaces);
+  Bed.importState(saved && saved.bed);
 }
 World.update(Player.p.x, Player.p.z);
 
@@ -4637,7 +5308,7 @@ const Menu = (() => {
       // the untouched world behind the menu becomes this world: no loading
       const w = Worlds.create(name, newMode, World.getSeed());
       Object.assign(GAME, { id: w.id, name: w.name, mode: w.mode, temp: false, fresh: false });
-      Worlds.setCurrent(w.id); Inventory.reset(); Inventory.importFurnaces(null); Vitals.reset(); applyMode(); Save.write();
+      Worlds.setCurrent(w.id); Inventory.reset(); Inventory.importFurnaces(null); Bed.clear(); Vitals.reset(); applyMode(); Save.write();
       play();
       return;
     }
@@ -4646,12 +5317,14 @@ const Menu = (() => {
 
   // -- settings
   const ROWS = [
+    { k: 'skin', name: 'Skin', type: 'pick', options: Skin.PRESETS.map((p, i) => [i, p.name]), preview: true },
     { k: 'music', name: 'Music', type: 'pct' },
     { k: 'sound', name: 'Sounds', type: 'pct' },
     { k: 'view', name: 'Render distance', note: 'near runs faster', type: 'num', min: 3, max: 10, step: 1, fmt: v => v + ' chunks' },
     { k: 'quality', name: 'Graphics', type: 'pick', options: [['low', 'Fast'], ['normal', 'Normal'], ['high', 'Sharp']] },
     { k: 'fov', name: 'Field of view', type: 'num', min: 50, max: 110, step: 5, fmt: v => v + '°' },
     { k: 'sens', name: 'Look speed', type: 'num', min: 0.3, max: 3, step: 0.1, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'hand', name: 'Show hand', note: 'in the first person view', type: 'bool' },
     { k: 'autoJump', name: 'Auto jump', note: 'step up blocks as you walk', type: 'bool' },
     { k: 'lefty', name: 'Left-handed', note: 'joystick on the right', type: 'bool', touch: true },
     { k: 'fps', name: 'Show FPS', type: 'bool' },
@@ -4669,8 +5342,9 @@ const Menu = (() => {
         const v = Settings.v[r.k];
         val.textContent = r.type === 'pct' ? Math.round(v * 100) + '%' : r.type === 'bool' ? (v ? 'On' : 'Off') : r.type === 'pick' ? (r.options.find(o => o[0] === v) || r.options[1])[1] : r.fmt(v);
       };
+      if (r.preview) { const pv = document.createElement('canvas'); pv.width = 96; pv.height = 144; pv.style.cssText = 'width:48px;height:72px;margin-left:auto'; const draw = () => { try { Avatar.preview(pv, 0.6); } catch (e) {} }; row.appendChild(pv); row.pv = draw; setTimeout(draw, 0); }
       if (r.type === 'bool') val.addEventListener('click', () => { Settings.set(r.k, !Settings.v[r.k]); text(); });
-      else if (r.type === 'pick') val.addEventListener('click', () => { const i = r.options.findIndex(o => o[0] === Settings.v[r.k]); Settings.set(r.k, r.options[(i + 1) % r.options.length][0]); text(); });
+      else if (r.type === 'pick') val.addEventListener('click', () => { const i = r.options.findIndex(o => o[0] === Settings.v[r.k]); Settings.set(r.k, r.options[(i + 1) % r.options.length][0]); text(); if (row.pv) row.pv(); });
       else {
         const lo = r.type === 'pct' ? 0 : r.min, hi = r.type === 'pct' ? 1 : r.max, st = r.type === 'pct' ? 0.1 : r.step;
         const step = d => () => { Settings.set(r.k, Math.round(clamp(Settings.v[r.k] + d * st, lo, hi) * 100) / 100); text(); };
@@ -4818,6 +5492,7 @@ function toggleFly(on) {
   $('downBtn').classList.toggle('hide', !Player.p.fly);
   $('flyBtn').classList.toggle('on', Player.p.fly);
 }
+$('camBtn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); Avatar.cycleView(); }, { passive: false });
 $('flyBtn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); toggleFly(); }, { passive: false });
 
 // ---------------- dying ----------------
@@ -4834,7 +5509,7 @@ Events.on('death', () => {
   setTimeout(() => setPlaying(false, 'scrDead'), 900);   // fall over first
 });
 function respawn() {
-  Vitals.respawn(); Player.spawn(); toggleFly(false); unstuckDone = false; Save.write();
+  Vitals.respawn(); Player.spawn(); Bed.respawnPos(); toggleFly(false); unstuckDone = false; Save.write();
 }
 $('dRespawn').addEventListener('click', () => { respawn(); play(); });
 $('dMenu').addEventListener('click', () => { if (!GAME.dead) respawn(); Menu.show('scrMain'); });
@@ -4898,7 +5573,7 @@ function step() {
   else { camera.position.set(p.x, p.y + p.eye, p.z); camera.rotation.set(p.pitch, p.yaw, 0); }
   // behind the main menu the view slowly turns; when you die, you fall over
   if (!Player.locked && Menu.cur === 'scrMain') { menuSpin += dt * 0.025; camera.rotation.y = p.yaw + menuSpin; }
-  if (Vitals.dead) { roll = Math.min(1.25, roll + dt * 2.2); camera.rotation.z = roll; camera.position.y -= roll * 1.1; } else roll = 0;
+  Avatar.update(dt, gdt);
   Sky.update(dt, Player.locked ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);

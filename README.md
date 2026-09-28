@@ -120,6 +120,29 @@ code, so there are no image files. The sounds are real recordings under free lic
   first night, then waning to a nearly dark new moon and back). Clouds have shaded undersides
 - Everything is still painted in code: no image files
 
+**Phase 5.3: you (the player)**
+- **A skin and a body.** You have a face, hair, a jacket with a scarf and a belt, trousers and boots. Four
+  skins to choose from in Settings (Traveler, Ranger, Night owl, Ember), with a live preview
+- **Three views.** The camera button (or F5 / V) goes first person, behind you, and in front of you. Aiming,
+  mining and hitting animals work the same in every view
+- **Animations:** standing (breathing, blinking), walking, running (leaning forward), jumping (arms up),
+  falling (arms out, flailing harder from a great height), swimming, swinging your arm when you hit or
+  place something, flinching red when you are hurt, and falling over when you die (the camera pulls back
+  to watch). Your arm and what you are holding are visible in first person
+- **Beds and sleeping.** A bed (3 wool + 3 planks at the crafting table) is two blocks long. Tap it at night
+  to lie down: you close your eyes, the screen fades, and it is morning (you heal a little and get a bit
+  hungry). Tap or move to wake up early. It is also where you come back after you die
+- **New hearts, hunger and air icons**, outlined and shaded. Hearts flash white when you are hit, and wave
+  while you heal
+- **Hunger is much slower.** A full bar lasts about 50 minutes of walking (it used to be 12), running is
+  about four times cheaper than before, and healing costs less
+- **A rebuilt inventory.** Put a finger on an item and drag it to its place: the item lifts off and follows
+  your finger, the slot under it lights up, and it lands with a little pop. Drop it on another item to
+  swap or merge stacks, drop it on nothing to send it back, drop it outside the window to throw it away.
+  Hold for a moment to take half a stack; put a second finger on a slot to put down one. Point at an item
+  to see its name, uses left or food value. Your character stands in the inventory (turn them with a
+  finger). Tap-tap still works too
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update
@@ -142,10 +165,11 @@ code, so there are no image files. The sounds are real recordings under free lic
 | Hotbar | Pick a block (in survival it shows how many you have) |
 | II button or Back | Pause |
 | Bag button | Inventory and crafting |
+| Person button | Change the view (first person, behind you, in front of you) |
 | F3 button | Debug menu (weather, events, time of day, animals and their moods) |
 
 On a computer: WASD to walk, mouse to look (click to capture the mouse), Space to jump, Shift to run,
-left click to mine or hit, right click to place, eat or use (tables, furnaces, sheep, cows), E for the inventory, 1–9 or the mouse wheel to pick a block, Space twice to fly (creative), Esc to pause, F3 for the debug menu.
+left click to mine or hit, right click to place, eat or use (tables, furnaces, sheep, cows), E for the inventory, F5 or V for the camera view, 1–9 or the mouse wheel to pick a block, Space twice to fly (creative), Esc to pause, F3 for the debug menu.
 
 ## Getting it on your phone
 
