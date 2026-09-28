@@ -26,6 +26,10 @@ jobs:
       # Gradle downloads any missing platform or build-tools itself.
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Read the version
+        id: ver
+        run: echo "v=$(grep -oP "versionName '\K[^']+" android/app/build.gradle)" >> "$GITHUB_OUTPUT"
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
@@ -45,12 +49,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Stainless Craft APK (latest build)
+          name: Stainless Craft ${{ steps.ver.outputs.v }} (latest build)
           prerelease: true
           files: |
             StainlessCraft.apk
             BlockCraft.apk
           body: |
+            version: ${{ steps.ver.outputs.v }}
             Latest Stainless Craft build from `${{ github.ref_name }}` (${{ github.sha }}).
             Download **StainlessCraft.apk** on your Android phone and open it to install.
             (BlockCraft.apk is the same file, kept so old links still work.)

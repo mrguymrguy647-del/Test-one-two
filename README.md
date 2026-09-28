@@ -149,6 +149,15 @@ code, so there are no image files. The sounds are real recordings under free lic
 
 **7.6:** the breaking animation is back in full: as you mine, black cracks spread out from the middle of the block in ten steps, the block darkens and the cracks widen until it breaks.
 
+**Phase 6 (8.0): updates that keep your worlds**
+- Every build is now signed with the same key (`android/app/stainless.keystore`), so a new APK installs
+  *over* the old one and keeps your worlds and settings. Builds before 8.0 used a different key each time,
+  so **uninstall once, then install 8.0**. After that you never need to uninstall again
+- **Export / Import worlds.** On the Worlds screen, *Export* saves a world to a file (you pick where) and
+  *Import* brings a file back, as a new world. Good for moving phones or keeping a backup
+- **Update notice.** On the main menu, when you are online, the game checks for a newer version and shows
+  "Version x.y is ready · tap to download"
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update

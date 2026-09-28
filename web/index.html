@@ -273,12 +273,13 @@
       <button id="mSettings">Settings</button>
       <button id="mCredits">Credits</button>
     </div>
+    <button id="mUpdate" class="accent hide"></button>
     <p class="note" id="loading"></p>
     <p class="ver" id="ver"></p>
   </section>
 
   <section id="scrWorlds" class="scr top hide">
-    <header><button data-back>‹ Back</button><h2>Worlds</h2><button id="wNew" class="accent">+ New world</button></header>
+    <header><button data-back>‹ Back</button><h2>Worlds</h2><div style="display:flex;gap:6px"><button id="wImport">Import</button><button id="wNew" class="accent">+ New world</button></div></header>
     <div class="list scroll" id="wList"></div>
   </section>
 
@@ -441,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '7.9';
+const GAME_VERSION = '8.0';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -5458,7 +5459,9 @@ const Menu = (() => {
       const badge = document.createElement('span'); badge.className = 'badge ' + w.mode; badge.textContent = w.dead ? '✝ gone' : MODE_NAME[w.mode];
       const del = document.createElement('button'); del.className = 'del'; del.textContent = 'Delete';
       del.addEventListener('click', e => { e.stopPropagation(); ask(`Delete “${w.name}” forever?`, 'Delete', () => { deleteWorld(w.id); renderWorlds(); }); });
-      row.append(info, badge, del);
+      row.append(info, badge);
+      if (!w.dead) { const ex = document.createElement('button'); ex.className = 'del'; ex.textContent = 'Export'; ex.addEventListener('click', e => { e.stopPropagation(); exportWorld(w.id); }); row.append(ex); }
+      row.append(del);
       if (!w.dead) row.addEventListener('click', () => openWorld(w.id));
       box.appendChild(row);
     }
@@ -5577,9 +5580,61 @@ const Menu = (() => {
     $('mPlay').disabled = waiting && !GAME.temp;
     updateGo();
   }
-  return { show, tick, updateGo, ask, get cur() { return cur; } };
+  return { show, tick, updateGo, ask, note(t) { const n = $('loading'); n.textContent = t; setTimeout(() => { if (n.textContent === t) n.textContent = ''; }, 4000); const w = $('wList'); if (w && cur === 'scrWorlds') { const p = document.createElement('p'); p.className = 'note'; p.textContent = t; w.prepend(p); setTimeout(() => p.remove(), 4000); } }, get cur() { return cur; } };
 })();
 
+
+
+// ---------------- backups: a world can be saved to a file and brought back ----------------
+function saveText(name, text) {
+  const bytes = new TextEncoder().encode(text);
+  if (window.Android && Android.saveFile) {
+    let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    Android.saveFile(name, btoa(bin));
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/json' })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function exportWorld(id) {
+  const w = Worlds.get(id); if (!w) return;
+  if (id === GAME.id) Save.write();
+  const save = Worlds.load(id);
+  if (!save) { Inventory.toast('Nothing to export yet: play it first'); return; }
+  saveText((w.name.replace(/[^\w\- ]+/g, '').trim() || 'world') + '.stainlessworld', JSON.stringify({ stainless: 1, world: { name: w.name, mode: w.mode, seed: w.seed, day: w.day || 0 }, save }));
+}
+function importWorld(text) {
+  let d; try { d = JSON.parse(text); } catch (e) { d = null; }
+  if (!d || d.stainless !== 1 || !d.save || !d.world) { Menu.note('That is not a Stainless Craft world file'); return; }
+  const names = Worlds.list.map(x => x.name); let name = String(d.world.name || 'World').slice(0, 20);
+  if (names.indexOf(name) >= 0) name += ' (restored)';
+  const mode = ['creative', 'survival', 'hardcore'].indexOf(d.world.mode) >= 0 ? d.world.mode : 'survival';
+  const w = Worlds.create(name, mode, d.world.seed);
+  Worlds.update(w.id, { day: d.world.day || 0 });
+  if (!Worlds.store(w.id, d.save)) { Worlds.remove(w.id); Menu.note('Not enough room on this device'); return; }
+  Menu.show('scrWorlds'); Menu.note('Brought back “' + name + '”');
+}
+{
+  const inp = document.createElement('input'); inp.type = 'file'; inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importWorld(String(r.result)); r.readAsText(f); inp.value = ''; });
+  $('wImport').addEventListener('click', () => inp.click());
+}
+
+// ---------------- a new version is out ----------------
+{
+  const REL = 'https://api.github.com/repos/mrguymrguy647-del/Test-one-two/releases/tags/apk-latest';
+  const APK = 'https://github.com/mrguymrguy647-del/Test-one-two/releases/download/apk-latest/StainlessCraft.apk';
+  const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 4; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+  async function check() {
+    if (navigator.onLine === false) return;
+    try {
+      const j = await (await fetch(REL, { cache: 'no-store' })).json(), m = /version:\s*([\d.]+)/.exec(j.body || '');
+      if (m && newer(m[1], GAME_VERSION)) { $('mUpdate').textContent = 'Version ' + m[1] + ' is ready · tap to download'; $('mUpdate').classList.remove('hide'); }
+    } catch (e) {}
+  }
+  $('mUpdate').addEventListener('click', () => { if (window.Android && Android.openUrl) Android.openUrl(APK); else window.open(APK, '_blank'); });
+  setTimeout(check, 3000);
+}
 
 function fmtLeft(ms) { const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60; return m + ':' + String(s).padStart(2, '0'); }
 function openWorld(id) {
