@@ -424,7 +424,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '7.1';
+const GAME_VERSION = '7.2';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -495,6 +495,306 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 /* =====================================================================
+   TEXTURES — the block atlas, painted in code. 32 px tiles, each in a 64 px cell whose 16 px border
+   repeats the tile's edge, so blocks in the distance blend cleanly when the GPU shrinks the texture
+   ===================================================================== */
+const Tex = (() => {
+  const TS = 32, GUT = 16, CELL = TS + GUT * 2, COLS = 8, ROWS = 4, AW = COLS * CELL, AH = ROWS * CELL;
+  const mod = (v, n) => ((v % n) + n) % n;
+  const BAY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const ct = (v, k) => clamp((v - 0.5) * k + 0.5, 0, 1);                         // more contrast around the middle
+  const quant = (pal, t, x, y, dither) => {                                        // pick a palette colour, dithering the borders
+    const v = t + ((BAY[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * dither;
+    return pal[clamp(Math.floor(v * pal.length), 0, pal.length - 1)];
+  };
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const mul = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
+
+  function Painter(seed) {
+    const rnd = mulberry32(seed), d = new Uint8ClampedArray(TS * TS * 4);
+    const lat = (ix, iy, px, py) => {
+      ix = mod(ix, px); iy = mod(iy, py);
+      let n = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 1103515245);
+      n = Math.imul(n ^ (n >>> 13), 1274126177);
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+    };
+    const vn = (x, y, px, py) => {
+      const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const a = lat(ix, iy, px, py), b = lat(ix + 1, iy, px, py), c = lat(ix, iy + 1, px, py), e = lat(ix + 1, iy + 1, px, py);
+      return a + (b - a) * sx + (c - a) * sy + (a - b - c + e) * sx * sy;
+    };
+    const P = {
+      rnd, d,
+      n(x, y, fx, fy, oct) {                                                       // noise that tiles: 0..1, fx / fy cells across the tile
+        fy = fy || fx; oct = oct || 3;
+        let s = 0, a = 1, t = 0;
+        for (let o = 0; o < oct; o++) { s += a * vn((x + 0.5) / TS * fx, (y + 0.5) / TS * fy, fx, fy); t += a; a *= 0.5; fx *= 2; fy *= 2; }
+        return s / t;
+      },
+      set(x, y, c, a) { x = mod(Math.floor(x), TS); y = mod(Math.floor(y), TS); const i = (y * TS + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = a === undefined ? 255 : a; },
+      get(x, y) { x = mod(x, TS); y = mod(y, TS); const i = (y * TS + x) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; },
+      each(fn) { for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) { const c = fn(x, y); if (c) P.set(x, y, c); } },
+      rect(x0, y0, x1, y1, c, a) { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) P.set(x, y, c, a); },
+      line(x0, y0, x1, y1, c) { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1); for (let k = 0; k <= n; k++) P.set(Math.round(x0 + (x1 - x0) * k / n), Math.round(y0 + (y1 - y0) * k / n), c); },
+      shade(x, y, k) { const c = P.get(x, y); if (c[3]) P.set(x, y, mul(c, k), c[3]); },
+    };
+    return P;
+  }
+  // a jittered grid of points that wraps around, for cells like gravel and cobblestone
+  function cells(P, n, jit) {
+    const s = TS / n, pts = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) pts.push([(i + 0.5 + (P.rnd() - 0.5) * jit) * s, (j + 0.5 + (P.rnd() - 0.5) * jit) * s, P.rnd(), P.rnd()]);
+    return (x, y) => {
+      let d1 = 1e9, d2 = 1e9, best = null;
+      for (const p of pts) for (let oy = -TS; oy <= TS; oy += TS) for (let ox = -TS; ox <= TS; ox += TS) {
+        const dx = x + 0.5 - (p[0] + ox), dy = y + 0.5 - (p[1] + oy), d = dx * dx + dy * dy;
+        if (d < d1) { d2 = d1; d1 = d; best = [p, dx, dy]; } else if (d < d2) d2 = d;
+      }
+      return { p: best[0], dx: best[1], dy: best[2], d1: Math.sqrt(d1), d2: Math.sqrt(d2) };
+    };
+  }
+
+  // ---------------- palettes: a touch cool and muted, so the world feels calm and almost normal ----------------
+  const DIRT = [[68, 50, 40], [84, 62, 47], [100, 75, 56], [116, 87, 64], [132, 100, 74]];
+  const GRASS = [[46, 74, 44], [57, 88, 51], [69, 103, 57], [82, 118, 66], [98, 134, 77]];
+  const dirtColor = (P, x, y) => quant(DIRT, ct(P.n(x, y, 4, 4, 3), 1.6), x, y, 0.2);
+  const grassColor = (P, x, y) => quant(GRASS, ct(P.n(x, y, 4, 4, 3), 1.7), x, y, 0.18);
+  function pebble(P, x, y) {                                                       // a small rounded stone with a lit corner and a shadow
+    const w = 2 + (P.rnd() * 2 | 0), tone = 0.9 + P.rnd() * 0.25;
+    for (let i = 0; i < w; i++) { P.shade(x + i + 1, y + 2, 0.66); }
+    P.shade(x + w, y, 0.72); P.shade(x + w, y + 1, 0.72);
+    for (let j = 0; j < 2; j++) for (let i = 0; i < w; i++) P.set(x + i, y + j, mul(j === 1 ? [104, 98, 92] : [128, 122, 114], tone));
+    P.set(x, y, mul([164, 158, 150], tone));
+  }
+  function plankFill(P) {
+    const tones = [[172, 138, 96], [162, 129, 90], [180, 146, 102], [168, 134, 94]], B = 8;
+    for (let i = 0; i < 4; i++) {
+      const y0 = i * B, off = Math.floor(P.rnd() * TS), base = tones[i];
+      for (let y = y0; y < y0 + B; y++) for (let x = 0; x < TS; x++) {
+        const yy = y - y0, g = P.n(x + i * 9, y, 2, 12, 3), line = Math.sin(yy * 1.9 + P.n(x, y, 3, 3, 2) * 7 + i * 2);
+        let k = 0.9 + 0.2 * g;
+        if (line > 0.84) k *= 0.9;
+        if (yy === 0) k *= 1.1; else if (yy === B - 2) k *= 0.92; else if (yy === B - 1) k *= 0.68;
+        const dx = mod(x - off, TS);
+        if (dx === 0) k *= 0.6; else if (dx === 1) k *= 1.08;
+        P.set(x, y, mul(base, k));
+      }
+      P.set(off + 4, y0 + 3, [122, 94, 64]); P.set(mod(off - 4, TS), y0 + 3, [122, 94, 64]);           // a nail at each end
+    }
+  }
+
+  const PAINT = {
+    grassTop(P) {
+      P.each((x, y) => grassColor(P, x, y));
+      for (let i = 0; i < 48; i++) {                                                // little tufts of blades
+        const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0, h = 2 + (P.rnd() * 3 | 0), lean = P.rnd() < 0.5 ? 0 : P.rnd() < 0.5 ? 1 : -1;
+        for (let k = 0; k < h; k++) P.set(x + (k > 1 ? lean : 0), y - k, k === 0 ? GRASS[0] : k === h - 1 ? GRASS[4] : GRASS[2 + (k & 1)]);
+      }
+      for (let i = 0; i < 10; i++) P.set(P.rnd() * TS | 0, P.rnd() * TS | 0, [140, 164, 98]);        // a few dry tips
+    },
+    grassSide(P) {
+      const L = [];
+      for (let x = 0; x < TS; x++) L[x] = 6 + Math.round((P.n(x, 3, 9, 1, 2) - 0.5) * 7);
+      for (let i = 0; i < 8; i++) {                                                 // long blades hanging over the soil
+        const x = P.rnd() * TS | 0, len = 9 + (P.rnd() * 5 | 0);
+        for (let w = 0; w < (P.rnd() < 0.4 ? 2 : 1); w++) L[mod(x + w, TS)] = Math.max(L[mod(x + w, TS)], len - w);
+      }
+      P.each((x, y) => {
+        if (y < L[x]) {
+          let c = grassColor(P, x, y + 9);
+          if (y === 0) c = mul(c, 1.14);
+          if (y >= L[x] - 2) c = mul(c, y === L[x] - 1 ? 0.72 : 0.88);                // the underside of the grass is in shadow
+          return c;
+        }
+        const below = y - L[x], c = dirtColor(P, x, y);
+        return mul(c, below === 0 ? 0.66 : below === 1 ? 0.8 : below === 2 ? 0.92 : 1);
+      });
+      for (let i = 0; i < 5; i++) { const x = P.rnd() * TS | 0, y = 14 + (P.rnd() * 14 | 0); if (y > L[x] + 3 && y > L[mod(x + 3, TS)] + 3) pebble(P, x, y); }
+    },
+    dirt(P) {
+      P.each((x, y) => dirtColor(P, x, y));
+      for (let i = 0; i < 10; i++) pebble(P, P.rnd() * TS | 0, P.rnd() * TS | 0);
+      for (let i = 0; i < 22; i++) P.set(P.rnd() * TS | 0, P.rnd() * TS | 0, DIRT[P.rnd() < 0.6 ? 0 : 4]);   // specks
+      for (let r = 0; r < 2; r++) {                                                 // a hair-thin root
+        let x = P.rnd() * TS, y = P.rnd() * TS;
+        for (let k = 0; k < 7; k++) { P.set(x, y, [56, 42, 32]); x += 0.9 + P.rnd() * 0.4; y += (P.rnd() - 0.5) * 1.2; }
+      }
+    },
+    stone(P) {
+      const pal = [[76, 81, 90], [92, 97, 106], [108, 113, 122], [124, 129, 138], [142, 147, 155]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 4, 4, 3) * 0.82 + P.n(x, y, 1, 6, 2) * 0.18, 1.9), x, y, 0.2));
+      for (let i = 0; i < 24; i++) { const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0, lit = P.rnd() < 0.5; P.set(x, y, pal[lit ? 4 : 0]); if (P.rnd() < 0.45) P.set(x + 1, y, pal[lit ? 3 : 1]); }
+      for (let i = 0; i < 5; i++) {                                                 // the edges of slate plates: a dark line with a lit one under it
+        const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0, len = 5 + (P.rnd() * 8 | 0);
+        for (let k = 0; k < len; k++) { const yy = y + (k > len * 0.6 ? 1 : 0); P.set(x + k, yy, [66, 70, 78]); if (k > 0 && k < len - 1) P.set(x + k, yy + 1, pal[3]); }
+      }
+      let x = P.rnd() * TS, y = 4 + P.rnd() * 10, a = 1.0 + P.rnd() * 0.6; const pts = [];   // and one crack
+      for (let k = 0; k < 9; k++) { pts.push([Math.floor(x), Math.floor(y)]); a += (P.rnd() - 0.5) * 0.8; x += Math.cos(a) * 1.1; y += Math.sin(a) * 1.1; }
+      for (const [px, py] of pts) P.set(px + 1, py + 1, pal[4]);
+      for (const [px, py] of pts) P.set(px, py, [52, 56, 64]);
+    },
+    sand(P) {
+      const pal = [[194, 184, 152], [206, 196, 164], [218, 209, 178], [228, 220, 190], [237, 230, 203]];
+      P.each((x, y) => {
+        const rip = 0.5 + 0.5 * Math.sin((y / TS * 3 + P.n(x, y, 2, 2, 2) * 0.8) * Math.PI * 2);
+        return quant(pal, ct(P.n(x, y, 4, 4, 3) * 0.6 + rip * 0.4, 1.3), x, y, 0.16);
+      });
+      for (let i = 0; i < 30; i++) P.set(P.rnd() * TS | 0, P.rnd() * TS | 0, P.rnd() < 0.6 ? [180, 169, 138] : [238, 231, 205]);
+      for (let i = 0; i < 3; i++) { const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0; P.set(x, y, [150, 140, 120]); P.set(x + 1, y, [170, 160, 138]); }
+    },
+    water(P) {                                                                       // the waves themselves are moved by the shader
+      const pal = [[38, 74, 114], [47, 87, 127], [57, 101, 141], [68, 115, 154], [88, 136, 172]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 4, 4, 3) * 0.7 + P.n(x + 9, y + 3, 2, 2, 2) * 0.3, 1.5), x, y, 0.16));
+      for (let i = 0; i < 6; i++) { const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0, w = 2 + (P.rnd() * 3 | 0); for (let k = 0; k < w; k++) P.set(x + k, y + (k > w / 2 ? 1 : 0), [112, 158, 192]); }
+    },
+    logSide(P) {                                                                    // birch: pale bark with dark scars
+      const pal = [[168, 162, 148], [184, 178, 164], [198, 193, 180], [212, 208, 196], [226, 222, 212]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 12, 2, 3) * 0.55 + P.n(x, y, 3, 3, 2) * 0.45, 1.6), x, y, 0.14));
+      for (let i = 0; i < 9; i++) {
+        const x = P.rnd() * TS | 0, y = P.rnd() * TS | 0, w = 3 + (P.rnd() * 4 | 0) + (P.rnd() < 0.2 ? 4 : 0), dip = P.rnd() < 0.5;
+        for (let k = 0; k < w; k++) {
+          const yy = y + (dip && k > w / 2 ? 1 : 0), end = k === 0 || k === w - 1;
+          P.set(x + k, yy, end ? [110, 102, 94] : [44, 38, 36]);
+          if (!end && w > 4 && k > 0 && k < w - 2 && k % 3 === 1) P.set(x + k, yy + 1, [70, 62, 58]);
+          P.set(x + k, yy + 2, [160, 152, 140]);
+        }
+      }
+    },
+    logTop(P) {
+      const bark = [200, 195, 182], wood = [[186, 158, 118], [168, 140, 102]];
+      P.each((x, y) => {
+        const dx = x - 15.5, dy = y - 15.5, edge = Math.max(Math.abs(dx), Math.abs(dy));
+        if (edge > 12.4) return edge > 14.6 ? mul(bark, 0.86) : mul(bark, 1.02 - P.n(x, y, 8, 8, 2) * 0.1);
+        const r = Math.hypot(dx, dy) + (P.n(x, y, 3, 3, 2) - 0.5) * 3.2, ring = Math.floor(r / 2.3);
+        let c = wood[ring & 1];
+        if (ring % 4 === 3) c = [146, 118, 82];
+        if (r < 1.8) c = [116, 90, 62];
+        return mul(c, 0.94 + P.n(x, y, 6, 6, 2) * 0.12);
+      });
+      for (let a = 0; a < 2; a++) { const an = P.rnd() * 6.28; for (let k = 3; k < 9; k++) P.set(15.5 + Math.cos(an) * k, 15.5 + Math.sin(an) * k, [120, 94, 66]); }
+    },
+    leaves(P) {
+      const pal = [[30, 62, 40], [44, 82, 50], [59, 101, 59], [76, 121, 69], [96, 143, 84], [120, 166, 104]];
+      const blob = (cx, cy, rx, ry, ang, ci) => {
+        const c = Math.cos(ang), s = Math.sin(ang);
+        for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+          const u = (dx * c + dy * s) / rx, v = (-dx * s + dy * c) / ry;
+          if (u * u + v * v > 1) continue;
+          const shade = u + v < -0.35 ? 1 : u + v > 0.55 ? -1 : 0, rib = Math.abs(v) < 0.16 && u > -0.7 && u < 0.6;
+          P.set(cx + dx, cy + dy, pal[clamp(ci + shade + (rib ? -1 : 0), 0, 5)]);
+        }
+      };
+      for (const [n, lo, hi] of [[70, 0, 1], [56, 2, 3], [34, 3, 4]])              // back leaves first, lit ones on top
+        for (let i = 0; i < n; i++) blob(P.rnd() * TS | 0, P.rnd() * TS | 0, 2.4 + P.rnd() * 1.3, 1.3 + P.rnd() * 0.8, P.rnd() * 3.14, lo + (P.rnd() < 0.5 ? 0 : hi - lo));
+      for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {                    // gaps where you can see through
+        if (P.n(x, y, 5, 5, 2) > 0.68 || (P.n(x + 17, y + 9, 9, 9, 1) > 0.86)) P.set(x, y, [0, 0, 0], 0);
+      }
+      const keep = P.d.slice();
+      for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {                    // edges: lit towards the sky, dark where they hang over a gap
+        const i = (y * TS + x) * 4; if (!keep[i + 3]) continue;
+        const up = keep[(mod(y - 1, TS) * TS + mod(x - 1, TS)) * 4 + 3], dn = keep[(mod(y + 1, TS) * TS + mod(x + 1, TS)) * 4 + 3];
+        if (!up) P.set(x, y, mul([keep[i], keep[i + 1], keep[i + 2]], 1.22)); else if (!dn) P.set(x, y, mul([keep[i], keep[i + 1], keep[i + 2]], 0.78));
+      }
+    },
+    planks(P) { plankFill(P); },
+    glass(P) {
+      const glint = [240, 248, 251];
+      for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
+        const e = Math.min(x, y, TS - 1 - x, TS - 1 - y);
+        if (e === 0) P.set(x, y, [226, 238, 243]);
+        else if (e === 1) P.set(x, y, [186, 208, 218]);
+        else if (e === 2) P.set(x, y, [150, 178, 192], 150);
+      }
+      for (let k = 0; k < 13; k++) { P.set(6 + k, 21 - k, glint, 215); P.set(7 + k, 21 - k, glint, 215); }
+      for (let k = 0; k < 6; k++) { P.set(16 + k, 27 - k, glint, 190); }
+      P.set(4, 4, [255, 255, 255]); P.set(TS - 5, TS - 5, [255, 255, 255], 200);
+    },
+    gravel(P) {
+      const pal = [[118, 116, 114], [100, 98, 98], [136, 130, 122], [110, 104, 98], [148, 142, 132], [90, 88, 90], [126, 118, 108]];
+      const V = cells(P, 6, 0.85);
+      P.each((x, y) => {
+        const v = V(x, y), edge = v.d2 - v.d1;
+        if (edge < 1.4) return [78, 76, 76];                                        // the gap between two stones
+        const base = pal[Math.floor(v.p[2] * pal.length)], dome = 1 - clamp(v.d1 / 5.5, 0, 1), light = -(v.dx + v.dy) * 0.045;
+        return mul(base, 0.9 + dome * 0.2 + clamp(light, -0.14, 0.16) + (edge < 2.4 ? -0.08 : 0));
+      });
+    },
+    wool(P) {
+      const prof = [0.955, 1.03, 1.03, 0.965];
+      P.each((x, y) => {
+        const horizontal = (((x >> 1) + (y >> 1)) & 1) === 0, k = horizontal ? (y & 1 ? 1.02 : 0.965) : (x & 1 ? 1.02 : 0.965);
+        const soft = 0.955 + P.n(x, y, 3, 3, 2) * 0.09;
+        return mul([224, 220, 210], k * soft * (0.985 + P.rnd() * 0.03));
+      });
+      for (let i = 0; i < 10; i++) P.set(P.rnd() * TS | 0, P.rnd() * TS | 0, [242, 240, 233]);   // fuzz
+    },
+    tableTop(P) {
+      const dark = [92, 65, 40], lit = [198, 166, 120];
+      P.each((x, y) => {
+        const cell = (Math.floor((x - 2) / 9.34) | 0) * 3 + (Math.floor((y - 2) / 9.34) | 0), k = 0.95 + ((cell * 37) % 11) / 100;
+        return mul([178, 144, 102], k * (0.9 + P.n(x, y, 2, 9, 3) * 0.2));
+      });
+      for (let i = 0; i < TS; i++) for (const p of [0, 1, 30, 31]) { const c = p < 2 ? dark : mul(dark, 0.9); P.set(i, p, c); P.set(p, i, c); }
+      for (const p of [11, 21]) for (let i = 2; i < 30; i++) { P.set(i, p, dark); P.set(p, i, dark); P.set(i, p + 1, lit); P.set(p + 1, i, lit); }
+    },
+    tableSide(P) {
+      plankFill(P);
+      P.rect(0, 0, TS, 6, [120, 90, 60]); P.rect(0, 5, TS, 6, [88, 64, 40]); P.rect(0, 0, TS, 1, [150, 116, 80]);
+      for (let x = 0; x < TS; x++) for (let y = 0; y < 5; y++) P.shade(x, y, 0.92 + P.n(x, y, 8, 2, 1) * 0.16);
+      // a hammer
+      P.rect(9, 14, 11, 28, [104, 76, 48]); P.rect(9, 14, 10, 28, [128, 96, 62]);
+      P.rect(5, 10, 15, 15, [124, 130, 140]); P.rect(5, 10, 15, 11, [190, 196, 206]); P.rect(5, 14, 15, 15, [80, 86, 96]); P.rect(5, 10, 6, 15, [96, 102, 112]);
+      // a saw
+      for (let y = 11; y < 21; y++) for (let x = 18; x < 29; x++) { const cut = (x - 18) * 0.35 + (y - 11) - 9.5; if (cut < 0) P.set(x, y, y === 11 ? [200, 206, 214] : [158, 164, 174]); }
+      for (let x = 18; x < 29; x += 2) P.set(x, 20 - Math.floor((x - 18) * 0.35), [104, 110, 120]);
+      P.rect(19, 21, 23, 28, [96, 70, 44]); P.rect(19, 21, 20, 28, [122, 92, 60]); P.rect(20, 23, 22, 25, [60, 44, 30]);
+      for (let y = 6; y < TS; y++) { P.shade(3, y, 0.9); }
+    },
+    furnace(P) {
+      const V = cells(P, 4, 0.5), pal = [[112, 114, 120], [124, 126, 132], [136, 138, 144], [102, 104, 110]];
+      P.each((x, y) => {
+        const v = V(x, y), edge = v.d2 - v.d1;
+        if (edge < 1.3) return [74, 76, 82];
+        return mul(pal[Math.floor(v.p[2] * pal.length)], 0.9 + clamp(-(v.dx + v.dy) * 0.02, -0.08, 0.1) + P.n(x, y, 6, 6, 2) * 0.1);
+      });
+      P.rect(6, 11, 26, 13, [148, 150, 156]); P.rect(6, 13, 26, 14, [86, 88, 94]);             // the lintel
+      P.rect(7, 14, 25, 28, [22, 20, 22]); P.rect(7, 14, 8, 28, [34, 32, 34]); P.rect(24, 14, 25, 28, [12, 12, 14]);
+      for (let y = 22; y < 28; y++) P.rect(8, y, 24, y + 1, mix([26, 22, 22], [64, 36, 26], (y - 22) / 6));   // embers waiting in the dark
+      P.rect(6, 28, 26, 29, [148, 150, 156]);
+      for (let i = 0; i < 5; i++) P.rect(11 + i * 2, 5, 12 + i * 2, 8, [38, 38, 44]);           // vent
+    },
+  };
+  const ORDER = ['grassTop', 'grassSide', 'dirt', 'stone', 'sand', 'water', 'logSide', 'logTop', 'leaves', 'planks', 'glass', 'gravel', 'wool', 'tableTop', 'tableSide', 'furnace'];
+  const TILE = {}; ORDER.forEach((n, i) => { TILE[n] = i; });
+
+  // ---------------- put every tile in its cell, with the edge repeated all round ----------------
+  const data = new Uint8Array(AW * AH * 4);
+  ORDER.forEach((name, t) => {
+    const P = Painter(9000 + t * 131);
+    PAINT[name](P);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < TS * TS; i++) if (P.d[i * 4 + 3] > 127) { r += P.d[i * 4]; g += P.d[i * 4 + 1]; b += P.d[i * 4 + 2]; n++; }
+    if (n) for (let i = 0; i < TS * TS; i++) if (P.d[i * 4 + 3] <= 127) { P.d[i * 4] = r / n; P.d[i * 4 + 1] = g / n; P.d[i * 4 + 2] = b / n; }   // see-through texels take the average colour
+    const col = t % COLS, row = (t / COLS) | 0;
+    for (let gy = 0; gy < CELL; gy++) for (let gx = 0; gx < CELL; gx++) {
+      const si = (clamp(gy - GUT, 0, TS - 1) * TS + clamp(gx - GUT, 0, TS - 1)) * 4, di = ((row * CELL + gy) * AW + col * CELL + gx) * 4;
+      data[di] = P.d[si]; data[di + 1] = P.d[si + 1]; data[di + 2] = P.d[si + 2]; data[di + 3] = P.d[si + 3];
+    }
+  });
+  const canvas = document.createElement('canvas'); canvas.width = AW; canvas.height = AH;
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data), AW, AH), 0, 0);
+  // the GPU wants the rows bottom-up (a DataTexture is not flipped like a canvas)
+  const flipped = new Uint8Array(data.length);
+  for (let y = 0; y < AH; y++) flipped.set(data.subarray(y * AW * 4, (y + 1) * AW * 4), (AH - 1 - y) * AW * 4);
+  return {
+    TS, GUT, CELL, COLS, ROWS, AW, AH, TILE, ORDER, canvas, flipped,
+    // where a tile's corner (u, v: 0..1, v up) lands in the atlas
+    uv(t, u, v) { return [((t % COLS) * CELL + GUT + u * TS) / AW, 1 - (((t / COLS) | 0) * CELL + GUT + (1 - v) * TS) / AH]; },
+    rect(t) { return [(t % COLS) * CELL + GUT, ((t / COLS) | 0) * CELL + GUT, TS, TS]; },
+  };
+})();
+
+/* =====================================================================
    WORLD — blocks, textures, terrain, chunks, meshing
    ===================================================================== */
 const World = (() => {
@@ -502,9 +802,13 @@ const World = (() => {
   const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SAND = 4, WATER = 5, LOG = 6, LEAVES = 7, PLANKS = 8, GLASS = 9, GRAVEL = 10, WOOL = 11, TABLE = 12, FURNACE = 13;
   const B = { AIR, GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, PLANKS, GLASS, GRAVEL, WOOL, TABLE, FURNACE };
 
-  // ---- texture atlas: 16 tiles of 16px in one row, all painted in code
-  const TILE = { grassTop: 0, grassSide: 1, dirt: 2, stone: 3, sand: 4, water: 5, logSide: 6, logTop: 7, leaves: 8, planks: 9, glass: 10, gravel: 11, wool: 12, tableTop: 13, tableSide: 14, furnace: 15 };
-  const NT = 16;
+  // ---- the texture atlas is painted by TEXTURES above; this is how each tile may be turned or mirrored from block to block
+  // (bit 1: mirror left-right, bit 2: mirror up-down, bit 4: swap the two, so the four turns and mirrors all happen)
+  const TILE = Tex.TILE;
+  const TILE_OPS = {
+    [TILE.grassTop]: 7, [TILE.dirt]: 7, [TILE.stone]: 7, [TILE.sand]: 7, [TILE.gravel]: 7, [TILE.leaves]: 7, [TILE.wool]: 7, [TILE.logTop]: 7,
+    [TILE.grassSide]: 1, [TILE.logSide]: 1, [TILE.planks]: 3, [TILE.furnace]: 1,
+  };
   const INFO = [];     // per block: name, tex [top, bottom, side], kind: solid | cutout | water
   const def = (id, name, top, bottom, side, kind = 'solid') => INFO[id] = { name, tex: [top, bottom, side], kind };
   def(GRASS, 'Meadow Grass', TILE.grassTop, TILE.dirt, TILE.grassSide);
@@ -523,50 +827,11 @@ const World = (() => {
   const SOLID = new Uint8Array(32), OPAQUE = new Uint8Array(32), OCC = new Uint8Array(32);
   INFO.forEach((b, i) => { if (!b) return; SOLID[i] = b.kind !== 'water' ? 1 : 0; OPAQUE[i] = b.kind === 'solid' ? 1 : 0; OCC[i] = b.kind === 'solid' || i === LEAVES ? 1 : 0; });
 
-  function paintAtlas() {
-    const cv = document.createElement('canvas'); cv.width = NT * 16; cv.height = 16;
-    const ctx = cv.getContext('2d'), img = ctx.createImageData(cv.width, 16), d = img.data;
-    const r = mulberry32(90210);
-    const put = (t, x, y, c, a = 255) => { const i = (y * cv.width + t * 16 + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = a; };
-    const jit = (c, k) => { const v = (r() - 0.5) * k; return c.map(ch => clamp(Math.round(ch + v), 0, 255)); };
-    const paint = (t, f) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const o = f(x, y); if (o) put(t, x, y, o[0], o[1]); } };
-    // palette: muted, a touch cool — calm, familiar, almost normal
-    const grass = [112, 150, 92], soil = [120, 96, 76], slate = [126, 131, 138], sand = [212, 203, 172];
-    const fringe = []; for (let x = 0; x < 16; x++) fringe[x] = 2 + Math.floor(r() * 3);
-    paint(TILE.grassTop, () => [jit(r() < 0.14 ? [96, 132, 80] : grass, 20)]);
-    paint(TILE.dirt, () => [jit(r() < 0.12 ? [100, 80, 64] : soil, 18)]);
-    paint(TILE.grassSide, (x, y) => [y < fringe[x] ? jit(grass, 18) : jit(r() < 0.12 ? [100, 80, 64] : soil, 18)]);
-    paint(TILE.stone, (x, y) => [jit((x * 7 + y * 3) % 11 === 0 ? [108, 112, 120] : slate, 14)]);
-    paint(TILE.sand, () => [jit(sand, 12)]);
-    paint(TILE.water, (x, y) => [jit((x + y * 3) % 9 === 0 ? [96, 140, 170] : [66, 108, 142], 10)]);
-    paint(TILE.logSide, (x, y) => [jit((x === 3 || x === 11) && y % 5 !== 2 ? [70, 62, 56] : (y * 5 + x) % 13 === 0 ? [60, 56, 52] : [196, 190, 176], 10)]);
-    paint(TILE.logTop, (x, y) => { const q = Math.floor(Math.hypot(x - 7.5, y - 7.5)); return [jit(x === 0 || y === 0 || x === 15 || y === 15 ? [188, 182, 168] : q % 2 ? [176, 150, 112] : [158, 132, 96], 8)]; });
-    paint(TILE.leaves, () => r() < 0.18 ? [[0, 0, 0], 0] : [jit(r() < 0.3 ? [64, 104, 66] : [84, 126, 80], 18)]);
-    paint(TILE.planks, (x, y) => [jit(y % 4 === 3 || x === ((y >> 2) % 2 ? 5 : 12) ? [128, 104, 74] : [170, 142, 104], 10)]);
-    paint(TILE.glass, (x, y) => (x === 0 || y === 0 || x === 15 || y === 15) ? [[220, 232, 236]] : (x - y === 5 || x - y === 6) && x > 2 && x < 14 ? [[240, 246, 248], 200] : [[0, 0, 0], 0]);
-    paint(TILE.gravel, () => { const k = r(); return [jit(k < 0.3 ? [140, 136, 132] : k < 0.6 ? [110, 106, 104] : [124, 116, 108], 14)]; });
-    paint(TILE.wool, (x, y) => [jit((x * 5 + y * 3) % 7 === 0 || (x + y * 5) % 11 === 0 ? [206, 202, 192] : [230, 226, 216], 8)]);
-    // crafting table: a grid on top; saw and hammer hung on the sides
-    paint(TILE.tableTop, (x, y) => [jit(x === 0 || y === 0 || x === 15 || y === 15 ? [112, 86, 58] : x === 5 || x === 10 || y === 5 || y === 10 ? [128, 100, 70] : [176, 146, 106], 8)]);
-    paint(TILE.tableSide, (x, y) => {
-      if (y < 3) return [jit(y === 2 ? [112, 86, 58] : [176, 146, 106], 8)];
-      if ((x === 3 && y > 4 && y < 13) || (y === 5 && x > 1 && x < 6)) return [jit([92, 92, 98], 10)];               // hammer
-      if (x > 8 && x < 14 && y > 5 && y < 12 && x - 9 > (y - 6) * 0.5) return [jit([150, 156, 164], 10)];             // saw blade
-      if (x > 8 && x < 11 && y > 10 && y < 14) return [jit([96, 72, 48], 8)];
-      return [jit(y % 4 === 3 ? [128, 104, 74] : [160, 132, 96], 10)];
-    });
-    // furnace: rough stone with a dark mouth
-    paint(TILE.furnace, (x, y) => {
-      if (x > 3 && x < 12 && y > 7 && y < 13) return [jit(y > 10 ? [40, 30, 26] : [24, 22, 22], 6)];
-      if (x > 2 && x < 13 && y === 7) return [jit([150, 150, 156], 8)];
-      return [jit((x + y * 2) % 5 === 0 || (x * 3 + y) % 7 === 0 ? [96, 98, 104] : [128, 130, 136], 12)];
-    });
-    ctx.putImageData(img, 0, 0);
-    return cv;
-  }
-  const atlasCanvas = paintAtlas();
-  const atlas = new THREE.CanvasTexture(atlasCanvas);
-  atlas.magFilter = THREE.NearestFilter; atlas.minFilter = THREE.NearestFilter; atlas.generateMipmaps = false;
+  const atlasCanvas = Tex.canvas;
+  // crisp up close, smoothly blended far away (mipmaps). No anisotropic filtering: on some GPUs it blurs the close-ups
+  const atlas = new THREE.DataTexture(Tex.flipped, Tex.AW, Tex.AH, THREE.RGBAFormat, THREE.UnsignedByteType);
+  atlas.magFilter = THREE.NearestFilter; atlas.minFilter = THREE.NearestMipmapLinearFilter; atlas.generateMipmaps = true;
+  atlas.wrapS = atlas.wrapT = THREE.ClampToEdgeWrapping; atlas.needsUpdate = true;
 
   const materials = {
     solid: new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true }),
@@ -576,7 +841,8 @@ const World = (() => {
 
   // ---- shader patches: wind-swayed leaves, rain ripples on water, and "focus" fog that can gather in one direction
   // (uCamPos: three.js doesn't give Lambert materials the camera position, so it is passed in here)
-  const U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2() }, uFocusDir: { value: new THREE.Vector3(0, 0, -1) }, uFocusAmt: { value: 0 }, uRain: { value: 0 }, uCamPos: { value: new THREE.Vector3() } };
+  const U = { uTime: { value: 0 }, uWind: { value: new THREE.Vector2() }, uFocusDir: { value: new THREE.Vector3(0, 0, -1) }, uFocusAmt: { value: 0 }, uRain: { value: 0 }, uCamPos: { value: new THREE.Vector3() },
+             uGlintDir: { value: new THREE.Vector3(0, 1, 0) }, uGlint: { value: 0 } };
   const FOG_FRAG = `#ifdef USE_FOG
     float fogFactor = smoothstep(fogNear, fogFar, fogDepth);
     float stFocus = max(dot(normalize(vStW - uCamPos), uFocusDir), 0.0);
@@ -597,18 +863,47 @@ const World = (() => {
       float ring = (1.0 - smoothstep(0.0, 0.05, abs(length(f - jit * 0.4) - t * 0.45))) * (1.0 - t);
       diffuseColor.rgb += ring * uRain * 0.35;
     }`;
+  // grass and leaves change colour slowly across the land: lush and cool in some places, dry and golden in others
+  // (worked out at the corners of each block, so it costs almost nothing)
+  const TINT_VERT = `
+    float tnh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float tnn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(tnh(i), tnh(i + vec2(1.0, 0.0)), f.x), mix(tnh(i + vec2(0.0, 1.0)), tnh(i + vec2(1.0, 1.0)), f.x), f.y); }
+    vec3 tintAt(vec2 p) {
+      float k = clamp(((tnn(p / 38.0) * 0.72 + tnn(p / 11.0 + 7.3) * 0.28) - 0.5) * 1.7 + 0.5, 0.0, 1.0);
+      vec3 lush = vec3(0.88, 1.04, 0.96), dry = vec3(1.14, 1.02, 0.74);
+      return k < 0.5 ? mix(lush, vec3(1.0), k * 2.0) : mix(vec3(1.0), dry, (k - 0.5) * 2.0);
+    }`;
+  const TINT_FRAG = `
+    { float gr = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * 9.0, 0.0, 1.0);   // only the green parts
+      diffuseColor.rgb *= mix(vec3(1.0), vTint, gr); }`;
+  // moving water: light and dark bands drifting over the top, and the sun (or the moon) glittering on the waves
+  const WATER_ANIM = `
+    vec2 wGrad = vec2(0.0);
+    if (vStUp > 0.5) {
+      vec2 q = vStW.xz; float t = uTime;
+      float a1 = q.x * 1.9 + q.y * 1.1 + t * 1.4, a2 = -q.x * 1.3 + q.y * 2.3 + t * 1.1 + 1.7, a3 = q.x * 3.1 - q.y * 2.7 + t * 1.9 + 4.2;
+      diffuseColor.rgb *= 0.91 + 0.09 * ((sin(a1) + sin(a2) + sin(a3)) * 0.3333);
+      wGrad = vec2(cos(a1) * 1.9 - cos(a2) * 1.3 + cos(a3) * 3.1, cos(a1) * 1.1 + cos(a2) * 2.3 - cos(a3) * 2.7);
+    }`;
+  const GLINT = `
+    if (vStUp > 0.5 && uGlint > 0.001) {
+      vec3 Nw = normalize(vec3(-wGrad.x * 0.05, 1.0, -wGrad.y * 0.05)), Vw = normalize(uCamPos - vStW), Hw = normalize(uGlintDir + Vw);
+      float hd = max(dot(Nw, Hw), 0.0);
+      gl_FragColor.rgb += (pow(hd, 120.0) + 0.22 * pow(hd, 14.0)) * uGlint * vec3(1.0, 0.96, 0.86);
+    }`;
   function patch(mat, kind) {
-    mat.customProgramCacheKey = () => 'stillness-' + kind;
+    mat.customProgramCacheKey = () => 'stainless2-' + kind;
     mat.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform float uTime;\nuniform vec2 uWind;' + (kind === 'cutout' ? '\nattribute float sway;' : ''))
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nvarying vec3 vTint;\nuniform float uTime;\nuniform vec2 uWind;' + TINT_VERT + (kind === 'cutout' ? '\nattribute float sway;' : ''))
         .replace('#include <begin_vertex>', '#include <begin_vertex>' + (kind === 'cutout' ? SWAY : ''))
-        .replace('#include <fog_vertex>', '#include <fog_vertex>\nvStW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvStUp = normal.y;');
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\nvStW = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvStUp = normal.y;\nvTint = tintAt(vStW.xz);');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform vec3 uCamPos;\nuniform float uTime;\nuniform float uRain;')
-        .replace('#include <fog_fragment>', FOG_FRAG)
-        .replace('#include <map_fragment>', '#include <map_fragment>' + (kind === 'water' ? RIPPLE : ''));
+        .replace('#include <common>', '#include <common>\nvarying vec3 vStW;\nvarying float vStUp;\nvarying vec3 vTint;\nuniform vec3 uFocusDir;\nuniform float uFocusAmt;\nuniform vec3 uCamPos;\nuniform float uTime;\nuniform float uRain;\nuniform vec3 uGlintDir;\nuniform float uGlint;')
+        .replace('#include <fog_fragment>', (kind === 'water' ? GLINT + '\n' : '') + FOG_FRAG)
+        .replace('#include <map_fragment>', '#include <map_fragment>' + (kind === 'water' ? WATER_ANIM + RIPPLE : TINT_FRAG));
     };
   }
   patch(materials.solid, 'solid'); patch(materials.cutout, 'cutout'); patch(materials.water, 'water');
@@ -743,6 +1038,7 @@ const World = (() => {
     f.ao = f.c.map(p => { const d1 = [0, 0, 0], d2 = [0, 0, 0]; d1[a1] = p[a1] ? 1 : -1; d2[a2] = p[a2] ? 1 : -1; return [d1, d2]; });
   }
   const AO = [0.52, 0.68, 0.84, 1];
+  const hash3 = (x, y, z, s) => { let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 1274126177) ^ Math.imul(s, 2147483647); n = Math.imul(n ^ (n >>> 13), 1274126177); return (n ^ (n >>> 16)) >>> 0; };
   const PW = CS + 2, pad = new Uint8Array(PW * PW * H);
   function visible(b, nb) {
     if (nb === AIR) return true;
@@ -779,12 +1075,20 @@ const World = (() => {
           ao[k] = s1 && s2 ? 0 : 3 - (s1 + s2 + cc);
         }
         const t = info.tex[f.slot], base = out.pos.length / 3;
+        const hh = hash3(c.cx * CS + x, y, c.cz * CS + z, f.slot * 31 + b), op = (TILE_OPS[t] || 0) & (hh >>> 5);   // no two neighbours are turned the same way
+        let tr = 1, tg = 1, tb = 1;
+        if (b === WATER) { let dp = 0; while (dp < 6 && pb(x, y - 1 - dp, z) === WATER) dp++; tr = 1 - dp * 0.11; tg = 1 - dp * 0.065; tb = 1 - dp * 0.02; }   // deep water is darker and bluer
+        else { tr = tg = tb = 0.96 + ((hh >>> 12) & 255) / 255 * 0.08; }                                            // every block a touch lighter or darker
         for (let k = 0; k < 4; k++) {
           const p = f.c[k];
           out.pos.push(x + p[0], y + p[1] - (lowTop && p[1] === 1 ? 0.12 : 0), z + p[2]);
           out.nor.push(f.n[0], f.n[1], f.n[2]);
-          out.uv.push((t + clamp(f.uv[k][0], 0.002, 0.998)) / NT, clamp(f.uv[k][1], 0.002, 0.998));
-          const a = AO[ao[k]]; out.col.push(a, a, a);
+          let u = f.uv[k][0], v = f.uv[k][1];
+          if (op & 1) u = 1 - u;
+          if (op & 2) v = 1 - v;
+          if (op & 4) { const q = u; u = v; v = q; }
+          const tuv = Tex.uv(t, u, v); out.uv.push(tuv[0], tuv[1]);
+          const a = AO[ao[k]]; out.col.push(a * tr, a * tg, a * tb);
           if (info.kind === 'cutout') out.sw.push(b === LEAVES ? 1 : 0);
         }
         // flip the quad's diagonal so ambient occlusion shades smoothly
@@ -868,7 +1172,7 @@ const World = (() => {
     editsByChunk.clear();
     for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); editsByChunk.set(k, m); }
   }
-  return { B, INFO, SOLID, OPAQUE, TILE, NT, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
+  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits };
 })();
 
 /* =====================================================================
@@ -884,7 +1188,7 @@ document.body.prepend(renderer.domElement);
 scene.add(World.group);
 
 // What the weather wants the sky to look like; written by WEATHER, read here every frame.
-const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, falseDawn: 0, forbidden: 0 };
+const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, moonPhase: 4, falseDawn: 0, forbidden: 0 };
 
 const Sky = (() => {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
@@ -907,7 +1211,46 @@ const Sky = (() => {
     scene.add(s); return s;
   };
   const sun = glow('rgba(255,248,226,1)', 'rgba(255,214,150,0.35)', 0.18); sun.scale.set(90, 90, 1);
-  const moon = glow('rgba(226,232,244,1)', 'rgba(170,190,230,0.18)', 0.14); moon.scale.set(60, 60, 1);
+  // the moon: a real disc with dark seas and craters, going through its phases one step every night
+  const MN = 256, MR = 46, moonCv = document.createElement('canvas'); moonCv.width = moonCv.height = MN;
+  const moonTex = new THREE.CanvasTexture(moonCv);
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, depthWrite: false, fog: false, transparent: true, blending: THREE.AdditiveBlending }));
+  moon.scale.set(100, 100, 1); scene.add(moon);
+  const moonAlbedo = new Float32Array(MN * MN);           // the face never changes, only the light that falls on it
+  let moonFace = false;
+  function buildMoonFace() {                              // made the first evening it is needed, not while the game is starting
+    moonFace = true;
+    const r = mulberry32(4242), nz = makeSimplex(777), craters = [];
+    for (let i = 0; i < 24; i++) { const a = r() * 6.283, d = Math.sqrt(r()) * 0.92; craters.push([Math.cos(a) * d, Math.sin(a) * d, 0.035 + r() * r() * 0.13]); }
+    for (let y = 0; y < MN; y++) for (let x = 0; x < MN; x++) {
+      const dx = (x + 0.5 - MN / 2) / MR, dy = (y + 0.5 - MN / 2) / MR, r2 = dx * dx + dy * dy;
+      if (r2 > 1.05) continue;
+      let a = 0.9 + nz(dx * 9, dy * 9) * 0.035;
+      a -= smoothstep(0.02, 0.42, nz(dx * 1.7 + 5, dy * 1.7 + 9) * 0.65 + nz(dx * 4 + 2, dy * 4 + 1) * 0.3) * 0.33;   // the dark seas
+      for (const [cx, cy, cr] of craters) {
+        const d = Math.hypot(dx - cx, dy - cy) / cr;
+        if (d < 0.82) a -= 0.11 + (1 - d) * 0.06; else if (d < 1.3) a += 0.11 * (1 - Math.abs(d - 1.02) / 0.28);        // a dark floor with a lit rim
+      }
+      moonAlbedo[y * MN + x] = clamp(a, 0.1, 1) * (0.88 + 0.12 * Math.sqrt(Math.max(0, 1 - r2)));                         // a touch darker at the edge
+    }
+  }
+  let moonPhaseDrawn = -1;
+  function drawMoon(phase) {   // 0 new moon, 2 first quarter, 4 full, 6 last quarter
+    if (!moonFace) buildMoonFace();
+    const g = moonCv.getContext('2d'), img = g.createImageData(MN, MN), d = img.data;
+    const ph = phase / 8 * Math.PI * 2, Lx = Math.sin(ph), Lz = -Math.cos(ph), full = 0.5 - 0.5 * Math.cos(ph);
+    for (let y = 0; y < MN; y++) for (let x = 0; x < MN; x++) {
+      const dx = (x + 0.5 - MN / 2) / MR, dy = (y + 0.5 - MN / 2) / MR, r2 = dx * dx + dy * dy, i = (y * MN + x) * 4, rr = Math.sqrt(r2);
+      if (rr <= 1.03) {
+        const nzv = Math.sqrt(Math.max(0, 1 - r2)), lit = smoothstep(-0.02, 0.11, dx * Lx + nzv * Lz), v = moonAlbedo[y * MN + x] * (0.07 + 0.93 * lit);
+        d[i] = 232 * v; d[i + 1] = 238 * v; d[i + 2] = 250 * v; d[i + 3] = 255 * smoothstep(1.03, 0.96, rr);
+      } else {
+        const h = Math.exp(-(rr - 1) * 3.4) * 0.2 * (0.2 + 0.8 * full) * smoothstep(2.75, 1.7, rr);   // a soft glow that grows with the moon
+        d[i] = 186; d[i + 1] = 204; d[i + 2] = 242; d[i + 3] = 255 * h;
+      }
+    }
+    g.putImageData(img, 0, 0); moonTex.needsUpdate = true;
+  }
 
   // the forbidden sun: a censored disc (black bar + flickering mosaic), drawn normally so black shows
   const censorCanvas = document.createElement('canvas'); censorCanvas.width = censorCanvas.height = 128;
@@ -1004,7 +1347,15 @@ const Sky = (() => {
       censor.position.copy(sun.position); censor.material.opacity = sunUp * F.forbidden;
       censorT -= dt; if (censorT <= 0) { censorT = 0.12; drawCensor(); }
     }
-    moon.material.opacity = smoothstep(-0.2, 0.05, -h) * 0.9 * Math.pow(F.moonLife, 0.8) * (1 - F.cloud * 0.75) * veil;
+    if (F.moonPhase !== moonPhaseDrawn && h < 0.4) { moonPhaseDrawn = F.moonPhase; drawMoon(moonPhaseDrawn); }   // only when the sun is low: the moon is about to be seen
+    moon.material.opacity = smoothstep(-0.2, 0.05, -h) * 0.95 * Math.pow(F.moonLife, 0.8) * (1 - F.cloud * 0.75) * veil;
+    {   // what glitters on the water: the sun by day, a fainter moon by night (it fades as the moon dies)
+      const dayGl = sunUp * (1 - F.cloud * 0.85) * (1 - F.forbidden) * veil;
+      const nightGl = smoothstep(-0.2, 0.05, -h) * 0.32 * Math.pow(F.moonLife, 1.5) * (1 - F.cloud * 0.8) * veil;
+      const gu = World.U;
+      if (dayGl >= nightGl) { gu.uGlintDir.value.copy(state.sunDir); gu.uGlint.value = dayGl; }
+      else { gu.uGlintDir.value.copy(state.sunDir).negate(); gu.uGlint.value = nightGl; }
+    }
     stars.material.uniforms.uOpacity.value = night * 0.85 * (1 - F.cloud * 0.9) * (1 - F.falseDawn * 0.85) * veil;
     stars.material.uniforms.uLife.value = clamp(F.moonLife * 1.25 - 0.15, 0, 1);
     stars.rotation.z = a;
@@ -1222,7 +1573,7 @@ const Player = (() => {
     const [top, , side] = World.INFO[b].tex, k = 34 / 48;
     const face = (t, m, dark) => {
       x.setTransform(m[0] * k, m[1] * k, m[2] * k, m[3] * k, m[4] * k, m[5] * k);
-      x.drawImage(World.atlasCanvas, t * 16, 0, 16, 16, 0, 0, 16, 16);
+      const r = Tex.rect(t); x.imageSmoothingEnabled = true; x.drawImage(World.atlasCanvas, r[0], r[1], r[2], r[3], 0, 0, 16, 16);
       if (dark) { x.globalCompositeOperation = 'source-atop'; x.fillStyle = `rgba(0,0,0,${dark})`; x.fillRect(0, 0, 16, 16); x.globalCompositeOperation = 'source-over'; }
     };
     face(side, [20 / 16, 10 / 16, 0, 22 / 16, 4, 14], 0.2);
@@ -1518,12 +1869,18 @@ const Weather = (() => {
     fragmentShader: `precision highp float;
       uniform float uCover; uniform float uDark; uniform float uDay; uniform vec2 uOff; uniform vec3 uCam; uniform float uFlash; uniform float uMoon; uniform float uMist; varying vec3 vW;
       float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float dens(vec2 c) { return h(c) * 0.55 + h(floor(c / 3.0) + 17.0) * 0.45; }
       void main() {
-        vec2 p = (vW.xz + uOff) / 14.0;
-        float n = h(floor(p)) * 0.55 + h(floor(p / 3.0) + 17.0) * 0.45;
-        float a = step(1.0 - uCover, n) * (1.0 - smoothstep(180.0, 420.0, distance(vW.xz, uCam.xz))) * 0.88 * (1.0 - uMist * 0.9);
+        vec2 p = (vW.xz + uOff) / 14.0, c = floor(p), f = fract(p);
+        float t = 1.0 - uCover;
+        float a = step(t, dens(c)) * (1.0 - smoothstep(180.0, 420.0, distance(vW.xz, uCam.xz))) * 0.88 * (1.0 - uMist * 0.9);
         if (a < 0.01) discard;
-        vec3 col = mix(vec3(1.0), vec3(0.42, 0.44, 0.48), uDark) * mix(0.06 * mix(0.12, 1.0, uMoon), 1.0, uDay) + uFlash * 0.6;
+        // a puffy look: the sides that face open sky are lit, the sides that face the ground are grey, and each cell is a touch different
+        float sh = 1.0 - 0.07 * h(c + 3.0);
+        sh -= 0.11 * step(dens(c + vec2(0.0, 1.0)), t) * smoothstep(0.7, 1.0, f.y);
+        sh -= 0.08 * step(dens(c + vec2(1.0, 0.0)), t) * smoothstep(0.75, 1.0, f.x);
+        sh += 0.05 * step(dens(c - vec2(0.0, 1.0)), t) * smoothstep(0.3, 0.0, f.y);
+        vec3 col = mix(vec3(1.0), vec3(0.42, 0.44, 0.48), uDark) * sh * mix(0.06 * mix(0.12, 1.0, uMoon), 1.0, uDay) + uFlash * 0.6;
         gl_FragColor = vec4(col, a);
       }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -1719,7 +2076,7 @@ const Weather = (() => {
     // hand everything to the sky
     Object.assign(SkyFX, {
       mist,
-      cloud: live.cloud, cloudDark: live.cloudDark, light: live.light, flash, moonLife, falseDawn: fdAmt, forbidden: forb.amt,
+      cloud: live.cloud, cloudDark: live.cloudDark, light: live.light, flash, moonLife, moonPhase: (days + 4) % 8, falseDawn: fdAmt, forbidden: forb.amt,
       fogNearMul: lerp(live.fogNearMul, 0.03, fogCreep), fogFarMul: lerp(live.fogFarMul, 0.16, fogCreep),
     });
   }

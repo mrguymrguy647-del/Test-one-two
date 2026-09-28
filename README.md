@@ -104,6 +104,22 @@ code, so there are no image files. The sounds are real recordings under free lic
 - Creative: every block and item in a palette
 - Menu buttons click; **Auto jump** can be switched off in Settings
 
+**Phase 5.2: a new texture pack**
+- Every block was repainted at twice the detail (32 pixels instead of 16), in clustered pixel art instead
+  of random noise: grass with blades and tufts, soil with pebbles and roots, slate with cracks and layers,
+  sand with ripples, birch bark with dark scars, dense leaves you can see through in places, planks with
+  grain and nails, glass, rounded gravel stones, woven wool, a crafting table with a saw and a hammer, and
+  a stone furnace
+- No two blocks look quite alike: each one is turned or mirrored differently and is a touch lighter or
+  darker, so the ground no longer looks tiled
+- Grass and leaves change colour slowly across the land, from cool and lush to dry and golden
+- Water moves: light and dark bands drift across it, it is bluer and darker where it is deep, and the sun
+  (or, at night, the moon) glitters on the waves. When the world goes still, the water stops too
+- Far-away land blends smoothly instead of shimmering
+- The moon is now a real moon with dark seas and craters, and it goes through its phases (a full moon the
+  first night, then waning to a nearly dark new moon and back). Clouds have shaded undersides
+- Everything is still painted in code: no image files
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update
