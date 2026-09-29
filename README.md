@@ -175,6 +175,22 @@ code, so there are no image files. The sounds are real recordings under free lic
   the door is gone. Some stone and glass is left for you by the well. Close the game inside and you wake up
   in there
 
+**8.2: the deep**
+- **A deeper sea.** Oceans now fall away much further, with long trenches. Under the surface you swim the way
+  you look (look down and swim to dive; the ⬇ button sinks you), a **depth** meter shows how far down you are,
+  and the water goes from blue-green to black. Everything sounds muffled
+- **The seabed remembers.** Shipwrecks (a broken mast, holes in the hull), a drowned temple with columns
+  and an altar, and the bones of something huge with a skull you can swim into. Each holds a **chest**
+- **Life:** schools of fish (hit one to catch it; raw fish can be cooked), and glowing jellyfish in the deep
+- **Fear:** a drowned figure that stands on the seabed and creeps closer when you look away, an anglerfish that
+  hunts you in the dark (it bites, then flees), and two enormous eyes far below that open and close.
+  Chests wake something when you open them
+- **Cursed treasure.** Gold coins, gold bars and drowned idols are cursed: the more you carry, the slower and
+  hungrier you get and the more you hear and see things. Golden tools (from gold bars) are fast but cursed too.
+  The way to lift it: throw the gold back into the sea. Pearls are safe, and while you carry one your breath lasts
+  twice as long
+- **Journals** tell what happened to the kingdom of Vael. Hold one and tap to read
+
 ## Coming next
 
 6. **Polish**, and updates that keep your worlds (install a new version over the old one) with an update

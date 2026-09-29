@@ -10,8 +10,8 @@ android {
         applicationId 'com.blockcraft.game'
         minSdk 21
         targetSdk 34
-        versionCode 19
-        versionName '8.1'
+        versionCode 20
+        versionName '8.2'
     }
 
     // Every build is signed with the same key, so a new version installs over the old one and keeps your worlds.

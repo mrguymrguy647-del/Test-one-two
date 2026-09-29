@@ -416,7 +416,7 @@
   <h3>Game mode &amp; survival</h3>
   <div class="btns">
     <button data-gmode="creative">Creative</button><button data-gmode="survival">Survival</button><button data-gmode="hardcore">Hardcore</button>
-    <button id="dbgHeal">Heal</button><button id="dbgHurt">Hurt</button><button id="dbgHungry">Hungry</button><button id="dbgBlocks">Give blocks</button><button data-cave="deep">Deep (hallucinate)</button><button data-cave="exit">Fake exit</button><button data-cave="figure">Figure</button><button data-cave="mirage">Mirage</button><button data-cave="leave">Leave fake world</button><button id="dbgTools">Give tools</button>
+    <button id="dbgHeal">Heal</button><button id="dbgHurt">Hurt</button><button id="dbgHungry">Hungry</button><button id="dbgBlocks">Give blocks</button><button data-cave="deep">Deep (hallucinate)</button><button data-cave="exit">Fake exit</button><button data-cave="figure">Figure</button><button data-cave="mirage">Mirage</button><button data-cave="leave">Leave fake world</button><button data-sea="angler">Angler</button><button data-sea="eyes">Deep eyes</button><button data-sea="drowned">Drowned</button><button data-sea="loot">Give cursed loot</button><button id="dbgTools">Give tools</button>
   </div>
 </div>
 
@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.1';
+const GAME_VERSION = '8.2';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -947,7 +947,13 @@ const World = (() => {
     const continent = fbm(n1, x / 260, z / 260, 3);        // broad land and sea
     const rolling = fbm(n2, x / 70, z / 70, 4);            // gentle hills
     const peaks = Math.max(0, fbm(n3, x / 120, z / 120, 3)); // occasional high ground
-    return Math.floor(clamp(SEA + 3 + continent * 14 + rolling * (6 + peaks * 10) + peaks * peaks * 42, 3, H - 10));
+    let v = Math.floor(clamp(SEA + 3 + continent * 14 + rolling * (6 + peaks * 10) + peaks * peaks * 42, 3, H - 10));
+    if (v < SEA - 2) v = Math.max(1, Math.floor(SEA - 2 - (SEA - 2 - v) * 3.2));      // the sea is deeper than it used to be
+    if (v < SEA - 8) {                                       // and out at sea the floor falls away into long trenches
+      const t = Math.max(0, 1 - Math.abs(n2(x / 90 + 50, z / 90 - 20)) * 3.2);
+      if (t > 0.25) v = Math.max(1, v - Math.floor((t - 0.25) / 0.75 * 10));
+    }
+    return v;
   }
   const treeAt = (x, z) => hash2(x, z, seed + 7) < 0.012 + Math.max(0, n4(x / 55, z / 55)) * 0.03;
 
@@ -1109,9 +1115,86 @@ const World = (() => {
   function switchRealm(newSeed, toFake, edits) {
     if (toFake && !fake) realEdits = editsByChunk;
     for (const c of chunks.values()) disposeMesh(c);
-    chunks.clear(); structCache.clear(); caveCache.clear();
+    chunks.clear(); structCache.clear(); caveCache.clear(); seaCache.clear();
     if (toFake) { editsByChunk = new Map(); importEditsInto(editsByChunk, edits); } else { editsByChunk = realEdits || new Map(); realEdits = null; }
     fake = toFake; setSeed(newSeed);
+  }
+
+  // ---- the sea's history: wrecks, a drowned temple, the bones of something huge. Each may hold a chest.
+  const seaCache = new Map();
+  function seaShape(kind, x0, z0, base, dir, id) {
+    const dims = kind === 'wreck' ? [15, 7] : kind === 'ruin' ? [23, 23] : [27, 11], L = dims[0], W = dims[1];
+    const sx = dir ? W : L, sz = dir ? L : W, tier = kind === 'wreck' ? 1 : kind === 'ruin' ? 2 : 3;
+    const chestAt = kind === 'wreck' ? [6, 3, 2] : kind === 'ruin' ? [11, 11, 3] : [3, 5, 1];     // along, across, up
+    const cu = chestAt[0], cv = chestAt[1];
+    const st = { kind, tier, x0, z0, x1: x0 + sx - 1, z1: z0 + sz - 1, base, top: base + 10, chest: {
+      x: dir ? x0 + cv : x0 + cu, y: base + chestAt[2], z: dir ? z0 + cu : z0 + cv, tier, id, kind } };
+    st.at = (wx, y, wz) => {
+      const u = dir ? wz - z0 : wx - x0, v = dir ? wx - x0 : wz - z0, dy = y - base, rh = HR(wx, y, wz, 950 + tier);
+      if (kind === 'wreck') {
+        const hw = u < 2 ? 0 : u < 4 ? 1 : u < 12 ? 2 : u < 14 ? 1 : 0, off = Math.abs(v - 3);
+        if (dy === 1) return off <= hw ? (rh < 0.12 ? -1 : PLANKS) : (rh < 0.05 ? LOG : -1);
+        if (dy >= 2 && dy <= 3) { if (off === hw || u === 0 || u === 14) return off <= hw && rh > 0.25 + 0.12 * dy ? PLANKS : -1; return -1; }
+        if (u === 7 && v === 3 && dy >= 1 && dy <= 4 + Math.floor(HR(x0, z0, 0, 960) * 5)) return LOG;              // the mast, snapped
+        if (u === 7 && dy === 5 && off <= 2 && HR(x0, z0, 0, 961) < 0.7) return rh < 0.6 ? LOG : -1;              // and its yard
+        return -1;
+      }
+      if (kind === 'ruin') {
+        const dx = u - 11, dz = v - 11, r = Math.hypot(dx, dz);
+        if (dy === 0) return r <= 10.5 ? (rh < 0.6 ? STONE : GRAVEL) : -1;
+        if (Math.abs(dx) <= 2 && Math.abs(dz) <= 2 && dy <= 1) return STONE;                                       // the altar
+        if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && dy === 2) return STONE;
+        if (dx === 0 && dz === 0 && dy === 3) return -1;
+        if (u % 6 === 2 && v % 6 === 2 && r > 3 && r < 10) { const ch = 4 + Math.floor(HR(u, v, 0, 962) * 5); return dy <= ch && (dy < ch - 1 || rh < 0.7) ? STONE : -1; }   // columns
+        if (r > 9.3 && r < 10.7 && dy <= 2) return rh < 0.42 ? -1 : STONE;                                        // a low wall, broken
+        return -1;
+      }
+      const a = v - 5;                                                                                             // the bones of something huge
+      if (u <= 5) {                                                                                                // the skull
+        if (v < 2 || v > 8 || dy < 1 || dy > 4) return -1;
+        if (u >= 1 && u <= 4 && v >= 3 && v <= 7 && dy <= 2) return -1;                                            // the mouth
+        if (u === 5 && dy === 3 && (v === 3 || v === 7)) return -1;                                                // the eyes
+        if (u === 5 && dy === 1 && v % 2 === 0) return WOOL;                                                       // teeth
+        return rh < 0.08 ? -1 : WOOL;
+      }
+      if (v === 5 && dy === 1) return rh < 0.1 ? -1 : WOOL;                                                        // the spine
+      if (u >= 7 && u <= 22 && u % 3 === 1 && dy >= 1) { const rr = Math.hypot(a, dy); return rr > 3.3 && rr < 4.6 && rh > 0.18 ? WOOL : -1; }   // the ribs
+      return -1;
+    };
+    return st;
+  }
+  function seaStructs(rx, rz) {
+    const key = rx + ',' + rz; let list = seaCache.get(key); if (list) return list;
+    list = [];
+    const r = mulberry32((hash2(rx, rz, seed + 940) * 4294967295) >>> 0);
+    for (let k = 0; k < 4; k++) {
+      const x = rx * RG + 24 + Math.floor(r() * (RG - 56)), z = rz * RG + 24 + Math.floor(r() * (RG - 56)), h = heightAt(x, z), depth = SEA - h, pickR = r(), dir = r() < 0.5 ? 1 : 0;
+      if (depth < 6 || list.some(o => Math.hypot(o.x0 - x, o.z0 - z) < 34)) continue;
+      const kind = depth >= 14 && pickR < 0.4 ? 'ruin' : depth >= 10 && pickR < 0.62 ? 'skeleton' : 'wreck';
+      const dims = kind === 'wreck' ? [15, 7] : kind === 'ruin' ? [23, 23] : [27, 11];
+      let base = 0;
+      for (let dx = 0; dx <= 1; dx++) for (let dz = 0; dz <= 1; dz++) base = Math.max(base, heightAt(x + dx * (dir ? dims[1] : dims[0]), z + dz * (dir ? dims[0] : dims[1])));
+      if (SEA - base < 3) continue;
+      list.push(seaShape(kind, x, z, base, dir, rx + ',' + rz + ':' + k));
+    }
+    seaCache.set(key, list); return list;
+  }
+  function applySea(data, x0, z0, hmap) {
+    for (const st of seaStructs(Math.floor(x0 / RG), Math.floor(z0 / RG))) {
+      if (st.x1 < x0 || st.x0 >= x0 + CS || st.z1 < z0 || st.z0 >= z0 + CS) continue;
+      for (let wz = Math.max(z0, st.z0); wz <= Math.min(z0 + CS - 1, st.z1); wz++) for (let wx = Math.max(x0, st.x0); wx <= Math.min(x0 + CS - 1, st.x1); wx++) {
+        const lx = wx - x0, lz = wz - z0, h = hmap[lz * CS + lx];
+        for (let y = h + 1; y <= st.base; y++) data[idx(lx, y, lz)] = y === st.base ? SAND : GRAVEL;
+        for (let y = st.base + 1; y <= Math.min(H - 1, Math.max(h, st.top)); y++) data[idx(lx, y, lz)] = y <= SEA ? WATER : AIR;
+        for (let y = st.base; y <= Math.min(H - 1, st.top); y++) { const v = st.at(wx, y, wz); if (v >= 0) data[idx(lx, y, lz)] = v; }
+      }
+    }
+  }
+  function chestsNear(px, pz, rad) {
+    const out = [], rx0 = Math.floor(px / RG), rz0 = Math.floor(pz / RG);
+    if (fake) return out;
+    for (let rz = rz0 - 1; rz <= rz0 + 1; rz++) for (let rx = rx0 - 1; rx <= rx0 + 1; rx++) for (const st of seaStructs(rx, rz)) if (Math.hypot(st.chest.x - px, st.chest.z - pz) < rad) out.push(st.chest);
+    return out;
   }
   function generate(cx, cz) {
     const data = new Uint8Array(CS * CS * H), x0 = cx * CS, z0 = cz * CS, hmap = new Int16Array(CS * CS);
@@ -1153,7 +1236,7 @@ const World = (() => {
       for (let y = h + 1; y <= top; y++) set(tx, y, tz, LOG, false);
       set(tx, h, tz, DIRT, false);
     }
-    if (fake) applyStructs(data, x0, z0, hmap);
+    if (fake) applyStructs(data, x0, z0, hmap); else applySea(data, x0, z0, hmap);
     const ed = editsByChunk.get(key(cx, cz));
     if (ed) for (const [i, b] of ed) data[i] = b;
     const c = { cx, cz, data, group: null, dirty: true, edited: !!ed };
@@ -1352,7 +1435,7 @@ const World = (() => {
     for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); target.set(k, m); }
   }
   const importEdits = list => importEditsInto(editsByChunk, list);
-  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits, exportFakeEdits, switchRealm, exitsNear, fakeSpawn, get fake() { return fake; } };
+  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits, exportFakeEdits, switchRealm, exitsNear, chestsNear, seaStructs, fakeSpawn, get fake() { return fake; } };
 })();
 
 /* =====================================================================
@@ -1368,7 +1451,7 @@ document.body.prepend(renderer.domElement);
 scene.add(World.group);
 
 // What the weather wants the sky to look like; written by WEATHER, read here every frame.
-const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, moonPhase: 4, falseDawn: 0, forbidden: 0, cave: 0, caveDeep: 0 };
+const SkyFX = { cloud: 0.22, cloudDark: 0, mist: 0, light: 1, fogNearMul: 1, fogFarMul: 1, flash: 0, moonLife: 1, moonPhase: 4, falseDawn: 0, forbidden: 0, cave: 0, caveDeep: 0, sea: 0, seaDeep: 0 };
 
 const Sky = (() => {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
@@ -1480,7 +1563,7 @@ const Sky = (() => {
   const NIGHT = { top: C(0x05070d), horizon: C(0x121826), bottom: C(0x07090e) };
   const tmp = { top: new THREE.Color(), horizon: new THREE.Color(), bottom: new THREE.Color() };
   const stormCol = new THREE.Color(), mistCol = new THREE.Color(), sickCol = C(0x9fae86), flashCol = C(0xdfe7ff), white = C(0xffffff);
-  const caveBlack = new THREE.Color(0.008, 0.01, 0.016);
+  const caveBlack = new THREE.Color(0.008, 0.01, 0.016), seaCol = new THREE.Color();
   let time = 0.06;            // 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight
   const state = { day: 1, ambient: 0.62, sunDir: new THREE.Vector3(), fogColor: new THREE.Color() };
 
@@ -1556,6 +1639,12 @@ const Sky = (() => {
       scene.fog.color.lerp(caveBlack, F.cave * 0.93);
       scene.fog.far = lerp(scene.fog.far, 40 - 20 * F.caveDeep, F.cave); scene.fog.near = lerp(scene.fog.near, 3, F.cave);
       hemi.intensity *= 1 - 0.86 * F.cave; sunLight.intensity *= 1 - F.cave;
+    }
+    if (F.sea > 0.001) {           // under the water: blue-green near the top, black at the bottom
+      const dk = F.seaDeep, dl = 0.35 + 0.65 * day;
+      seaCol.setRGB(lerp(0.09, 0.004, dk) * dl, lerp(0.3, 0.016, dk) * dl, lerp(0.42, 0.04, dk) * dl);
+      scene.fog.color.lerp(seaCol, F.sea); scene.fog.far = lerp(scene.fog.far, 46 - 32 * dk, F.sea); scene.fog.near = lerp(scene.fog.near, 0.5, F.sea);
+      hemi.intensity *= 1 - 0.65 * dk * F.sea; sunLight.intensity *= 1 - 0.7 * F.sea;
     }
     state.ambient = hemi.intensity;       // the animals are filled with this much light from inside
   }
@@ -1713,7 +1802,12 @@ const Player = (() => {
     p.vx += (wx - p.vx) * Math.min(1, dt * acc); p.vz += (wz - p.vz) * Math.min(1, dt * acc);
     const wasGround = p.onGround;
     if (p.fly) p.vy += (((jump ? 1 : 0) - (down ? 1 : 0)) * 9 - p.vy) * Math.min(1, dt * 10);
-    else if (p.inWater) { p.vy -= 12 * dt; if (jump) p.vy = Math.min(p.vy + 40 * dt, 3.4); p.vy = Math.max(p.vy, -4); }
+    else if (p.inWater) {
+      if (World.get(Math.floor(p.x), Math.floor(p.y + p.eye), Math.floor(p.z)) === World.B.WATER) {       // under the surface you swim the way you look
+        const tv = aimDir.y * 3.4 * clamp(f, -1, 1) - 0.5 + (jump ? 2.8 : 0) - (down ? 2.8 : 0);
+        p.vy += (tv - p.vy) * Math.min(1, dt * 4);
+      } else { p.vy -= 12 * dt; if (jump) p.vy = Math.min(p.vy + 40 * dt, 3.4); p.vy = Math.max(p.vy, -4); }
+    }
     else { p.vy -= 27 * dt; if (jump && wasGround) p.vy = 8.6; p.vy = Math.max(p.vy, -48); }
     p.onGround = false;
     const blocked = move('x', p.vx * dt) | move('z', p.vz * dt);
@@ -1781,6 +1875,7 @@ const Player = (() => {
       return;
     }
     if (!target) { mineStop(); return; }
+    if (target.chest) { mineStop(); return; }   // (a chest is not for breaking)
     if (target.bed) {                         // a bed comes up quickly, whatever you hold
       if (!mining || mining.bed !== target.bed) mining = { bed: target.bed, x: target.x, y: target.y, z: target.z, t: 0, dig: 0 };
       mining.t += dt; mining.dig -= dt;
@@ -1811,8 +1906,8 @@ const Player = (() => {
   }
   // ---- looking at blocks: voxel ray march (DDA)
   function raycast() {
-    const o = eyePos, d = aimDir, hit = blockRay(o, d), bh = Bed.any ? Bed.raycast(o, d, hit ? hit.t : CFG.REACH) : null;
-    return bh || hit;
+    const o = eyePos, d = aimDir, hit = blockRay(o, d), lim = hit ? hit.t : CFG.REACH, bh = Bed.any ? Bed.raycast(o, d, lim) : null, ch = Chest.any ? Chest.raycast(o, d, bh ? bh.t : lim) : null;
+    return ch || bh || hit;
   }
   function blockRay(o, d) {
     let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
@@ -1847,11 +1942,14 @@ const Player = (() => {
     if (kind === 'break') {           // creative: gone at once, nothing drops
       if (!target) return;
       if (target.bed) { pickUpBed(target.bed); return; }
+      if (target.chest) return;
       World.set(target.x, target.y, target.z, World.B.AIR); Events.emit('break', target); Inventory.blockBroken(target, false);
       return;
     }
     // use: a bed (sleep), a crafting table or a furnace opens, food gets eaten, a block gets placed
     if (target && target.bed) { Bed.use(target.bed); return; }
+    if (target && target.chest) { Chest.open(target.chest); return; }
+    const hj = Inventory.held(); if (hj && hj.id === 'journal') { Sea.read(hj.d); return; }
     if (target && (target.b === World.B.TABLE || target.b === World.B.FURNACE)) { Inventory.openBlock(target); return; }
     if (Inventory.eatHeld()) return;
     const held = Inventory.held(), def = held && Inventory.ITEM[held.id];
@@ -1912,7 +2010,7 @@ const Player = (() => {
   }
 
   return {
-    p, keys, touch, update, spawn, look, setHook(f) { hook = f; }, icon,
+    p, keys, touch, update, spawn, look, setHook(f) { const prev = hook; hook = prev ? (k, d) => prev(k, d) || f(k, d) : f; }, icon,
     unstuck() { for (let n = 0; n < 64 && hits(p.x, p.y, p.z); n++) p.y += 1; },
     // touch: hold to break, tap to place
     beginBreak: startBreak,
@@ -2771,7 +2869,7 @@ const GameAudio = (() => {
     if (!dt) return;
     const w = Weather.sound(), c = Weather.ctx, now = ac.currentTime, P = Player.p;
     // indoors the world is muffled, underground more so. When the house betrays you, it isn't anymore
-    const cut = w.betrayal === 'rainInside' ? 16000 : c.inMine ? 380 : c.inHouse ? 750 : c.roofed ? 3500 : 18000;
+    const cut = Sea.under > 0.5 ? 300 : w.betrayal === 'rainInside' ? 16000 : c.inMine ? 380 : c.inHouse ? 750 : c.roofed ? 3500 : 18000;
     muffle.frequency.setTargetAtTime(cut, now, 0.5);
     caveIn.gain.setTargetAtTime(c.inMine ? 0.5 : 0.04, now, 0.8);
     world.gain.setTargetAtTime(w.betrayal === 'rainInside' ? 1 : c.inMine ? 0.35 : c.inHouse ? 0.45 : c.roofed ? 0.8 : 1, now, 0.5);
@@ -2881,9 +2979,12 @@ const Inventory = (() => {
   item('mutton', 'Raw mutton', { food: 2, smelt: 'cooked_mutton' }); item('cooked_mutton', 'Cooked mutton', { food: 6 });
   item('chicken', 'Raw chicken', { food: 2, smelt: 'cooked_chicken' }); item('cooked_chicken', 'Cooked chicken', { food: 6 });
   item('milk', 'Bucket of milk', { food: 2, stack: 16 });
-  for (const [m, M, speed, dur] of [['wood', 'Wooden', 2, 60], ['stone', 'Stone', 4, 132]])
-    for (const [t, dmg] of [['pickaxe', 1], ['axe', 2], ['shovel', 1], ['sword', m === 'wood' ? 2 : 3]])
-      item(m + '_' + t, M + ' ' + t, { tool: t, mat: m, speed, dur, damage: dmg, stack: 1, fuel: m === 'wood' ? 10 : 0 });
+  item('fish', 'Raw fish', { food: 3, smelt: 'cooked_fish' }); item('cooked_fish', 'Cooked fish', { food: 7 });
+  item('gold_coin', 'Gold coin', { cursed: 0.12 }); item('gold_bar', 'Gold bar', { cursed: 0.5, stack: 16 }); item('pearl', 'Pearl', { stack: 16 });
+  item('idol', 'Drowned idol', { cursed: 1.5, stack: 4 }); item('journal', 'Waterlogged journal', { stack: 1 });
+  for (const [m, M, speed, dur] of [['wood', 'Wooden', 2, 60], ['stone', 'Stone', 4, 132], ['gold', 'Golden', 6, 40]])
+    for (const [t, dmg] of [['pickaxe', 1], ['axe', 2], ['shovel', 1], ['sword', m === 'wood' ? 2 : m === 'gold' ? 4 : 3]])
+      item(m + '_' + t, M + ' ' + t, { tool: t, mat: m, speed, dur, damage: dmg, stack: 1, fuel: m === 'wood' ? 10 : 0, cursed: m === 'gold' ? 0.3 : undefined });
 
   // how long a block takes to mine (hardness, the right tool, and whether you need it to get the block)
   const MINE = {
@@ -2893,15 +2994,16 @@ const Inventory = (() => {
   };
 
   // ================= recipes (P planks, S stone, s stick, L log) =================
-  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log', w: 'wool' };
+  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log', w: 'wool', G: 'gold_bar', C: 'gold_coin' };
   const RECIPES = [
     { out: ['planks', 4], shape: ['L'] },
     { out: ['stick', 4], shape: ['P', 'P'] },
     { out: ['table', 1], shape: ['PP', 'PP'] },
     { out: ['furnace', 1], shape: ['SSS', 'S S', 'SSS'] },
     { out: ['bed', 1], shape: ['www', 'PPP'] },
+    { out: ['gold_bar', 1], shape: ['CC', 'CC'] },
   ];
-  for (const [m, c] of [['wood', 'P'], ['stone', 'S']]) RECIPES.push(
+  for (const [m, c] of [['wood', 'P'], ['stone', 'S'], ['gold', 'G']]) RECIPES.push(
     { out: [m + '_pickaxe', 1], shape: [c + c + c, ' s ', ' s '] },
     { out: [m + '_axe', 1], shape: [c + c, c + 's', ' s'] },
     { out: [m + '_shovel', 1], shape: [c, 's', 's'] },
@@ -2962,6 +3064,13 @@ const Inventory = (() => {
   ART.cooked_pork = [['#5b3522', '#a8704a', '#e0bf98'], ART0.pork[3]];
   ART.cooked_mutton = [['#3a1c10', '#7c4428', '#e9e2d4'], ART0.mutton[3]];
   ART.cooked_chicken = [['#5e3a20', '#b98050', '#fff3e6'], ART0.chicken[3]];
+  ART.gold_coin = [['#7a5a10', '#e8b830', '#fff0a0'], ['................', '................', '.....111111.....', '....12222221....', '...1223333221...', '...1233223321...', '...1232222321...', '...1232222321...', '...1233223321...', '...1223333221...', '....12222221....', '.....111111.....']];
+  ART.gold_bar = [['#6b4c0c', '#e0a828', '#fff2b0'], ['................', '................', '................', '....111111111...', '...13333333321..', '..1322222222221.', '..1222222222221.', '..1222222222221.', '...11111111111..']];
+  ART.pearl = [['#9aa0b4', '#f2eef6', '#ffffff'], ['................', '................', '......1111......', '....11333311....', '...1333322221...', '..133322222221..', '..132222222221..', '..122222222221..', '..122222222211..', '...1222222211...', '....11222111....', '......111.......']];
+  ART.idol = [['#10261f', '#3f7a62', '#f0d050'], ['................', '.....11111......', '....1222221.....', '...123223221....', '...133223331....', '...122222221....', '....1222221.....', '...122222221....', '..12222222221...', '..12222222221...', '..12222222221...', '..11111111111...']];
+  ART.fish = [['#2f4f6f', '#7fb0d0', '#e8f2f8'], ['................', '................', '................', '.......1111.....', '.....112222211..', '...1122333222211', '..12223322222221', '.1222222222221.1', '..122222222211.1', '...1122222211.11', '.....111111111..']];
+  ART.cooked_fish = [['#5a3a1e', '#b57a3c', '#f0c88a'], ['................', '................', '................', '.......1111.....', '.....112222211..', '...1122333222211', '..12223322222221', '.1222222222221.1', '..122222222211.1', '...1122222211.11', '.....111111111..']];
+  ART.journal = [['#3a2414', '#7a5232', '#d8c9a0'], ['................', '....1111111111..', '...122222222221.', '...123333333321.', '...123222222221.', '...123333333321.', '...123222222221.', '...123333333321.', '...123222222221.', '...122222222221.', '...11111111111..']];
   const mk16 = () => { const c = document.createElement('canvas'); c.width = c.height = 16; return c; };
   function drawArt(cv, colors, rows, oy) {
     const x = cv.getContext('2d');
@@ -2970,7 +3079,7 @@ const Inventory = (() => {
   }
   function toolArt(kind, mat) {   // tools and sticks, plotted pixel by pixel
     const cv = mk16(), x = cv.getContext('2d');
-    const H = mat === 'stone' ? ['#a4a7ae', '#5c6068'] : ['#b48c5a', '#6e5433'], S = ['#9c7648', '#5c4126'];
+    const H = mat === 'stone' ? ['#a4a7ae', '#5c6068'] : mat === 'gold' ? ['#f2cf58', '#a67f22'] : ['#b48c5a', '#6e5433'], S = ['#9c7648', '#5c4126'];
     const dot = (i, j, c) => { if (i >= 0 && j >= 0 && i < 16 && j < 16) { x.fillStyle = c; x.fillRect(i, j, 1, 1); } };
     const line = (x0, y0, x1, y1, c, c2) => {
       const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -3030,6 +3139,7 @@ const Inventory = (() => {
     changed();
     return n;
   }
+  function curse() { let sum = 0; for (const x of slots) if (x && ITEM[x.id].cursed) sum += ITEM[x.id].cursed * x.n; if (cursor && ITEM[cursor.id].cursed) sum += ITEM[cursor.id].cursed * cursor.n; return Math.min(6, sum); }
   const count = id => slots.reduce((a, s) => a + (s && s.id === id ? s.n : 0), 0);
   function takeFromSlots(id, n) {   // for filling the crafting grid from a recipe
     for (let i = 35; i >= 0 && n > 0; i--) { const s = slots[i]; if (s && s.id === id) { const k = Math.min(n, s.n); s.n -= k; n -= k; if (!s.n) slots[i] = null; } }
@@ -3286,7 +3396,7 @@ const Inventory = (() => {
     if (!st || !ITEM[st.id]) return;
     const d = ITEM[st.id], c = document.createElement('canvas'); c.width = c.height = 16; c.getContext('2d').drawImage(iconOf(st.id).canvas, 0, 0, 16, 16);
     let extra = '';
-    if (d.dur) extra = ` · ${Math.max(0, d.dur - (st.d || 0))}/${d.dur} uses`; else if (d.food !== undefined) extra = ` · hunger +${d.food / 2}`; else if (d.fuel) extra = ' · fuel';
+    if (d.dur) extra = ` · ${Math.max(0, d.dur - (st.d || 0))}/${d.dur} uses`; else if (d.food !== undefined) extra = ` · hunger +${d.food / 2}`; else if (d.cursed) extra = ' · cursed'; else if (d.fuel) extra = ' · fuel';
     heldEl.append(c, document.createTextNode(` ${st.n > 1 ? st.n + ' ' : ''}${d.name}${extra}`));
   }
   function setHover(el) {
@@ -3461,6 +3571,9 @@ const Inventory = (() => {
     for (const k in icons) icons[k].mat.color.setScalar(light);
     for (let i = drops.length - 1; i >= 0; i--) {
       const d = drops[i]; d.t += dt; d.retry -= dt;
+      if (ITEM[d.id].cursed && World.get(Math.floor(d.x), Math.floor(d.y), Math.floor(d.z)) === B.WATER) {     // give it back to the sea
+        scene.remove(d.sprite); drops.splice(i, 1); toast('The sea takes it back'); Events.emit('curseReleased', {}); continue;
+      }
       const dx = P.x - d.x, dy = P.y + 0.9 - d.y, dz = P.z - d.z, dist = Math.hypot(dx, dy, dz);
       if (d.t > 0.6 && dist < 2.6 && !Vitals.dead && d.retry <= 0) {         // fly to you
         const k = Math.min(1, dt * 12); d.x += dx * k; d.y += dy * k; d.z += dz * k;
@@ -3517,7 +3630,7 @@ const Inventory = (() => {
   }
   return {
     ITEM, toast, give, add, drop, dropAll, count, held, select, useHeld, wearHeld, eatHeld, attackDamage, breakTime, blockBroken, openBlock,
-    toggleBag, update, onMode, reset, exportState, importState, iconOf, exportFurnaces: () => furnaces, importFurnaces, refreshHotbar,
+    toggleBag, update, onMode, reset, exportState, importState, iconOf, curse, exportFurnaces: () => furnaces, importFurnaces, refreshHotbar,
     get isOpen() { return isOpen; }, set relock(f) { relock = f; }, get sel() { return sel; }, get cursor() { return cursor; },
     dropCount: () => drops.length, match, RECIPES,
     giveAll() { give('bed', 1);  for (const id of ['beef', 'pork', 'mutton', 'chicken', 'milk', 'leather', 'feather', 'egg', 'stick']) give(id, 4); },
@@ -4756,7 +4869,7 @@ const Vitals = (() => {
     const head = World.get(Math.floor(P.x), Math.floor(P.y + P.eye), Math.floor(P.z)) === B.WATER;
     if (head) {
       airT += dt;
-      if (air > 0) { if (airT >= 1.5) { airT = 0; air = Math.max(0, Math.ceil(air) - 1); } }
+      if (air > 0) { if (airT >= 1.5 * (Inventory.count('pearl') ? 2 : 1)) { airT = 0; air = Math.max(0, Math.ceil(air) - 1); } }
       else if (airT >= 1) { airT = 0; damage(2, 'drown'); }
     } else { airT = 0; air = Math.min(10, air + dt * 4); }
     // hunger: everything you do makes you hungrier (running most of all)
@@ -4791,7 +4904,7 @@ const Vitals = (() => {
     air = clamp(typeof s.air === 'number' ? s.air : 10, 0, 10); ex = s.ex || 0; poison = s.poison || 0;
     drawn = ''; draw();
   }
-  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.' };
+  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.', sea: 'Something in the deep took you.' };
   return {
     update, damage, feed, reset, respawn: reset, onSleep, exportState, importState, draw,
     hungry: () => food < 20,
@@ -5334,7 +5447,7 @@ const Fx = (() => {
     }
     mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
-  return { update, count: () => ps.length, burst: breakFx };
+  return { update, count: () => ps.length, burst: breakFx, emit };
 })();
 
 /* =====================================================================
@@ -5395,6 +5508,7 @@ const Painting = (() => {
    ===================================================================== */
 const Cave = (() => {
   const B = World.B, rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+  let curse = 0;
   const st = { k: 0, dark: 0, hT: 14, plugT: 30, plugs: 0, pulse: null, distort: 0 };
   const consumed = new Set();
   // ---- a doorway of light at the end of a tunnel (a real one, or a trick of the mind)
@@ -5501,7 +5615,7 @@ const Cave = (() => {
       return;
     }
     const h = World.heightAt(Math.floor(P.x), Math.floor(P.z)), depth = ctx.inMine ? Math.max(0, h - P.y) : 0;
-    const tk = clamp((depth - 5) / 30, 0, 1), td = ctx.inMine ? clamp((depth - 2) / 5, 0, 1) : 0;
+    const tk = Math.max(clamp((depth - 5) / 30, 0, 1), curse / 6 * 0.85), td = ctx.inMine ? clamp((depth - 2) / 5, 0, 1) : 0;
     st.k += (tk - st.k) * Math.min(1, dt * (tk > st.k ? 0.25 : 0.6));
     st.dark += (td - st.dark) * Math.min(1, dt * 1.5);
     SkyFX.cave = st.dark; SkyFX.caveDeep = st.k;
@@ -5540,7 +5654,7 @@ const Cave = (() => {
       const flick = 0.85 + 0.15 * Math.sin(L.t * 9 + L.x);
       L.door.material.opacity = L.fade * flick; L.glow.material.opacity = L.fade * 0.7 * flick;
       if (L.kind === 'mirage') {
-        if (dist < 5 || L.t > L.life || !ctx.inMine) { dropLight(L); continue; }     // it is not there when you come close
+        if (dist < 5 || L.t > L.life || (!ctx.inMine && curse < 0.5)) { dropLight(L); continue; }     // it is not there when you come close
       } else {
         if (dist > 110 || consumed.has(L.ex.id)) { dropLight(L); continue; }
         if (dist < 1.3 && Math.abs(P.y - L.y) < 2.5 && !Realm.busy) Realm.enter(L.ex);
@@ -5549,7 +5663,7 @@ const Cave = (() => {
   }
   const light = { t: 0 };
   return {
-    update, consumed, post: () => st.distort,
+    update, consumed, post: () => st.distort, set curse(v) { curse = v; },
     get k() { return st.k; }, get slow() { return survivalMode() ? 1 - 0.28 * st.k : 1; },
     // debug
     hallucinate, force(kind) { if (H[kind]) H[kind](); }, setDepth(k) { st.k = k; },
@@ -5673,6 +5787,334 @@ const Realm = (() => {
 })();
 
 /* =====================================================================
+   CHEST — treasure in the wrecks, the drowned temple and the bones of the deep. Every piece of gold is cursed.
+   ===================================================================== */
+const Chest = (() => {
+  const list = new Map(), opened = new Set();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x4a3322 }), gold = new THREE.MeshLambertMaterial({ color: 0xc9a23a, emissive: 0x4a3a10 });
+  World.patchFog(wood); World.patchFog(gold);
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,214,110,.85)'); g.addColorStop(1, 'rgba(255,190,60,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  function model() {
+    const g = new THREE.Group(), box = (w, h, d, m, x, y, z, p) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); (p || g).add(o); return o; };
+    box(0.9, 0.5, 0.6, wood, 0, 0.25, 0); box(0.94, 0.1, 0.64, gold, 0, 0.12, 0); box(0.94, 0.1, 0.64, gold, 0, 0.42, 0);
+    const lid = new THREE.Group(); lid.position.set(0, 0.5, -0.3); g.add(lid);
+    box(0.9, 0.22, 0.6, wood, 0, 0.11, 0.3, lid); box(0.94, 0.06, 0.64, gold, 0, 0.2, 0.3, lid); box(0.12, 0.16, 0.05, gold, 0, 0.0, 0.62, lid);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    glow.scale.set(2.2, 2.2, 1); glow.position.y = 0.5; g.add(glow);
+    return { g, lid, glow };
+  }
+  const RNG = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0; return mulberry32(h); };
+  function loot(c) {
+    const r = RNG(c.id), t = c.tier, ri = (a, b) => a + Math.floor(r() * (b - a + 1)), out = [];
+    out.push(['gold_coin', t === 1 ? ri(5, 12) : t === 2 ? ri(14, 30) : ri(30, 50)]);
+    if (t > 1 || r() < 0.3) out.push(['gold_bar', t === 1 ? 1 : t === 2 ? ri(1, 3) : ri(3, 5)]);
+    if (t > 1 || r() < 0.4) out.push(['pearl', t === 1 ? 1 : t === 2 ? ri(1, 2) : ri(2, 4)]);
+    if (t > 1) out.push(['idol', t === 2 ? 1 : ri(1, 2)]);
+    if (t > 1 || r() < 0.5) out.push(['journal', 1, ri(0, 9)]);
+    return out;
+  }
+  function open(c) {
+    if (opened.has(c.id)) return;
+    opened.add(c.id);
+    const e = list.get(c.id); if (e) e.open = 1e-3;
+    GameAudio.animal('dig_choppy', c.x + 0.5, c.z + 0.5, 0.9, 0.7); GameAudio.animal('thunder2', c.x + 0.5, c.z + 0.5, 0.35, 0.5);
+    for (const [id, n, d] of loot(c)) { if (d !== undefined) { const left = Inventory.add(id, n, d); if (left) Inventory.drop(id, c.x + 0.5, c.y + 1, c.z + 0.5, left, d); Inventory.toast('+ ' + Inventory.ITEM[id].name); } else Inventory.give(id, n); }
+    setTimeout(() => Events.emit('treasure', { tier: c.tier, kind: c.kind, x: c.x, y: c.y, z: c.z }), 1200);
+  }
+  const boxHit = (o, d, maxT, x0, x1, y0, y1, z0, z1) => {
+    let t0 = 0, t1 = maxT;
+    for (const [oo, dd, lo, hi] of [[o.x, d.x, x0, x1], [o.y, d.y, y0, y1], [o.z, d.z, z0, z1]]) {
+      if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) return -1; continue; }
+      let a = (lo - oo) / dd, b = (hi - oo) / dd; if (a > b) { const s = a; a = b; b = s; }
+      t0 = Math.max(t0, a); t1 = Math.min(t1, b); if (t0 > t1) return -1;
+    }
+    return t0;
+  };
+  function raycast(o, d, maxT) {
+    let best = null, bt = maxT;
+    for (const [id, e] of list) { const c = e.c; if (opened.has(id)) continue; const t = boxHit(o, d, bt, c.x, c.x + 1, c.y, c.y + 0.75, c.z, c.z + 1); if (t >= 0 && t < bt) { bt = t; best = c; } }
+    return best ? { chest: best, t: bt, x: best.x, y: best.y, z: best.z, px: best.x, py: best.y + 1, pz: best.z, b: -1 } : null;
+  }
+  let scanT = 0;
+  function update(dt) {
+    const P = Player.p;
+    scanT -= dt;
+    if (scanT <= 0) {
+      scanT = 1;
+      for (const c of World.chestsNear(P.x, P.z, 70)) {
+        if (list.has(c.id) || !World.chunks.has(Math.floor(c.x / CFG.CHUNK) + ',' + Math.floor(c.z / CFG.CHUNK))) continue;
+        const m = model(); m.g.position.set(c.x + 0.5, c.y, c.z + 0.5); m.g.rotation.y = (RNG(c.id)() - 0.5) * 1.5;
+        if (opened.has(c.id)) { m.lid.rotation.x = -1.2; m.glow.visible = false; }
+        scene.add(m.g); list.set(c.id, { c, g: m.g, lid: m.lid, glow: m.glow, open: opened.has(c.id) ? 1 : 0 });
+      }
+      for (const [id, e] of list) if (Math.hypot(e.c.x - P.x, e.c.z - P.z) > 100) { scene.remove(e.g); list.delete(id); }
+    }
+    for (const e of list.values()) {
+      if (e.open > 0 && e.open < 1) { e.open = Math.min(1, e.open + dt * 1.6); e.lid.rotation.x = -1.2 * e.open; }
+      e.glow.material.opacity = opened.has(e.c.id) ? Math.max(0, e.glow.material.opacity - dt) : 0.6 + 0.3 * Math.sin(performance.now() / 380 + e.c.x);
+    }
+  }
+  function light(k) { wood.emissive.setRGB(0.29 * k, 0.2 * k, 0.13 * k); }
+  return { update, light, raycast, open, get any() { return list.size > 0; }, opened, nearest() { let b = null, bd = 1e9; for (const e of list.values()) { const d = Math.hypot(e.c.x - Player.p.x, e.c.z - Player.p.z); if (!opened.has(e.c.id) && d < bd) { bd = d; b = e.c; } } return b; } };
+})();
+
+/* =====================================================================
+   SEA — the water gets dark and heavy, fish and glowing things live in it, and the deep is not empty
+   ===================================================================== */
+const Sea = (() => {
+  const B = World.B, SEAY = CFG.SEA, rnd = (a, b) => a + Math.random() * (b - a);
+  const st = { under: 0, dk: 0, depth: 0, bubT: 0, fishT: 0, jellyT: 0, angT: 40, levT: 90, whaleT: 50, drownT: 60, curse: 0, toldCurse: false };
+  const lore = new Set();
+  const depthEl = document.createElement('div');
+  depthEl.style.cssText = 'position:fixed;left:50%;top:calc(34px + env(safe-area-inset-top,0px));transform:translateX(-50%);font:13px var(--mono);color:#bfe8f5;text-shadow:0 1px 3px #000;letter-spacing:.08em;opacity:0;pointer-events:none;z-index:3;transition:opacity .4s';
+  document.body.appendChild(depthEl);
+  const lamp = new THREE.PointLight(0x8fdcf0, 0, 24, 1.3); scene.add(lamp);
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const eye = () => Player.eyePos;
+  const inWater = (x, y, z) => World.get(Math.floor(x), Math.floor(y), Math.floor(z)) === B.WATER;
+  const seen = (x, y, z, cone) => { const e = eye(), dx = x - e.x, dy = y - e.y, dz = z - e.z, d = Math.hypot(dx, dy, dz) || 1; return (Player.aimDir.x * dx + Player.aimDir.y * dy + Player.aimDir.z * dz) / d > cone; };
+
+  // ---- fish
+  const fish = [], FC = [0xf39a3a, 0xb9ccd8, 0x4d8fd9, 0xe6d766, 0xd9605a];
+  function makeFish(col, big) {
+    const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: col });
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, 0.5), m), t = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.16), m), f = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.2), m);
+    t.position.z = -0.32; f.position.set(0, 0.16, -0.02); g.add(b, t, f); g.scale.setScalar(big); scene.add(g); return { g, tail: t };
+  }
+  function spawnSchool() {
+    const P = Player.p;
+    for (let tries = 0; tries < 8; tries++) {
+      const a = Math.random() * 6.283, d = rnd(9, 24), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d;
+      if (!World.chunks.has(Math.floor(x / 16) + ',' + Math.floor(z / 16))) continue;
+      const h = World.heightAt(Math.floor(x), Math.floor(z)); if (SEAY - h < 3) continue;
+      const y = rnd(h + 1.5, SEAY - 0.6), col = FC[Math.floor(Math.random() * FC.length)], n = 3 + Math.floor(Math.random() * 4), big = rnd(0.8, 1.5);
+      if (!inWater(x, y, z)) continue;
+      for (let i = 0; i < n; i++) { const f = makeFish(col, big * rnd(0.85, 1.1)); Object.assign(f, { x: x + rnd(-1.5, 1.5), y: y + rnd(-0.8, 0.8), z: z + rnd(-1.5, 1.5), a: rnd(0, 6.28), sp: rnd(0.7, 1.2), t: rnd(0, 6), r: 0.4 * big }); fish.push(f); f.g.position.set(f.x, f.y, f.z); }
+      return;
+    }
+  }
+  function killFish(f) { scene.remove(f.g); const i = fish.indexOf(f); if (i >= 0) fish.splice(i, 1); }
+  function updateFish(dt) {
+    const P = Player.p;
+    for (const f of fish.slice()) {
+      f.t += dt;
+      const dxp = f.x - P.x, dzp = f.z - P.z, dp = Math.hypot(dxp, dzp, f.y - P.y - 1);
+      if (dp > 46) { killFish(f); continue; }
+      let sp = f.sp, want = f.a + Math.sin(f.t * 0.7 + f.x) * 0.5 * dt * 3;
+      if (dp < 5) { want = Math.atan2(dxp, dzp); sp = f.sp * 2.6; }                       // they dart away from you
+      f.a += Math.atan2(Math.sin(want - f.a), Math.cos(want - f.a)) * Math.min(1, dt * 3);
+      const nx = f.x + Math.sin(f.a) * sp * dt, nz = f.z + Math.cos(f.a) * sp * dt;
+      if (inWater(nx, f.y, nz) && inWater(nx, f.y - 0.6, nz) && !World.solid(Math.floor(nx), Math.floor(f.y), Math.floor(nz))) { f.x = nx; f.z = nz; } else f.a += 2.2;
+      const h = World.heightAt(Math.floor(f.x), Math.floor(f.z));
+      f.y = clamp(f.y + Math.sin(f.t * 0.9) * 0.15 * dt, h + 1, SEAY - 0.4);
+      f.g.position.set(f.x, f.y, f.z); f.g.rotation.y = f.a; f.tail.rotation.y = Math.sin(f.t * 11) * 0.6;
+    }
+  }
+  function aimedFish(maxD) {
+    const e = eye(), d = Player.aimDir; let best = null, bd = maxD;
+    for (const f of fish) { const dx = f.x - e.x, dy = f.y - e.y, dz = f.z - e.z, t = dx * d.x + dy * d.y + dz * d.z; if (t < 0 || t > bd) continue; const px = dx - d.x * t, py = dy - d.y * t, pz = dz - d.z * t; if (px * px + py * py + pz * pz < (f.r + 0.25) * (f.r + 0.25)) { bd = t; best = f; } }
+    return best;
+  }
+  Player.setHook((kind, blockDist) => {                       // (the animals hook first; this looks for fish)
+    if (!fish.length) return false;
+    const f = aimedFish(Math.min(CFG.REACH, blockDist + 0.3)); if (!f) return false;
+    if (kind === 'aim') return true;
+    if (kind === 'break') { killFish(f); Inventory.give('fish', 1); GameAudio.hit(); Fx.emit(f.x, f.y, f.z, { colors: [[0.9, 0.96, 1]], n: 6, size: [0.05, 0.09], speed: [0.3, 1], up: 0.6, grav: -1, drag: 1, life: [0.6, 1.1] }); return true; }
+    return false;
+  });
+
+  // ---- jellyfish: soft lights in the deep
+  const jelly = [];
+  function spawnJelly() {
+    const P = Player.p;
+    for (let tries = 0; tries < 8; tries++) {
+      const a = Math.random() * 6.283, d = rnd(8, 24), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d;
+      if (!World.chunks.has(Math.floor(x / 16) + ',' + Math.floor(z / 16))) continue;
+      const h = World.heightAt(Math.floor(x), Math.floor(z)); if (SEAY - h < 6) continue;
+      const y = rnd(h + 2, SEAY - 3); if (!inWater(x, y, z)) continue;
+      const col = [0x66e0ff, 0xff7ad9, 0xa88cff, 0x7dffb0][Math.floor(Math.random() * 4)];
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+      scene.add(s); jelly.push({ s, x, y, z, t: rnd(0, 6), sz: rnd(1.1, 2) }); return;
+    }
+  }
+  function updateJelly(dt) {
+    const P = Player.p;
+    for (const j of jelly.slice()) {
+      j.t += dt; j.y += Math.sin(j.t * 0.6) * 0.25 * dt; j.x += Math.sin(j.t * 0.23 + j.z) * 0.2 * dt; j.z += Math.cos(j.t * 0.19 + j.x) * 0.2 * dt;
+      const d = Math.hypot(j.x - P.x, j.z - P.z);
+      if (d > 44 || st.dk < 0.15) { scene.remove(j.s); jelly.splice(jelly.indexOf(j), 1); continue; }
+      const k = 0.7 + 0.3 * Math.sin(j.t * 2.4); j.s.position.set(j.x, j.y, j.z); j.s.scale.setScalar(j.sz * (0.85 + 0.25 * k)); j.s.material.opacity = 0.75 * k * st.under;
+    }
+  }
+
+  // ---- the ones who are drowned, and the thing that bites
+  function figureModel(dark) {
+    const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: dark });
+    const box = (w, h, d, x, y, z, mat) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || m); o.position.set(x, y, z); g.add(o); };
+    box(0.25, 0.8, 0.28, -0.15, 0.4, 0); box(0.25, 0.8, 0.28, 0.15, 0.4, 0); box(0.55, 0.8, 0.3, 0, 1.2, 0); box(0.2, 0.9, 0.22, -0.4, 1.05, 0); box(0.2, 0.9, 0.22, 0.4, 1.05, 0); box(0.5, 0.5, 0.5, 0, 1.85, 0);
+    const eye2 = new THREE.MeshBasicMaterial({ color: 0xcffff4, fog: false }); box(0.1, 0.05, 0.02, -0.12, 1.9, 0.26, eye2); box(0.1, 0.05, 0.02, 0.12, 1.9, 0.26, eye2);
+    return g;
+  }
+  let drowned = null, angler = null, eyes = null;
+  function spawnDrowned() {
+    if (drowned) return;
+    const P = Player.p;
+    for (let t = 0; t < 12; t++) {
+      const a = Math.random() * 6.283, d = rnd(11, 19), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d;
+      if (!World.chunks.has(Math.floor(x / 16) + ',' + Math.floor(z / 16))) continue;
+      const h = World.heightAt(Math.floor(x), Math.floor(z)); if (SEAY - h < 6) continue;
+      drowned = { g: figureModel(0x06090b), x, y: h + 1, z, t: 0, look: 0 }; drowned.g.position.set(x, h + 1, z); scene.add(drowned.g); Events.emit('hallucination', { kind: 'drowned' }); return;
+    }
+  }
+  function makeAngler() {
+    const g = new THREE.Group(), m = new THREE.MeshBasicMaterial({ color: 0x0a0d10 }), tooth = new THREE.MeshBasicMaterial({ color: 0xe8ecd8 });
+    const box = (w, h, d, x, y, z, mat) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || m); o.position.set(x, y, z); g.add(o); return o; };
+    box(1.5, 1.1, 1.9, 0, 0, 0); box(1.3, 0.35, 1.0, 0, -0.5, 0.9); box(1.1, 0.2, 0.9, 0, 0.5, 0.85); box(0.5, 0.7, 0.9, 0, 0.1, -1.3); box(1.7, 0.1, 0.5, 0, 0.1, -1.7);
+    for (let i = -2; i <= 2; i++) { box(0.1, 0.32, 0.08, i * 0.24, -0.3, 1.36, tooth); box(0.1, 0.3, 0.08, i * 0.24, 0.3, 1.32, tooth); }
+    box(0.07, 0.9, 0.07, 0, 0.9, 0.7).rotation.x = -0.6;
+    const lure = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe37a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    lure.scale.set(2.4, 2.4, 1); lure.position.set(0, 1.35, 1.35); g.add(lure);
+    const e = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }); box(0.16, 0.16, 0.05, -0.5, 0.25, 0.96, e); box(0.16, 0.16, 0.05, 0.5, 0.25, 0.96, e);
+    return { g, lure };
+  }
+  function spawnAngler(near) {
+    if (angler) return;
+    const P = Player.p, e = eye();
+    for (let t = 0; t < 14; t++) {
+      const a = Math.random() * 6.283, d = near ? rnd(10, 15) : rnd(20, 28), x = P.x + Math.cos(a) * d, z = P.z + Math.sin(a) * d, y = clamp(e.y - rnd(2, 6), 2, SEAY - 2);
+      if (!inWater(x, y, z) || !World.chunks.has(Math.floor(x / 16) + ',' + Math.floor(z / 16))) continue;
+      const m = makeAngler(); m.g.position.set(x, y, z); scene.add(m.g);
+      angler = { g: m.g, lure: m.lure, x, y, z, state: 'lurk', bites: 0, cool: 0, t: 0, away: 0 };
+      GameAudio.animal('thunder3', x, z, 0.5, 0.42); Events.emit('hallucination', { kind: 'angler' }); return;
+    }
+  }
+  function dropAngler() { if (angler) { scene.remove(angler.g); angler = null; } }
+  function updateAngler(dt) {
+    const A = angler; if (!A) return;
+    const P = Player.p, e = eye();
+    A.t += dt; A.cool -= dt;
+    const dx = e.x - A.x, dy = e.y - A.y - 0.3, dz = e.z - A.z, dist = Math.hypot(dx, dy, dz) || 1;
+    if (!st.under && dist > 3) A.away += dt; else A.away = 0;
+    if (A.away > 6 || dist > 60) { dropAngler(); return; }
+    let sp = 0;
+    if (A.state === 'lurk') { if (!seen(A.x, A.y, A.z, 0.6)) sp = 1.4 + st.curse * 0.25; if (dist < 12 + st.curse) A.state = 'hunt'; }
+    else if (A.state === 'hunt') sp = 5.2 + st.curse * 0.3;
+    else if (A.state === 'flee') { sp = -4; if (dist > 40) { dropAngler(); return; } }
+    if (sp) {
+      const nx = A.x + dx / dist * sp * dt, ny = A.y + dy / dist * sp * dt, nz = A.z + dz / dist * sp * dt;
+      if (inWater(nx, ny, nz)) { A.x = nx; A.y = ny; A.z = nz; }
+    }
+    A.g.position.set(A.x, A.y + Math.sin(A.t * 2) * 0.1, A.z); A.g.rotation.y = Math.atan2(dx, dz); A.g.rotation.x = -Math.atan2(dy, Math.hypot(dx, dz)) * 0.6;
+    A.lure.material.opacity = 0.7 + 0.3 * Math.sin(A.t * 7);
+    if (dist < 1.9 && A.cool <= 0 && A.state === 'hunt') {                                    // it bites, and shakes you
+      A.cool = 1.5; A.bites++; Vitals.damage(3, 'sea');
+      const l = Math.hypot(P.x - A.x, P.z - A.z) || 1; P.vx += (P.x - A.x) / l * 6; P.vz += (P.z - A.z) / l * 6; P.vy += 3;
+      Cave.force('distort');
+      if (A.bites >= 3) A.state = 'flee';
+    }
+  }
+  // the eyes of something too large to see
+  function eyesOn() {
+    if (eyes) return;
+    const P = Player.p, a = Math.random() * 6.283, d = 70, cx = P.x + Math.cos(a) * d, cz = P.z + Math.sin(a) * d, cy = Math.max(2, eye().y - 12);
+    const mk = () => new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xe6fff2, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    const l = mk(), r = mk(); for (const s of [l, r]) { s.scale.set(9, 9, 1); scene.add(s); }
+    eyes = { l, r, cx, cy, cz, a, t: 0 };
+    GameAudio.animal('thunder1', cx, cz, 0.9, 0.3); Events.emit('hallucination', { kind: 'leviathan' });
+  }
+  function updateEyes(dt) {
+    if (!eyes) return; const E = eyes; E.t += dt;
+    const open = Math.sin(clamp(E.t / 12, 0, 1) * Math.PI), tx = Math.cos(E.a + Math.PI / 2) * 9, tz = Math.sin(E.a + Math.PI / 2) * 9, drift = E.t * 0.5;
+    E.l.position.set(E.cx + tx + Math.cos(E.a) * drift, E.cy, E.cz + tz + Math.sin(E.a) * drift); E.r.position.set(E.cx - tx + Math.cos(E.a) * drift, E.cy, E.cz - tz + Math.sin(E.a) * drift);
+    for (const s of [E.l, E.r]) s.material.opacity = 0.85 * open * (Math.random() < 0.02 ? 0.3 : 1);
+    if (E.t > 12 || !st.under) { scene.remove(E.l); scene.remove(E.r); eyes = null; }
+  }
+
+  // ---- the treasure wakes something
+  Events.on('treasure', t => {
+    Inventory.toast('The sea stirs.');
+    Cave.force('distort');
+    setTimeout(() => { if (t.tier > 1 || Math.random() < 0.6) { st.angT = 0; spawnAngler(true); } else eyesOn(); }, 2500);
+  });
+  // ---- reading
+  const journalEl = document.createElement('div');
+  journalEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,86vw);padding:18px 20px;background:#d8c9a0;color:#2c1c0c;font:italic 17px/1.5 var(--font);border-radius:4px;box-shadow:0 10px 40px #000a;z-index:7;display:none;text-align:left';
+  document.body.appendChild(journalEl);
+  journalEl.addEventListener('click', () => { journalEl.style.display = 'none'; });
+  const PAGES = [
+    'Day 1. The tide has gone out further than any of us remember. The harbour of Vael is bare stone. The priests say the sea is holding its breath.',
+    'Day 4. The fishermen pulled an idol out of the trench. Gold, but wet-cold, and it hums. The king says we keep it.',
+    'Day 9. Since the idol came, no one sleeps. We hear water in the walls. The moon has begun to thin.',
+    'Day 13. Captain Orrin will not sail. He says the water under the keel is looking up.',
+    'Day 17. The sea came back in a single night. It did not crash. It rose politely, like something coming home.',
+    'Day 18. We are the last in the upper temple. Below us the streets are full of lamps. Someone is lighting them.',
+    'We buried the gold with our dead so the sea would take it. The sea does not want it back. It wants us to keep it.',
+    'If you are reading this, you took something. Put it back in the dark where you found it. Do not look for us. We are looking for you.',
+    'I have seen the door that opens without a sound. I have seen it in the water. It is not a door to leave by.',
+    'It is patient. It has always been patient. Count your coins.',
+  ];
+  function read(page) { journalEl.textContent = PAGES[((page | 0) % PAGES.length + PAGES.length) % PAGES.length]; journalEl.style.display = 'block'; }
+  // ---- what the seabed remembers (said once, as you come near)
+  const LINES = { wreck: 'The hull is older than the harbour.', ruin: 'Vael. The city that asked the sea to wait.', skeleton: 'It did not die here. It was placed.' };
+  let loreT = 0;
+  function loreCheck() {
+    const P = Player.p;
+    for (let rz = Math.floor(P.z / 128) - 1; rz <= Math.floor(P.z / 128) + 1; rz++) for (let rx = Math.floor(P.x / 128) - 1; rx <= Math.floor(P.x / 128) + 1; rx++) for (const s of World.seaStructs(rx, rz)) {
+      const cx = (s.x0 + s.x1) / 2, cz = (s.z0 + s.z1) / 2;
+      if (!lore.has(s.chest.id) && Math.hypot(cx - P.x, cz - P.z) < 26 && st.under > 0.5) { lore.add(s.chest.id); Realm.whisper(LINES[s.kind], 5200); return; }
+    }
+  }
+
+  function update(dt) {
+    const P = Player.p, e = eye();
+    if (Realm.fake) { st.under = st.dk = 0; SkyFX.sea = 0; SkyFX.seaDeep = 0; lamp.intensity = 0; depthEl.style.opacity = 0; for (const f of fish.slice()) killFish(f); return; }
+    const sub = inWater(e.x, e.y, e.z);
+    st.depth = Math.max(0, SEAY + 0.88 - e.y);
+    st.under += ((sub ? 1 : 0) - st.under) * Math.min(1, dt * 5);
+    st.dk += ((sub ? clamp(st.depth / 16, 0, 1) : 0) - st.dk) * Math.min(1, dt * 1.2);
+    SkyFX.sea = st.under; SkyFX.seaDeep = st.dk;
+    lamp.position.copy(e); lamp.intensity = st.under * (0.35 + 1.0 * st.dk);
+    depthEl.textContent = 'depth ' + Math.round(st.depth) + ' m'; depthEl.style.opacity = st.under > 0.5 ? 0.85 : 0;
+    // the show-the-down-button-when-swimming rule
+    if (!P.fly) document.getElementById('downBtn').classList.toggle('hide', !sub);
+    // the curse of what you carry
+    st.curse = Inventory.curse(); Cave.curse = st.curse;
+    if (st.curse > 0.4 && !st.toldCurse) { st.toldCurse = true; Realm.whisper('The gold is cold. Something is listening.', 5500); }
+    if (st.curse < 0.05) st.toldCurse = false;
+    // near water: fish. Deep: jellyfish. Far down: the rest
+    const nearWater = sub || inWater(P.x, P.y - 1, P.z) || World.heightAt(Math.floor(P.x), Math.floor(P.z)) < SEAY + 1;
+    if (Player.locked && nearWater) {
+      st.fishT -= dt; if (st.fishT <= 0) { st.fishT = 1.2; if (fish.length < 22) spawnSchool(); }
+      st.jellyT -= dt; if (st.jellyT <= 0) { st.jellyT = 1.5; if (sub && st.dk > 0.25 && jelly.length < 9) spawnJelly(); }
+    }
+    updateFish(dt); updateJelly(dt);
+    if (sub && Player.locked) {
+      st.bubT -= dt; if (st.bubT <= 0) { st.bubT = rnd(1.6, 2.6); Fx.emit(e.x + Player.aimDir.x * 0.5, e.y - 0.15, e.z + Player.aimDir.z * 0.5, { colors: [[0.82, 0.94, 1]], n: 3, size: [0.04, 0.08], speed: [0.05, 0.25], up: 0.8, grav: -1.6, drag: 1, life: [1, 1.8], spread: 0.1 }); }
+      const deep = st.depth > 10, cursed = st.curse >= 2 && st.depth > 3;
+      st.angT -= dt * (1 + st.curse * 0.4); if (st.angT <= 0) { st.angT = rnd(45, 80); if ((deep || cursed) && Math.random() < 0.7) spawnAngler(false); }
+      st.levT -= dt; if (st.levT <= 0) { st.levT = rnd(110, 220); if (st.depth > 8) eyesOn(); }
+      st.drownT -= dt * (1 + st.curse * 0.3); if (st.drownT <= 0) { st.drownT = rnd(45, 90); if (st.depth > 8) spawnDrowned(); }
+      st.whaleT -= dt; if (st.whaleT <= 0) { st.whaleT = rnd(40, 90); GameAudio.animal('owl', P.x + rnd(-40, 40), P.z + rnd(-40, 40), 0.9, 0.24); }
+    }
+    if (drowned) {
+      const D = drowned; D.t += dt; const dx = P.x - D.x, dz = P.z - D.z, dist = Math.hypot(dx, dz);
+      D.g.rotation.y = Math.atan2(dx, dz);
+      if (seen(D.x, D.y + 1.5, D.z, 0.93)) D.look += dt; else { D.look = Math.max(0, D.look - dt * 0.5); if (dist > 4) { D.x += dx / dist * 0.9 * dt; D.z += dz / dist * 0.9 * dt; D.y = World.heightAt(Math.floor(D.x), Math.floor(D.z)) + 1; D.g.position.set(D.x, D.y, D.z); } }
+      if (D.look > 0.8 || dist < 3.5 || D.t > 60 || !sub) { scene.remove(D.g); drowned = null; }
+    }
+    updateAngler(dt); updateEyes(dt);
+    loreT -= dt; if (loreT <= 0) { loreT = 2; loreCheck(); }
+  }
+  return {
+    update, read, get under() { return st.under; }, get depth() { return st.depth; },
+    exportState() { return { opened: [...Chest.opened], lore: [...lore] }; },
+    importState(s) { Chest.opened.clear(); lore.clear(); if (s) { for (const id of s.opened || []) Chest.opened.add(id); for (const id of s.lore || []) lore.add(id); } },
+    // debug
+    spawnAngler() { spawnAngler(true); }, eyes: eyesOn, drowned: spawnDrowned, dropAngler,
+  };
+})();
+
+/* =====================================================================
    DIRECTOR — Phase 4
    ===================================================================== */
 const Director = { update() {} };
@@ -5719,6 +6161,7 @@ const Debug = (() => {
   document.getElementById('dbgHurt').addEventListener('click', () => Vitals.damage(4, 'fall'));
   document.getElementById('dbgHungry').addEventListener('click', () => Vitals.setFood(2));
   el.querySelectorAll('[data-cave]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.cave; if (k === 'deep') { Cave.setDepth(0.8); Cave.hallucinate(); } else if (k === 'exit') Cave.debugExit(); else if (k === 'leave') Realm.leave(); else Cave.force(k); }));
+  el.querySelectorAll('[data-sea]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.sea; if (k === 'angler') Sea.spawnAngler(); else if (k === 'eyes') Sea.eyes(); else if (k === 'drowned') Sea.drowned(); else { Inventory.give('gold_coin', 12); Inventory.give('gold_bar', 2); Inventory.give('idol', 1); Inventory.give('pearl', 2); Inventory.add('journal', 1, Math.floor(Math.random() * 10)); } }));
   document.getElementById('dbgBlocks').addEventListener('click', () => Inventory.giveBlocks());
   document.getElementById('dbgTools').addEventListener('click', () => Inventory.giveTools());
   document.getElementById('dbgView-').addEventListener('click', () => { CFG.VIEW = Math.max(3, CFG.VIEW - 1); });
@@ -5794,7 +6237,7 @@ const Save = (() => {
   function write() {
     if (GAME.temp || GAME.dead || !GAME.id) return;
     const rv = Realm.saveView(), p = rv ? rv.p : Player.p, days = Weather.exportState().days;
-    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: Realm.fake ? Realm.realSeed : World.getSeed(), edits: World.exportEdits(), fake: rv ? rv.fake : undefined, cave: Cave.exportState(),
+    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: Realm.fake ? Realm.realSeed : World.getSeed(), edits: World.exportEdits(), fake: rv ? rv.fake : undefined, cave: Cave.exportState(), sea: Sea.exportState(),
       p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: false }, time: rv ? rv.time : Sky.time, weather: rv ? rv.weather : Weather.exportState(),
       animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState(), bed: rv ? rv.bed : Bed.exportState() });
     Worlds.update(GAME.id, { played: Date.now(), day: days });
@@ -5838,7 +6281,7 @@ try { enterAfterLoad = sessionStorage.getItem('stainless-enter') === '1'; sessio
   Vitals.importState(saved && saved.vitals);
   Inventory.importFurnaces(saved && saved.furnaces);
   Bed.importState(saved && saved.bed);
-  Cave.importState(saved && saved.cave);
+  Cave.importState(saved && saved.cave); Sea.importState(saved && saved.sea);
   if (saved && saved.fake) Realm.resume(saved.fake, saved);
 }
 World.update(Player.p.x, Player.p.z);
@@ -6266,7 +6709,7 @@ function step() {
   if (!Player.locked && Menu.cur === 'scrMain') { menuSpin += dt * 0.025; camera.rotation.y = p.yaw + menuSpin; }
   Avatar.update(dt, gdt);
   Fx.update(dt);
-  Cave.update(gdt); Realm.update(dt); Painting.update(dt); Painting.light(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day));
+  Cave.update(gdt); Sea.update(gdt); Chest.update(gdt); Chest.light(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day)); Realm.update(dt); Painting.update(dt); Painting.light(Sky.state.ambient * (0.18 + 0.3 * Sky.state.day));
   Sky.update(dt, Player.locked && !Realm.fake ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);
