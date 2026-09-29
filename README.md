@@ -287,3 +287,6 @@ It now has one purpose and works out the rest for itself.
 - **It predicts fights:** it works out how a fight would go from both sides' health, weapons, hunger, whether you are asleep, and only commits when its chance is high enough (bolder or more careful depending on its history). After each fight it compares what it expected with what happened and corrects its own judgement.
 - **It learns your habits:** when it has seen you asleep, it notes the hour and waits for it. It remembers where you sleep and where you spend time.
 - **It improvises like a player:** if you stand on a ledge or a pillar, it builds a stair of blocks under its feet to reach you; if a plan stalls or takes too long it gives up and tries another.
+
+## 8.7 – Finding The Other
+It arrives about 8 minutes into a survival world and starts far away, so it is hard to stumble on. To test it: open the debug menu (the bug button on phones, F3 on a computer) → **The Other** (brings one 34 blocks behind you), **Red beacon on it** (a red light you can see from far away), **Take me to it**. The debug text now says how far it is and which way.

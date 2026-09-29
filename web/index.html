@@ -401,7 +401,7 @@
   <h3>Animals</h3>
   <div class="btns">
     <button data-spawn="cow">Cow</button><button data-spawn="sheep">Sheep</button><button data-spawn="pig">Pig</button><button data-spawn="chicken">Chicken</button>
-    <button id="dbgDeer">The deer</button><button id="dbgOther">The Other</button><button id="dbgOtherA">The Other (hunting)</button><button id="dbgOtherK">Kill it</button><button id="dbgItems">Give items</button>
+    <button id="dbgDeer">The deer</button><button id="dbgOther">The Other</button><button id="dbgOtherA">The Other (hunting)</button><button id="dbgOtherK">Kill it</button><button id="dbgOtherB">Red beacon on it</button><button id="dbgOtherG">Take me to it</button><button id="dbgItems">Give items</button>
   </div>
   <h3>Nearest animal</h3>
   <div class="btns">
@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.6';
+const GAME_VERSION = '8.7';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -7339,7 +7339,7 @@ const Nemesis = (() => {
     if (n.alive) { physics(dt); footsteps(dt); }
     if (n.alive) World.setAnchor(n.x, n.z);
     if (n.smelt > 0 && n.goal !== 'gear') { n.smelt -= dt; if (n.smelt <= 0) { addInv('silver_ingot', n.smeltOut || 1); n.smeltOut = 0; } }
-    render(dt);
+    render(dt); updateBeam();
   }
   function unstick() {
     n.path = null; n.replan = 0; n.wander = null; n.tgt = null; n.tgtBlock = null; n.escape = 2.5; n.escA = R() * Math.PI * 2; lesson('it gets stuck sometimes');
@@ -7352,6 +7352,19 @@ const Nemesis = (() => {
       if (best) { n.x = best[0] + 0.5; n.y = best[1] + 0.02; n.z = best[2] + 0.5; n.vx = n.vy = n.vz = 0; }
     }
     if (n.stuckN >= 4) { n.stuckN = 0; setGoal('search'); }
+  }
+  // ---- (debug) finding it: a red light you can see from far away, a bearing, and a way to go there
+  let beam = null, beamOn = false;
+  function updateBeam() {
+    if (!beamOn) { if (beam) beam.visible = false; return; }
+    if (!beam) { beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 120, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xff2a3a, transparent: true, opacity: 0.55, fog: false, depthWrite: false, side: THREE.DoubleSide })); beam.frustumCulled = false; scene.add(beam); }
+    beam.visible = n.alive && !Realm.fake; beam.position.set(n.x, n.y + 60, n.z);
+  }
+  function compass() {
+    if (!n.alive) return 'not here';
+    const P = Player.p, dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz), f = dx * -Math.sin(P.yaw) + dz * -Math.cos(P.yaw), r = dx * Math.cos(P.yaw) + dz * -Math.sin(P.yaw);
+    const a = Math.atan2(r, f) * 180 / Math.PI, dir = Math.abs(a) < 22 ? 'straight ahead' : Math.abs(a) > 157 ? 'behind you' : a > 0 ? (a < 67 ? 'ahead, to the right' : a < 112 ? 'to your right' : 'behind, to the right') : (a > -67 ? 'ahead, to the left' : a > -112 ? 'to your left' : 'behind, to the left');
+    return Math.round(d) + ' blocks, ' + dir + (Math.abs(n.y - P.y) > 4 ? (n.y > P.y ? ', higher up' : ', lower down') : '');
   }
   function renderOnly(dt) { render(dt); }
 
@@ -7370,9 +7383,9 @@ const Nemesis = (() => {
   }
   function info() {
     const P = Player.p;
-    if (!n.alive) return `the other  ${enabled() ? 'not here' : 'off'}${mem.lives === 0 ? ' · arrives in ' + Math.ceil(Math.max(0, mem.grace)) + 's' : ' · back in ' + Math.ceil(Math.max(0, n.respawn)) + 's'} · lives ${mem.lives} deaths ${mem.deaths}`;
+    if (!n.alive) return `the other  ${enabled() ? 'not here yet' : 'off'}${mem.lives === 0 ? ' · arrives in ' + Math.ceil(Math.max(0, mem.grace)) + 's' : ' · back in ' + Math.ceil(Math.max(0, n.respawn)) + 's'} · lives ${mem.lives} deaths ${mem.deaths}`;
     const inv = Object.keys(n.inv).map(k => k + ':' + n.inv[k]).join(' ') || '—';
-    return `the other  ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
+    return `the other  ${compass()}\n           ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
       `           has ${inv}\n           base ${mem.base ? (mem.base.done ? 'built' : mem.base.i + '/' + mem.base.todo.length) : 'none'} · lives ${mem.lives} deaths ${mem.deaths} kills ${mem.kills} · bold ${mem.bold.toFixed(2)} careful ${mem.caution.toFixed(2)}\n` +
       `           learned: ${mem.lessons.slice(-3).join('; ') || '—'}\n` +
       `           plan: ${mind.obj ? mind.obj.label + ' — ' + mind.obj.why : '—'}\n` +
@@ -7391,6 +7404,9 @@ const Nemesis = (() => {
       return true;
     },
     kill() { if (n.alive) die('debug'); },
+    beacon() { beamOn = !beamOn; updateBeam(); return beamOn; },
+    goTo() { if (!n.alive) return false; const P = Player.p; P.x = n.x + 4; P.z = n.z + 4; P.y = n.y + 2; P.vx = P.vy = P.vz = 0; P.yaw = Math.atan2(-(n.x - P.x), -(n.z - P.z)); return true; },
+    compass,
     reveal() { const P = Player.p; n.belief = { x: P.x, y: P.y, z: P.z, t: T, conf: 1 }; },
     give(id, k) { addInv(id, k); },
     set(k, v) { n[k] = v; },
@@ -7441,6 +7457,8 @@ const Debug = (() => {
   document.getElementById('dbgOther').addEventListener('click', () => Nemesis.spawnNear(false));
   document.getElementById('dbgOtherA').addEventListener('click', () => Nemesis.spawnNear(true));
   document.getElementById('dbgOtherK').addEventListener('click', () => Nemesis.kill());
+  document.getElementById('dbgOtherB').addEventListener('click', e => { const on = Nemesis.beacon(); e.target.classList.toggle('on', on); });
+  document.getElementById('dbgOtherG').addEventListener('click', () => { if (!Nemesis.goTo()) Inventory.toast('It is not here yet: tap “The Other” to bring one'); });
   document.getElementById('dbgItems').addEventListener('click', () => Inventory.giveAll());
   el.querySelectorAll('[data-gmode]').forEach(b => b.addEventListener('click', () => {
     GAME.mode = b.dataset.gmode; if (!GAME.temp) Worlds.update(GAME.id, { mode: GAME.mode }); applyMode();
