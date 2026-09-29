@@ -290,3 +290,9 @@ It now has one purpose and works out the rest for itself.
 
 ## 8.7 – Finding The Other
 It arrives about 8 minutes into a survival world and starts far away, so it is hard to stumble on. To test it: open the debug menu (the bug button on phones, F3 on a computer) → **The Other** (brings one 34 blocks behind you), **Red beacon on it** (a red light you can see from far away), **Take me to it**. The debug text now says how far it is and which way.
+
+## 8.9 – The Other prepares, talks, and lies
+- **It prepares like a player.** It will not start a fight without a kit: a real sword, a pickaxe, food in its pockets, blocks to climb and hide behind, and good health (unless you are asleep, badly hurt, or you hit it first). It works out what it is missing (“it is missing a real sword, food, blocks”) and goes and gets it, builds a shelter, and waits out the night at home when it is not ready.
+- **It fights smarter:** it hits and steps back out of your reach, and knockback now really throws you.
+- **You can talk to it.** Tap it (or press T on a computer, or use “Talk to it” in F3) within a few blocks: quick replies (Hello, Who are you, Let us make peace, Here take this, Do you have food, Come with me, Leave me alone, I will kill you) or type anything. On a computer the keys 1–8 pick a quick reply.
+- **It can lie.** If it is not ready to fight (or sees a cliff behind you) it walks up unarmed and says it only wants to talk, and will agree to peace. It follows you like a friend, and while it does it studies the ground. When you turn your back with a drop in front of you, deep enough that the fall would kill you, it shoves you off. Water below saves you. Hit it, or say you will kill it, and the friendship is over.

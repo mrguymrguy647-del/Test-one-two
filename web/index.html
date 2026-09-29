@@ -214,6 +214,16 @@
   .slot.none canvas { opacity: .3; }
   @media (max-height: 460px) { #vitals canvas { width: 158px; height: 14px; } #vitals { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); } }
 
+  /* talking to the Other */
+  #chat { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: min(330px, 52vw); z-index: 7; max-height: calc(100% - 84px); display: flex; flex-direction: column; gap: 6px; padding: 10px;
+    background: var(--veil-strong); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.4 var(--mono); color: var(--ink); }
+  #chat.hide { display: none; }
+  #chat .chatHead { display: flex; justify-content: space-between; align-items: center; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; }
+  #chat button { font: 11px var(--mono); color: var(--ink); background: rgba(255, 255, 255, .08); border: 1px solid var(--line); border-radius: 3px; padding: 4px 7px; cursor: pointer; }
+  #chatLog { overflow-y: auto; max-height: 110px; display: flex; flex-direction: column; gap: 3px; }
+  #chatLog .it { color: #e9e3cf; } #chatLog .me { color: var(--ink-dim); text-align: right; }
+  #chatBtns { display: flex; flex-wrap: wrap; gap: 4px; }
+  #chatForm { display: flex; gap: 4px; } #chatIn { flex: 1; min-width: 0; font: 12px var(--mono); color: var(--ink); background: rgba(0, 0, 0, .35); border: 1px solid var(--line); border-radius: 3px; padding: 4px 6px; }
   /* F3 debug menu */
   #debug { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); width: min(290px, 62vw); z-index: 6; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px;
     background: var(--veil-strong); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.45 var(--mono); color: var(--ink); }
@@ -367,9 +377,15 @@
   <div id="confirm" class="hide"><div class="panel"><p id="cText"></p><div class="row"><button id="cNo">Cancel</button><button id="cYes" class="danger">Delete</button></div></div></div>
 </div>
 
+<div id="chat" class="hide">
+  <div class="chatHead"><b>The Other</b><button id="chatX" aria-label="Close">✕</button></div>
+  <div id="chatLog"></div>
+  <div id="chatBtns"></div>
+  <form id="chatForm" autocomplete="off"><input id="chatIn" maxlength="90" placeholder="say something…"><button type="submit">Say</button></form>
+</div>
 <div id="debug" class="hide">
   <h2>Debug · F3</h2>
-  <div class="btns" style="margin-bottom:8px"><button id="dbgOther" style="background:#7a1f2a;border-color:#c04050;font-weight:700">☠ Summon the Other</button><button id="dbgOtherA">Summon (it knows where you are)</button><button id="dbgOtherB">Red beacon</button><button id="dbgOtherG">Take me to it</button><button id="dbgOtherK">Kill it</button></div>
+  <div class="btns" style="margin-bottom:8px"><button id="dbgOther" style="background:#7a1f2a;border-color:#c04050;font-weight:700">☠ Summon the Other</button><button id="dbgOtherA">Summon (it knows where you are)</button><button id="dbgOtherB">Red beacon</button><button id="dbgOtherG">Take me to it</button><button id="dbgOtherT">Talk to it</button><button id="dbgOtherK">Kill it</button></div>
   <pre id="dbgInfo"></pre>
   <h3>Time of day</h3>
   <div class="btns">
@@ -443,7 +459,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.8';
+const GAME_VERSION = '8.9';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -1813,7 +1829,7 @@ const Player = (() => {
   const p = { x: 0, y: 40, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hw: 0.3, h: 1.8, eye: 1.62, onGround: false, fly: false, inWater: false };
   const keys = {};
   const touch = { mx: 0, mz: 0, run: false, jump: false, down: false };   // filled in by the touch controls
-  let coyote = 0, locked = false, breakHeld = false, placeHeld = false, actCool = 0;
+  let coyote = 0, knockT = 0, locked = false, breakHeld = false, placeHeld = false, actCool = 0;
 
   // ---- collision against the voxel grid, one axis at a time
   function hits(x, y, z) {
@@ -1874,7 +1890,8 @@ const Player = (() => {
     p.inWater = World.get(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z)) === World.B.WATER;
     const speed = (p.fly ? 12 : p.inWater ? 2.8 : run ? 6.2 : 4.3) * (p.fly ? 1 : Cave.slow);
     const wx = (-sy * f + cy * s) / len * speed, wz = (-cy * f - sy * s) / len * speed;
-    const acc = p.onGround || p.fly ? 16 : p.inWater ? 5 : 7.5;              // (more say in the air than before)
+    knockT = Math.max(0, knockT - dt);
+    const acc = knockT > 0 ? 0.6 : p.onGround || p.fly ? 16 : p.inWater ? 5 : 7.5;              // (more say in the air than before; none at all while you are being thrown)
     p.vx += (wx - p.vx) * Math.min(1, dt * acc); p.vz += (wz - p.vz) * Math.min(1, dt * acc);
     const wasGround = p.onGround;
     coyote = wasGround ? 0.12 : Math.max(0, coyote - dt);
@@ -2087,7 +2104,7 @@ const Player = (() => {
   }
 
   return {
-    p, keys, touch, update, spawn, look, setHook(f) { const prev = hook; hook = prev ? (k, d) => prev(k, d) || f(k, d) : f; }, icon,
+    p, keys, touch, update, spawn, look, shove(vx, vz, vy, t) { p.vx = vx; p.vz = vz; p.vy = vy; p.onGround = false; knockT = t || 0.6; }, setHook(f) { const prev = hook; hook = prev ? (k, d) => prev(k, d) || f(k, d) : f; }, icon,
     unstuck() { for (let n = 0; n < 64 && hits(p.x, p.y, p.z); n++) p.y += 1; },
     // touch: hold to break, tap to place
     beginBreak: startBreak,
@@ -3739,6 +3756,7 @@ const Inventory = (() => {
     // ---- for the one who lives here too (it mines, eats and steals by the same rules as you)
     MINE, dropOf: b => b === B.GLASS || b === B.LAMP ? null : DROP[b] || BLOCK_ITEM[b] || null,
     breakTimeWith(b, id) { const m = MINE[b] || [1], d = id && ITEM[id], right = !!(d && d.tool && d.tool === m[1]); const ok = !m[2] || (right && (d.tier || 1) >= (m[3] || 1)); return { time: m[0] * (ok ? 1.5 : 5) / (right ? d.speed : 1), drops: ok }; },
+    takeHeld(k) { const s = slots[sel]; if (!s) return null; const q = Math.min(k || 1, s.n), out = { id: s.id, n: q, d: s.d }; s.n -= q; if (s.n <= 0) slots[sel] = null; changed(); return out; },
     dropsNear(x, y, z, r) { return drops.filter(d => Math.hypot(d.x - x, d.z - z) < r && Math.abs(d.y - y) < r && d.t > 0.6); },
     takeDrop(d) { const i = drops.indexOf(d); if (i < 0) return null; scene.remove(d.sprite); drops.splice(i, 1); return { id: d.id, n: d.n, d: d.d }; },
     steal(score) {   // a hand in your pockets: takes the stack it likes most (a part of it, if it is a big one)
@@ -6559,6 +6577,14 @@ const Nemesis = (() => {
     const mine = myDmg * 0.78 / myCd, theirs = foeDmg * 0.68 / foeCd, ttk = foeHp / Math.max(0.1, mine), ttd = myHp / Math.max(0.1, theirs);
     return 1 / (1 + Math.exp(-1.7 * (ttd - ttk) / Math.max(2, 0.25 * (ttd + ttk))));
   }
+  // what a careful player would have before going after someone
+  function kit() {
+    const m = [];
+    if (tierOf('sword') < 2) m.push('a real sword'); if (tierOf('pickaxe') < 1) m.push('a pickaxe');
+    if (foodCount() < 3) m.push('food'); if (bulkCount() < 12) m.push('blocks');
+    if (n.hp < 16) m.push('health'); else if (n.food < 12 && !foodCount()) m.push('a full stomach');
+    return m;
+  }
   function assess() {
     const sn = seenNow(), fresh = !!n.belief && T - n.belief.t < 25;
     const foeHp = sn ? Vitals.hp : mem.foeHpAt ? Math.min(20, mem.foeHp + (T - mem.foeHpAt) * 0.12) : 20;
@@ -6566,11 +6592,13 @@ const Nemesis = (() => {
     if (n.sawAsleep) win += 0.3; else if (foeHp < 9) win += 0.08;
     win = cl(win + mem.calib, 0.02, 0.98);
     const thr = cl(0.45 + mem.caution * 0.3 - mem.bold * 0.15, 0.3, 0.8);
-    return { sn, fresh, foeHp, win, thr, ready: win >= thr, food: foodCount(), night: 1 - Sky.state.day };
+    const kitMiss = kit(), provoked = T - (n.aggroT || -99) < 25;
+    const open = kitMiss.length === 0 || n.sawAsleep || foeHp < 8 || provoked || n.goal === 'fight';   // it does not start a fight it has not prepared for (unless it has to)
+    return { sn, fresh, foeHp, win, thr, ready: win >= thr && open, strong: win >= thr, kit: kitMiss, food: foodCount(), night: 1 - Sky.state.day };
   }
   function endObj(ok, why) {
     const o = mind.obj; if (!o) return;
-    const s = mem.strat[o.k] || (mem.strat[o.k] = [0, 0]); s[1]++; if (ok) s[0]++;
+    if (ok !== null) { const s = mem.strat[o.k] || (mem.strat[o.k] = [0, 0]); s[1]++; if (ok) s[0]++; }      // (changing its mind for something better is not a failure)
     say((ok ? 'done: ' : 'gave up: ') + o.label + (why ? ' (' + why + ')' : ''));
     mind.obj = null;
   }
@@ -6583,11 +6611,13 @@ const Nemesis = (() => {
     // --- close in: it can win, and it knows where you are
     if (A.ready && (A.sn || A.fresh)) add('engage', 'finish the other', 1.05 + (n.sawAsleep ? 0.25 : 0), `it thinks it wins ${pct(A.win)} of the time (needs ${pct(A.thr)}), and you are right there`, { stalk: 0.5, fight: 0.15 }, 200);
     // --- not ready: work out what is missing
-    if (!A.ready && (A.sn || A.fresh || mem.home || mem.last)) {
-      const g = gearNeed();
-      add('arm', 'get stronger first', 0.85, `it would win only ${pct(A.win)} of the time, it needs ${pct(A.thr)}: ${g ? 'missing ' + g.id : 'better weapon, more health'}`, { gear: 0.5, build: 0.05 }, 260);
-      if (A.food < 3) add('stock', 'lay in food', 0.7, 'nothing to eat while it hunts you', { eat: 0.62 }, 160);
+    if (!A.ready && (A.sn || A.fresh || mem.home || mem.last || true)) {
+      const g = gearNeed(), miss = A.kit.join(', ');
+      if (!A.strong || tierOf('sword') < 2 || tierOf('pickaxe') < 1) add('arm', 'get stronger first', 0.85, A.strong ? `it is missing ${miss}` : `it would win only ${pct(A.win)} of the time, it needs ${pct(A.thr)}${g ? ': missing ' + g.id : ''}`, { gear: 0.5, build: 0.05 }, 260);
+      if (A.food < 3) add('stock', 'lay in food', 0.72, 'it will not start a fight on an empty stomach', { eat: 0.62 }, 160);
+      if (bulkCount() < 12) add('blocks', 'gather blocks', 0.66, 'blocks to climb, to bridge, to hide behind', { stockpile: 0.75 }, 150);
     }
+    if (A.night > 0.7 && mem.base && mem.base.done && A.kit.length && !A.sn) add('hide', 'wait out the night at home', 0.78, `night is when it is weakest, and it lacks ${A.kit.join(', ')}`, { hide: 0.85 }, 260);
     if (n.hp < 15 && !A.sn) add('heal', 'heal before anything else', 0.55 + (15 - n.hp) * 0.03, `it is at ${Math.round(n.hp)} of 20 hearts' worth`, { rest: 0.6 }, 100);
     if (A.food < 3 && A.ready && (mem.home || A.fresh)) add('stock', 'lay in food', 0.5, 'a fight can be long; it wants food in its pockets', { eat: 0.6 }, 160);
     // --- waiting for the right moment
@@ -6605,6 +6635,11 @@ const Nemesis = (() => {
     if (mem.death && T - mem.death.at < 700 && Inventory.dropsNear(mem.death.x, mem.death.y, mem.death.z, 10).length) add('retrieve', 'take back what it dropped', 0.85, 'its own things are still lying where it fell', { retrieve: 1.0 }, 120);
     // --- a home: somewhere to heal, to keep things, to wait from
     if (!(mem.base && mem.base.done) && tierOf('pickaxe') >= 1 && !A.sn) add('shelter', 'build a shelter', 0.5 + (n.hp < 16 ? 0.15 : 0), 'a place of its own to heal and to keep things', { build: 0.5 }, 420);
+    // --- friendly faces
+    if (soc.mode === 'hostile' && T > soc.cool && A.sn && eyeDist() < 40 && T - (n.aggroT || -99) > 60 && n.carry <= 0) {
+      const e = findEdge(), cliff = e && lethalFor(e.dmg);
+      add('befriend', 'pretend to be a friend', 0.5 + mem.cunning * 0.35 + (A.ready ? 0 : 0.25) + (cliff ? 0.75 : 0), cliff ? `there is a ${e.dmg}-heart drop right behind you: be nice, and wait for you to turn away` : A.ready ? 'a smile costs nothing and gets it close' : 'it is not ready to fight; a friendly face buys time', { parley: 1.1 }, 60);
+    }
     // --- otherwise: find you
     add('explore', 'look for you', 0.36 + Math.min(0.3, contactAgo / 900), A.sn || A.fresh ? 'it already has you' : 'it has no idea where you are', { search: 0.25 }, 400);
     cands.sort((a, b) => b.value - a.value);
@@ -6616,7 +6651,7 @@ const Nemesis = (() => {
       else if (cands[0].value < (cands.find(c => c.k === cur.k) || { value: 0 }).value + 0.22) pick = cands.find(c => c.k === cur.k) || pick;
     }
     if (!mind.obj || pick.k !== mind.obj.k) {
-      if (mind.obj) endObj(false, 'something better came up');
+      if (mind.obj) endObj(null, 'something better came up');
       mind.obj = { k: pick.k, label: pick.label, why: pick.why, bias: pick.bias, at: T, timeout: pick.timeout, done: false, fail: false };
       say('→ ' + pick.label + ' — ' + pick.why);
     } else { mind.obj.why = pick.why; }
@@ -6628,11 +6663,180 @@ const Nemesis = (() => {
       case 'stock': return A.food >= 4;
       case 'engage': return false;
       case 'lurk': return n.goal === 'fight' || n.goal === 'stalk';
+      case 'blocks': return bulkCount() >= 24;
+      case 'hide': return A.night < 0.4;
       default: return false;
     }
   }
   const finish = (ok) => { if (mind.obj) { if (ok) mind.obj.done = true; else mind.obj.fail = true; } };
   Events.on('death', () => { if (mind.obj && mind.obj.k === 'engage') finish(true); });
+
+  // ================= talking to it, and what it does with what you say =================
+  // It can be reasoned with, or it can act as if it can. Trust is a tool: it smiles, walks beside you, and waits for you to turn your back
+  // with a drop in front of you.
+  const soc = { mode: 'hostile', trust: 0, until: 0, log: [], open: false, gifts: 0, betrayed: 0, cool: 0, far: 0, chk: 0, chat: 0, greeted: false };
+  const $c = id => document.getElementById(id);
+  const chatEl = $c('chat'), chatLog = $c('chatLog'), chatBtns = $c('chatBtns'), chatIn = $c('chatIn');
+  const CHOICES = [['Hello', 'hello'], ['Who are you?', 'who'], ['Let us make peace', 'peace'], ['Here, take this', 'gift'], ['Do you have food?', 'food'], ['Come with me', 'follow'], ['Leave me alone', 'leave'], ['I will kill you', 'threat']];
+  function tell(who, text) {
+    soc.log.push([who, text]); if (soc.log.length > 30) soc.log.shift();
+    if (soc.open) drawChat(); else if (who === 'it') { Inventory.toast('The Other: ' + text); }
+  }
+  function drawChat() {
+    if (!chatEl) return;
+    chatLog.textContent = '';
+    for (const [who, text] of soc.log.slice(-7)) { const d = document.createElement('div'); d.className = who; d.textContent = (who === 'it' ? 'The Other: ' : 'You: ') + text; chatLog.appendChild(d); }
+    chatLog.scrollTop = 1e6;
+    if (!chatBtns.childNodes.length) CHOICES.forEach(([label, intent], i) => { const b = document.createElement('button'); b.textContent = (i + 1) + ' ' + label; b.addEventListener('click', e => { e.stopPropagation(); youSay(intent, label); }); chatBtns.appendChild(b); });
+  }
+  function openChat() { if (!n.alive || !chatEl) return; soc.open = true; chatEl.classList.remove('hide'); if (!soc.log.length) tell('it', '...'); drawChat(); }
+  function closeChat() { soc.open = false; if (chatEl) chatEl.classList.add('hide'); try { chatIn.blur(); } catch (e) {} }
+  if (chatEl) {
+    $c('chatX').addEventListener('click', e => { e.stopPropagation(); closeChat(); });
+    chatEl.addEventListener('mousedown', e => e.stopPropagation()); chatEl.addEventListener('click', e => e.stopPropagation()); chatEl.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+    $c('chatForm').addEventListener('submit', e => { e.preventDefault(); const t = chatIn.value.trim(); chatIn.value = ''; if (t) youSay(parse(t), t); });
+    addEventListener('keydown', e => {
+      if (!soc.open) return;
+      if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Escape') closeChat(); return; }
+      if (/^Digit[1-8]$/.test(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); const c = CHOICES[+e.code.slice(5) - 1]; youSay(c[1], c[0]); }
+    }, true);
+    addEventListener('keydown', e => { if (e.code === 'KeyT' && !(e.target && e.target.tagName === 'INPUT') && n.alive && Math.hypot(n.x - Player.p.x, n.z - Player.p.z) < 9 && Player.locked) { e.preventDefault(); soc.open ? closeChat() : openChat(); } });
+  }
+  function parse(t) {
+    t = t.toLowerCase();
+    const rules = [[/kill|die\b|fight|attack|hate|enemy|stab|monster|freak/, 'threat'], [/peace|truce|friend|sorry|calm|ally|alliance|no fight|don.?t hurt|forgive/, 'peace'], [/give|gift|take this|present|trade|swap|deal|offer|here you/, 'gift'],
+      [/food|hungry|eat|bread|meat|beef|starv/, 'food'], [/follow|come with|come on|together|join|walk with/, 'follow'], [/leave|go away|alone|stop|get lost|back off|shoo/, 'leave'],
+      [/who|name|what are you|are you real/, 'who'], [/where|base|house|home|live/, 'where'], [/why|purpose|want|goal|what do you/, 'why'], [/hello|\bhi\b|hey|greet|sup\b/, 'hello']];
+    for (const [re, k] of rules) if (re.test(t)) return k;
+    return 'other';
+  }
+  const PICK = a => a[Math.floor(R() * a.length)];
+  function youSay(intent, text) {
+    tell('me', text);
+    soc.chat = T;
+    setTimeout(() => reply(intent), 350 + R() * 500);
+  }
+  function befriend(why) {
+    if (soc.mode !== 'friendly') { soc.mode = 'friendly'; soc.until = T + rnd(200, 320); soc.chk = T; lesson('it pretends to be a friend'); say('pretending to be a friend — ' + (why || 'to get close')); }
+    if (n.goal !== 'companion') setGoal('companion');
+  }
+  function reply(intent) {
+    if (!n.alive) return;
+    const A = mind.A || assess(), friendly = soc.mode === 'friendly', angry = T - (n.aggroT || -99) < 25;
+    switch (intent) {
+      case 'hello': tell('it', friendly ? PICK(['Hello again.', 'Good to see a face.', 'Hi. It is a quiet day.']) : soc.trust > 0.2 ? 'Hello.' : PICK(['...', 'You found me.', 'Hello, stranger.'])); break;
+      case 'who': tell('it', friendly ? PICK(['Somebody like you. I woke up here and did not know why either.', 'A traveler. I get lonely out here.']) : PICK(['Someone who lives here too.', 'Someone who is still here.'])); break;
+      case 'where': tell('it', friendly ? 'Around. I will show you sometime.' : 'Somewhere you will not find.'); break;
+      case 'why': tell('it', friendly ? 'Company. That is all.' : 'To see how long you last.'); break;
+      case 'peace': {
+        const chance = cl(0.3 + mem.cunning * 0.5 + (A.ready ? -0.2 : 0.25) - mem.bold * 0.15 + soc.trust * 0.25, 0.08, 0.92);
+        if (angry) { tell('it', 'You hit me. No.'); break; }
+        if (friendly) { tell('it', 'We already have peace.'); break; }
+        if (R() < chance) { soc.trust = Math.max(soc.trust, 0.3); tell('it', PICK(['All right. Peace. Let us not hurt each other.', 'Peace, then. I am tired of fighting too.'])); befriend('peace agreed'); }
+        else { tell('it', PICK(['No.', 'I do not think so.'])); if (A.ready && R() < 0.5) { soc.mode = 'hostile'; n.goalT = 9; } }
+        break;
+      }
+      case 'gift': {
+        const g = Inventory.takeHeld(1);
+        if (!g) { tell('it', 'Your hands are empty.'); break; }
+        addInv(g.id, g.n); soc.gifts++; soc.trust = Math.min(1, soc.trust + 0.3);
+        tell('it', friendly ? PICK(['Thank you. I will remember it.', 'That is kind of you.']) : 'Hm. Thank you.');
+        if (!friendly && !angry && soc.trust >= 0.45) { tell('it', 'Maybe you are not so bad.'); befriend('a gift'); }
+        break;
+      }
+      case 'food': {
+        const f = foodItem();
+        if (friendly && f && n.food > 8) { takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1); soc.trust = Math.min(1, soc.trust + 0.2); tell('it', 'Here. Take it.'); }
+        else tell('it', friendly ? 'I have none to spare.' : 'Find your own.');
+        break;
+      }
+      case 'follow': tell('it', friendly ? 'Lead the way. I am right behind you.' : 'No.'); if (friendly) soc.far = 0; break;
+      case 'leave': tell('it', friendly ? 'If you want. I will stay close.' : 'I go where I like.'); if (friendly) soc.far = T + 50; break;
+      case 'threat':
+        tell('it', friendly ? 'Then it was never peace.' : PICK(['Then come.', 'I would like to see you try.']));
+        if (friendly) { soc.mode = 'hostile'; soc.cool = T + 60; setGoal(A.ready ? 'stalk' : 'flee'); } else if (!A.ready) { setGoal('flee'); }
+        break;
+      default: tell('it', friendly ? PICK(['Mm.', 'I am listening.', 'Go on.']) : PICK(['...', 'I do not follow.']));
+    }
+  }
+  // ---- how deep can you fall in that direction?  (a fall costs what it costs you; water below saves you)
+  function dropAt(px, py, pz, dx, dz) {
+    let best = 0;
+    for (const t of [2.6, 4, 5.5]) {
+      let clear = true;
+      for (let s = 0.7; s <= t; s += 0.6) { const x = Math.floor(px + dx * s), z = Math.floor(pz + dz * s); if (!World.hasChunk(x, z) || solid(x, Math.floor(py + 0.5), z) || solid(x, Math.floor(py + 1.5), z)) { clear = false; break; } }
+      if (!clear) break;
+      const x = Math.floor(px + dx * t), z = Math.floor(pz + dz * t); if (!World.hasChunk(x, z)) break;
+      let gy = -1, water = false;
+      for (let y = Math.floor(py) + 1; y >= 1; y--) { const b = World.get(x, y, z); if (b === B.WATER) { water = true; break; } if (solid(x, y, z)) { gy = y + 1; break; } }
+      if (water || gy < 0) continue;
+      const d = py - gy, dmg = d > 3.5 ? Math.round(d - 3) : 0; if (dmg > best) best = dmg;
+    }
+    return best;
+  }
+  function findEdge() {
+    const P = Player.p; let best = null;
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a), dmg = dropAt(P.x, P.y, P.z, dx, dz); if (dmg > 0 && (!best || dmg > best.dmg)) best = { dx, dz, dmg }; }
+    return best;
+  }
+  const lethalFor = dmg => dmg >= Vitals.hp;
+  function shoveNow(dx, dz, why) {
+    Player.shove(dx * 10, dz * 10, 5.2, 0.7); n.atk = 0.3; soc.betrayed++; soc.mode = 'hostile'; soc.cool = T + 120; n.watch = 7;
+    mem.cunning = Math.min(0.95, mem.cunning + 0.05); lesson('a friendly face and a drop'); say('pushed you — ' + why); Events.emit('nemesisShove', {});
+    GameAudio.animal('hit1', n.x, n.z, 0.7, 0.7); setGoal('hold');
+    setTimeout(() => { if (n.alive) tell('it', Vitals.dead ? 'Sorry.' : '...'); }, 900);
+  }
+  function doCompanion(dt) {
+    const P = Player.p;
+    if (soc.mode !== 'friendly') { setGoal('search'); return; }
+    if (Vitals.dead) { soc.mode = 'hostile'; setGoal('search'); return; }
+    const dx = P.x - n.x, dz = P.z - n.z, d = Math.hypot(dx, dz) || 1;
+    if (T > soc.until) {                                       // the pretending ends
+      soc.mode = 'hostile'; soc.cool = T + 150;
+      if ((mind.A || assess()).ready) { tell('it', 'Enough. I am done pretending.'); setGoal('fight'); } else { tell('it', 'I have to go.'); setGoal('search'); }
+      return;
+    }
+    faceTo(P.x, P.z, true);
+    // is this the moment?
+    if (T - soc.chk > 0.15) {
+      soc.chk = T; const away = { x: dx / d, z: dz / d };
+      const pf = { x: -Math.sin(P.yaw), z: -Math.cos(P.yaw) }, turned = pf.x * away.x + pf.z * away.z > 0.25;    // your back is to it
+      const drop = d < 2.6 ? dropAt(P.x, P.y, P.z, away.x, away.z) : 0;
+      n.plan2 = null;
+      if (d < 2.6 && turned && drop > 0 && (lethalFor(drop) || (drop >= Vitals.hp * 0.7 && R() < 0.5))) { shoveNow(away.x, away.z, `a ${drop}-heart fall, and you were looking away`); return; }
+      if (Bed.sleeping && d < 3) { soc.mode = 'hostile'; tell('it', '...'); setGoal('fight'); return; }
+      const e = findEdge();
+      if (e && lethalFor(e.dmg)) {                    // stand on the far side of you from the drop, on ground it can actually stand on
+        const base = Math.atan2(-e.dz, -e.dx); let spot = null;
+        for (const off of [0, 0.5, -0.5, 1, -1]) for (const r of [1.7, 1.3]) {
+          const x = P.x + Math.cos(base + off) * r, z = P.z + Math.sin(base + off) * r, y = Math.floor(P.y + 0.1);
+          if (stand(Math.floor(x), y, Math.floor(z))) { spot = { x, z }; break; }
+        }
+        if (spot) n.plan2 = { spot, e };
+      }
+    }
+    // keep beside you, or slip round to the far side of the drop
+    const want = T < soc.far ? 9 : 3.0;
+    if (n.plan2 && d < 8) { const s = n.plan2.spot; const r = goTo(s.x, groundY(Math.floor(s.x), Math.floor(s.z)), s.z, 0.8, WALK, { maxN: 500 }); if (r === 'arrived') { it.dx = it.dz = 0; } return; }
+    const r = travel(P.x, P.z, want, d > 14 ? RUN * 0.8 : WALK);
+    if (d < want + 1) it.dx = it.dz = 0;
+    soc.talkT = (soc.talkT || 0) - dt;
+    if (soc.talkT <= 0 && d < 8) { soc.talkT = rnd(35, 70); tell('it', PICK(['Nice place to build.', 'Have you seen the sea from up on the hills?', 'I found some silver once. Deep down.', 'It gets dark fast here.', 'Stay close. Things wander at night.'])); }
+  }
+  // it walks up to you, hands empty, and says it does not want to fight
+  function doParley(dt) {
+    const P = Player.p, sn = seenNow();
+    if (!sn) { n.parleyLost = (n.parleyLost || 0) + dt; if (n.parleyLost > 15) { n.parleyLost = 0; finish(false); soc.cool = T + 90; setGoal('search'); } const b = n.belief; if (b) travel(b.x, b.z, 5, WALK); return; }
+    n.parleyLost = 0;
+    const d = eyeDist();
+    if (d > 6) { travel(P.x, P.z, 5, WALK); return; }
+    it.dx = it.dz = 0; faceTo(P.x, P.z); n.atk = 0.001; n.wave = 1.2;
+    if (!soc.greeted) {
+      soc.greeted = true; soc.trust = Math.max(soc.trust, 0.15);
+      tell('it', PICK(['Wait. I do not want to fight.', 'Please. Do not swing. I only want to talk.', 'Hello. I am alone out here, like you.']));
+      befriend('to get close'); finish(true); openChat();
+    }
+  }
 
   // ---- places to watch from
   function vantage(tx, ty, tz) {
@@ -6686,6 +6890,16 @@ const Nemesis = (() => {
     const r = travel(d.x, d.z, 2, RUN * 0.9);
     if (r === 'arrived') { n.sweep += dt; if (n.sweep > 5) { n.sweep = 0; finish(!Inventory.dropsNear(d.x, d.y, d.z, 10).length); setGoal('search'); } }
     else if (r === 'fail') { finish(false); setGoal('search'); }
+  }
+  function doHide(dt) {
+    const b = mem.base; if (!b || !b.done || mind.A.night < 0.4) { finish(true); setGoal('search'); return; }
+    if (!nearBase(4)) { travel(b.x + 0.5, b.z + 0.5, 2.5, WALK); return; }
+    it.dx = it.dz = 0; n.regen2 = 1; if (n.food < 12 && foodItem()) eatNow(dt);
+    if (n.hp >= 18 && !kit().length) { finish(true); setGoal('search'); }
+  }
+  function doStockpile(dt) {
+    if (bulkCount() >= 24) { finish(true); setGoal('search'); return; }
+    gatherFor({ id: 'bulk', types: tierOf('pickaxe') >= 1 ? [B.STONE] : [B.DIRT, B.GRASS], n: 24 }, dt);
   }
   // like a player: when the one it wants is up on a ledge, it builds itself a stair of blocks under its feet
   function pillar() {
@@ -6868,6 +7082,7 @@ const Nemesis = (() => {
     // the longer it has had no sign of you, the more the plain search matters (the mind adds its own reasons on top)
     const contact = Math.max(n.seenAt, n.noise ? n.noise.t : -1e9, n.life);
     S.search = 0.3 + cl((T - contact) / 900, 0, 0.25);
+    if (soc.mode === 'friendly') { S.fight = 0; S.stalk = 0; S.investigate = 0; S.steal = 0; if (S.flee < 1.5) S.flee = 0; S.companion = 1.25; }
     // what it has decided to work on leans on all of that
     if (mind.obj) for (const g in mind.obj.bias) S[g] = (S[g] || 0) + mind.obj.bias[g];
     // the thing it is doing already gets a small bonus, so it doesn't flicker between two
@@ -6893,6 +7108,10 @@ const Nemesis = (() => {
       case 'rest': return doRest(dt);
       case 'steal': return doSteal(dt);
       case 'fetch': return doFetch(dt);
+      case 'companion': return doCompanion(dt);
+      case 'parley': return doParley(dt);
+      case 'hide': return doHide(dt);
+      case 'stockpile': return doStockpile(dt);
       case 'scout': return doScout(dt, false);
       case 'lurk': return doScout(dt, true);
       case 'lookout': return doLookout(dt);
@@ -6916,7 +7135,7 @@ const Nemesis = (() => {
     GameAudio.animal('hit1', n.x, n.z, 0.7, rnd(0.9, 1.1));
     Vitals.damage(dmg, 'nemesis');
     if (Vitals.dead) return;
-    P.vx += dx / d * 5.5; P.vz += dz / d * 5.5; P.vy = Math.max(P.vy, 4.2);
+    Player.shove(P.vx + dx / d * 5.5, P.vz + dz / d * 5.5, Math.max(P.vy, 4.2), 0.16); n.backOff = 0.55;
     // a hand in the pockets
     const chance = 0.1 + mem.cunning * 0.3 + (Bed.sleeping ? 0.6 : 0) + (n.food < 10 ? 0.15 : 0);
     if (R() < chance && n.carry < 3) {
@@ -6943,6 +7162,7 @@ const Nemesis = (() => {
       faceTo(P.x, P.z);
       if (n.wind > 0) { n.wind -= dt; n.atk = 0.3; if (n.wind <= 0) { n.wind = 0; if (Math.hypot(P.x - n.x, P.z - n.z) < 3.4) attack(); else n.cool = 0.3; } }
       else if (n.cool <= 0) { if (n.onGround && R() < 0.35 && !n.inWater) { it.jump = true; n.cool = 0.12; } else n.wind = 0.3; }
+      else if (n.backOff > 0) { n.backOff -= dt; it.dx = -dx / (d || 1); it.dz = -dz / (d || 1); it.speed = WALK; }        // hit, then step out of reach
       else { const sgn = (Math.floor(T / 1.4) % 2) ? 1 : -1, px = -dz / (d || 1) * sgn, pz = dx / (d || 1) * sgn; it.dx = px * 0.8 - dx / (d || 1) * (d < 1.6 ? 0.9 : 0); it.dz = pz * 0.8 - dz / (d || 1) * (d < 1.6 ? 0.9 : 0); it.speed = WALK; }
     }
     if (Vitals.dead) killedYou();
@@ -7166,14 +7386,15 @@ const Nemesis = (() => {
     if (byPlayer) {
       const P = Player.p; n.belief = { x: P.x, y: P.y, z: P.z, t: T, conf: 1 }; n.seenAt = T; n.seen = true; mem.foeHits++;
       const h = Inventory.held(); mem.foeDmg = h && IT[h.id] ? (IT[h.id].damage || 1) : 1; mem.last = { x: P.x, y: P.y, z: P.z };
-      n.lastHitBy = h ? h.id : 'hand';
+      n.lastHitBy = h ? h.id : 'hand'; n.aggroT = T;
+      if (soc.mode === 'friendly') { soc.mode = 'hostile'; soc.trust = 0; soc.cool = T + 90; tell('it', 'So that is how it is.'); setGoal('fight'); }
     }
     n.thinkT = 0;
     if (n.hp <= 0) die(byPlayer ? 'player' : 'other');
   }
   function die(why) {
     if (!n.alive) return;
-    n.alive = false; n.dead = 1.6; n.path = null; n.mine = null; mem.death = { x: n.x, y: n.y, z: n.z, at: T }; endObj(false, 'it died');
+    n.alive = false; n.dead = 1.6; n.path = null; n.mine = null; mem.death = { x: n.x, y: n.y, z: n.z, at: T }; endObj(false, 'it died'); soc.mode = 'hostile'; closeChat();
     const shed = Object.keys(n.inv);
     for (const id of shed) { if (IT[id]) Inventory.drop(id, n.x, n.y + 0.4, n.z, n.inv[id]); }
     n.inv = {}; n.use = {}; n.carry = 0;
@@ -7199,7 +7420,7 @@ const Nemesis = (() => {
     n.alive = true; n.dead = 0; n.x = x + 0.5; n.z = z + 0.5; n.y = groundY(Math.floor(x), Math.floor(z)) + 0.05; n.vx = n.vy = n.vz = 0; n.hp = 20; n.food = rnd(13, 19); n.air = 10;
     n.inv = {}; n.use = {}; n.belief = null; n.noise = null; n.sign = null; n.seen = false; n.seenAt = -99; n.carry = 0; n.fall = null; n.fight = null; n.path = null; n.tgt = null;
     n.yaw = R() * Math.PI * 2; n.goal = 'search'; n.goalT = 0; n.steal = null; n.smelt = 0; n.restT = 0; n.frozen = 0; n.fetch = !!(mem.base && Object.keys(mem.stash).length);
-    mem.lives++; mem.visited = {}; n.life = T; n.sabDone = false; mind.obj = null; say('awake, somewhere, with no idea where you are');
+    mem.lives++; mem.visited = {}; n.life = T; n.sabDone = false; mind.obj = null; soc.mode = 'hostile'; soc.trust = 0; soc.greeted = false; soc.cool = 0; say('awake, somewhere, with no idea where you are');
     makeSkin(); Events.emit('nemesisBorn', { lives: mem.lives });
   }
   function trySpawn(dt) {
@@ -7255,6 +7476,7 @@ const Nemesis = (() => {
     R2.lying.rotation.x = 0;
     if (n.atk > 0) { const s = Math.sin((1 - n.atk / 0.3) * Math.PI); R2.armR.rotation.x = -1.7 * s; R2.lean.rotation.y = -0.2 * s; } else R2.lean.rotation.y = 0;
     if (n.mine) { R2.armR.rotation.x = -1.2 - Math.sin(T * 14) * 0.6; }
+    if (n.wave > 0) { n.wave -= dt; R2.armL.rotation.set(-2.6, 0, 0.3 + Math.sin(T * 9) * 0.3); }
     if (sp < 0.4 && !n.atk) { R2.armL.rotation.z = 0.05 + Math.sin(T * 1.6) * 0.02; R2.armR.rotation.z = -0.05 - Math.sin(T * 1.6) * 0.02; }
     // the head turns to whatever it is watching
     const tgtLook = n.seen && Math.hypot(P.x - n.x, P.z - n.z) < 40 ? (() => { let d = Math.atan2(-(P.x - n.x), -(P.z - n.z)) - n.yaw; while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832; return cl(d, -1.1, 1.1); })() : 0;
@@ -7281,6 +7503,7 @@ const Nemesis = (() => {
     const t = rayBox(Player.eyePos, Player.aimDir, n.x - 0.36, n.y, n.z - 0.36, n.x + 0.36, n.y + HH, n.z + 0.36, Math.min(CFG.REACH, blockDist + 0.3));
     if (t < 0) return false;
     if (kind === 'aim') return true;
+    if (kind === 'place') { if (Math.hypot(n.x - Player.p.x, n.z - Player.p.z) < 9) { if (soc.open) closeChat(); else openChat(); } return true; }
     if (kind === 'break' && hitCool <= 0) {
       hitCool = 0.4; const P = Player.p, h = Inventory.held(); Inventory.wearHeld(1); GameAudio.hit();
       hurt(Inventory.attackDamage() * (Player.p.vy < -1 && !Player.p.onGround ? 1.5 : 1), P.x, P.z, true);
@@ -7318,8 +7541,11 @@ const Nemesis = (() => {
     if (n.food <= 0) { n.starve = (n.starve || 0) + dt; if (n.starve > 4) { n.starve = 0; hurtSelf(1, 'starve'); } }
     if (!n.alive) return;
     senses(dt); pickup(dt); stealScan(dt);
-    mind.t -= dt; if (mind.t <= 0) { mind.t = 1.3; deliberate(); }
-    n.thinkT -= dt; if (n.thinkT <= 0) { n.thinkT = 0.45; think(); }
+    if (n.watch > 0) { n.watch -= dt; n.goal = 'hold'; n.thinkT = 0.3; if (n.watch <= 0) n.goalT = 9; }   // after a push it stands and watches
+    else {
+      mind.t -= dt; if (mind.t <= 0) { mind.t = 1.3; deliberate(); }
+      n.thinkT -= dt; if (n.thinkT <= 0) { n.thinkT = 0.45; think(); }
+    }
     it.dx = it.dz = 0; it.speed = WALK;
     if (n.inWater && waterAt(n.x, n.y + 1.6, n.z) && n.air < 5) {        // out of breath: to the nearest shore, now
       let best = null, bd = 1e9; const cx = Math.floor(n.x), cz = Math.floor(n.z);
@@ -7389,6 +7615,7 @@ const Nemesis = (() => {
     return `the other  ${compass()}\n           ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
       `           has ${inv}\n           base ${mem.base ? (mem.base.done ? 'built' : mem.base.i + '/' + mem.base.todo.length) : 'none'} · lives ${mem.lives} deaths ${mem.deaths} kills ${mem.kills} · bold ${mem.bold.toFixed(2)} careful ${mem.caution.toFixed(2)}\n` +
       `           learned: ${mem.lessons.slice(-3).join('; ') || '—'}\n` +
+      `           talk: ${soc.mode}${soc.mode === 'friendly' ? ' (' + Math.max(0, Math.round(soc.until - T)) + 's left)' : ''} · trust ${soc.trust.toFixed(1)} · shoved ${soc.betrayed}\n` +
       `           plan: ${mind.obj ? mind.obj.label + ' — ' + mind.obj.why : '—'}\n` +
       mind.log.slice(-3).map(l => '           · ' + l.t).join('\n');
   }
@@ -7405,6 +7632,8 @@ const Nemesis = (() => {
       return true;
     },
     kill() { if (n.alive) die('debug'); },
+    talk() { if (!n.alive) return false; openChat(); return true; },
+    say(t) { youSay(parse(t), t); }, get soc() { return soc; },
     beacon() { beamOn = !beamOn; updateBeam(); return beamOn; },
     goTo() { if (!n.alive) return false; const P = Player.p; P.x = n.x + 4; P.z = n.z + 4; P.y = n.y + 2; P.vx = P.vy = P.vz = 0; P.yaw = Math.atan2(-(n.x - P.x), -(n.z - P.z)); return true; },
     compass,
@@ -7459,6 +7688,7 @@ const Debug = (() => {
   document.getElementById('dbgOtherA').addEventListener('click', () => Nemesis.spawnNear(true));
   document.getElementById('dbgOtherK').addEventListener('click', () => Nemesis.kill());
   document.getElementById('dbgOtherB').addEventListener('click', e => { const on = Nemesis.beacon(); e.target.classList.toggle('on', on); });
+  document.getElementById('dbgOtherT').addEventListener('click', () => { if (!Nemesis.talk()) Inventory.toast('It is not here yet'); });
   document.getElementById('dbgOtherG').addEventListener('click', () => { if (!Nemesis.goTo()) Inventory.toast('It is not here yet: tap “The Other” to bring one'); });
   document.getElementById('dbgItems').addEventListener('click', () => Inventory.giveAll());
   el.querySelectorAll('[data-gmode]').forEach(b => b.addEventListener('click', () => {
