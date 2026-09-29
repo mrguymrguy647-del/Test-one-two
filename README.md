@@ -269,3 +269,13 @@ DEBUG, SAVE (the world list and each world's save) and MAIN (menus and the game 
 - **New tools:** silver (faster and longer-lasting than stone) and diamond (fastest, very durable, strongest sword) — pickaxe, axe, shovel, sword.
 - **Mining tiers:** wood/gold pickaxes get coal and bricks, stone gets silver, silver gets diamond. Too weak a pickaxe means the ore breaks slowly and drops nothing.
 - **New blocks:** bricks (stone + gravel), lamp (glass + coal), and blocks of coal, silver and diamond (9 ingots → block, block → 9 back).
+
+## 8.5 – The Other
+A hostile who lives in the world the way you do. Survival and hardcore only (switch it off in Settings → “The Other”).
+- **Your kind of body:** 20 hearts' worth of health, a hunger bar, air, fall damage. It wears a drained copy of your own skin, with white eyes.
+- **It doesn't know where you are.** It wakes up 110–170 blocks away with no idea. It has to find you: it sees you (day/night, fog, line of sight, field of view), hears you (digging, building, fighting, sprinting), reads the marks you leave on the land, and remembers where it saw you, where you sleep and where you spend time.
+- **It lives:** cuts trees, mines stone, coal, silver and diamonds, crafts better tools and swords, smelts, eats (hunts the herds), rests, and builds itself a stone house with a table and furnace. Its stash falls out if you break its table.
+- **It thinks:** every half second it weighs fighting, stalking, fleeing, hunting food, resting, stealing, getting stronger, building and searching. It stalks you and stands perfectly still while you look at it; it retreats when hurt, heals, and comes back.
+- **It steals:** a hit can take something from your pockets (it prefers what it needs), and when you are away it empties your furnaces and picks up what you dropped. Kill it to get your things back.
+- **It learns:** every death teaches it (your weapon, whether ambushing or open fights win, that heights and water hurt) and it comes back more careful and cleverer. It keeps its memory (and its house) between sessions.
+- **Debug (F3):** “The Other” spawns one unaware, “(hunting)” one that knows where you are, “Kill it”; the debug text shows what it is doing, what it carries and what it has learned.

@@ -401,7 +401,7 @@
   <h3>Animals</h3>
   <div class="btns">
     <button data-spawn="cow">Cow</button><button data-spawn="sheep">Sheep</button><button data-spawn="pig">Pig</button><button data-spawn="chicken">Chicken</button>
-    <button id="dbgDeer">The deer</button><button id="dbgItems">Give items</button>
+    <button id="dbgDeer">The deer</button><button id="dbgOther">The Other</button><button id="dbgOtherA">The Other (hunting)</button><button id="dbgOtherK">Kill it</button><button id="dbgItems">Give items</button>
   </div>
   <h3>Nearest animal</h3>
   <div class="btns">
@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.4';
+const GAME_VERSION = '8.5';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -452,7 +452,7 @@ const survivalMode = () => GAME.mode !== 'creative';
    ===================================================================== */
 const Settings = (() => {
   const KEY = 'stainless-settings';
-  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true, skin: 0, cam: 0, hand: true };
+  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true, skin: 0, cam: 0, hand: true, nemesis: true };
   const v = Object.assign({}, DEF);
   try {
     const old = JSON.parse(localStorage.getItem('stillness-audio') || 'null');   // Phase 3's music/sound switches
@@ -1340,7 +1340,7 @@ const World = (() => {
       if ((dx === -1 && lx !== 0) || (dx === 1 && lx !== CS - 1) || (dz === -1 && lz !== 0) || (dz === 1 && lz !== CS - 1)) continue;
       const n = chunks.get(key(c.cx + dx, c.cz + dz)); if (n) n.dirty = true;
     }
-    buildMesh(c);  // rebuild right away so the edit feels instant
+    if (c.group) buildMesh(c);  // rebuild right away so the edit feels instant (chunks that are not drawn are meshed later)
     return true;
   }
 
@@ -1453,6 +1453,7 @@ const World = (() => {
   }
 
   // ---- streaming: generate and mesh chunks near the player, drop far ones
+  let anchor = null;   // a second place to keep the ground alive (for someone who lives out of sight)
   function update(px, pz) {
     const pcx = Math.floor(px / CS), pcz = Math.floor(pz / CS), R = CFG.VIEW;
     const want = [];
@@ -1473,8 +1474,11 @@ const World = (() => {
       if (!ready) continue;
       buildMesh(c); mesh--;
     }
+    const acx = anchor ? Math.floor(anchor.x / CS) : 0, acz = anchor ? Math.floor(anchor.z / CS) : 0;
+    if (anchor && gen > 0) for (let dz = -3; dz <= 3 && gen > 0; dz++) for (let dx = -3; dx <= 3; dx++) if (gen > 0 && dx * dx + dz * dz <= 10 && !chunks.has(key(acx + dx, acz + dz))) { generate(acx + dx, acz + dz); gen--; }
     for (const c of chunks.values()) {
       const d = Math.hypot(c.cx - pcx, c.cz - pcz);
+      if (anchor && Math.hypot(c.cx - acx, c.cz - acz) <= 5) { if (d > R + 2 && c.group) { disposeMesh(c); c.dirty = true; } continue; }
       if (d > R + 2 && c.group) { disposeMesh(c); c.dirty = true; }
       if (d > R + 4) chunks.delete(key(c.cx, c.cz));   // edits live in editsByChunk, so any far chunk can go
     }
@@ -1502,7 +1506,11 @@ const World = (() => {
     for (const [k, flat] of list || []) { const m = new Map(); for (let i = 0; i < flat.length; i += 2) m.set(flat[i], flat[i + 1]); target.set(k, m); }
   }
   const importEdits = list => importEditsInto(editsByChunk, list);
-  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits, exportFakeEdits, switchRealm, exitsNear, chestsNear, seaStructs, fakeSpawn, get fake() { return fake; } };
+  const setAnchor = (x, z) => { anchor = x === null ? null : { x, z }; };
+  const hasChunk = (x, z) => chunks.has(key(Math.floor(x / CS), Math.floor(z / CS)));
+  // chunks the player has changed: [cx, cz, how many blocks] (a place that has been lived in leaves marks)
+  const editedChunks = () => { const out = []; for (const [k, m] of editsByChunk) { const [cx, cz] = k.split(',').map(Number); out.push([cx, cz, m.size]); } return out; };
+  return { B, INFO, SOLID, OPAQUE, TILE, atlas, atlasCanvas, materials, group, chunks, U, patchFog, forestAt: (x, z) => n4(x / 55, z / 55), setSeed, getSeed: () => seed, heightAt, get, solid, set, update, pendingNear, fillTop, exportEdits, importEdits, exportFakeEdits, setAnchor, hasChunk, editedChunks, switchRealm, exitsNear, chestsNear, seaStructs, fakeSpawn, get fake() { return fake; } };
 })();
 
 /* =====================================================================
@@ -3727,6 +3735,19 @@ const Inventory = (() => {
     toggleBag, update, onMode, reset, exportState, importState, iconOf, curse, exportFurnaces: () => furnaces, importFurnaces, refreshHotbar,
     get isOpen() { return isOpen; }, set relock(f) { relock = f; }, get sel() { return sel; }, get cursor() { return cursor; },
     dropCount: () => drops.length, match, RECIPES,
+    // ---- for the one who lives here too (it mines, eats and steals by the same rules as you)
+    MINE, dropOf: b => b === B.GLASS || b === B.LAMP ? null : DROP[b] || BLOCK_ITEM[b] || null,
+    breakTimeWith(b, id) { const m = MINE[b] || [1], d = id && ITEM[id], right = !!(d && d.tool && d.tool === m[1]); const ok = !m[2] || (right && (d.tier || 1) >= (m[3] || 1)); return { time: m[0] * (ok ? 1.5 : 5) / (right ? d.speed : 1), drops: ok }; },
+    dropsNear(x, y, z, r) { return drops.filter(d => Math.hypot(d.x - x, d.z - z) < r && Math.abs(d.y - y) < r && d.t > 0.6); },
+    takeDrop(d) { const i = drops.indexOf(d); if (i < 0) return null; scene.remove(d.sprite); drops.splice(i, 1); return { id: d.id, n: d.n, d: d.d }; },
+    steal(score) {   // a hand in your pockets: takes the stack it likes most (a part of it, if it is a big one)
+      let best = -1, bs = 0.05;
+      for (let i = 0; i < 36; i++) { const s = slots[i]; if (!s) continue; const v = score(s.id, s) + Math.random() * 0.4; if (v > bs) { bs = v; best = i; } }
+      if (best < 0) return null;
+      const s = slots[best], k = s.n > 8 ? Math.ceil(s.n / 2) : s.n, out = { id: s.id, n: k, d: s.d };
+      s.n -= k; if (s.n <= 0) slots[best] = null;
+      changed(); return out;
+    },
     giveAll() { give('bed', 1);  for (const id of ['beef', 'pork', 'mutton', 'chicken', 'milk', 'leather', 'feather', 'egg', 'stick']) give(id, 4); },
     giveBlocks() { for (const id of ['grass', 'dirt', 'stone', 'sand', 'gravel', 'log', 'planks', 'glass', 'wool', 'table', 'furnace', 'coal_ore', 'silver_ore', 'diamond_ore', 'brick', 'coal_block', 'silver_block', 'diamond_block', 'lamp']) give(id, id === 'table' || id === 'furnace' ? 1 : 64, true); toast('+ blocks'); },
     giveTools() { for (const id in ITEM) if (ITEM[id].tool) give(id, 1, true); toast('+ tools'); },
@@ -4463,16 +4484,19 @@ const Animals = (() => {
     const P = Player.p;
     if (a.kind === 'deer') { deer.hits++; Events.emit('deerHit', { hits: deer.hits }); return; }     // nothing happens. it just looks at you
     if (a.special === 'extra' || a.special === 'visitor' || a.special === 'upright') { Events.emit('animalVanish', { kind: a.special }); remove(a); return; }
-    a.hp -= Inventory.attackDamage(); Inventory.wearHeld(1); a.hurtT = 0.3; a.red = true; setLook(a);
-    const l = Math.hypot(a.x - P.x, a.z - P.z) || 1;
-    a.kx = (a.x - P.x) / l * 4.5; a.kz = (a.z - P.z) / l * 4.5; a.vy = 5; a.onGround = false;
-    GameAudio.hit();
+    Inventory.wearHeld(1); GameAudio.hit();
+    wound(a, Inventory.attackDamage(), P.x, P.z, P.y + P.eye);
+  }
+  function wound(a, dmg, fx, fz, fy) {   // hurt by you, or by the one who lives out there
+    a.hp -= dmg; a.hurtT = 0.3; a.red = true; setLook(a);
+    const l = Math.hypot(a.x - fx, a.z - fz) || 1;
+    a.kx = (a.x - fx) / l * 4.5; a.kz = (a.z - fz) / l * 4.5; a.vy = 5; a.onGround = false;
     GameAudio.animal(a.spec.hurt || a.spec.sound, a.x, a.z, 0.9, 1.25 * a.per.voice);
     // it runs, the herd runs after it (each one a moment later), and they remember you for a while
     for (const b of animals) if ((b === a || b.flock && b.flock === a.flock) && Math.hypot(b.x - a.x, b.z - a.z) < 14) {
       b.ai.scared = Math.max(b.ai.scared, b === a ? 1 : 0.6); b.ai.stare = null; b.ai.frozen = false; b.ai.frzIn = 1e9; b.ai.creep = false;   // that breaks the spell
     }
-    alarm(a, P.x, P.z, 1.5, false, P.y + P.eye);
+    alarm(a, fx, fz, 1.5, false, fy);
     if (a.hp <= 0) {
       a.dieT = 0.001;
       for (const [item, lo, hi] of a.spec.drops) {
@@ -4881,6 +4905,23 @@ const Animals = (() => {
       else setMode(a, name);
     },
     setMode, spawnAt(kind, x, y, z, o) { return spawn(kind, x, y, z, o); },
+    // ---- for the one who lives out there
+    herdSites(x, z, r) {   // where the herds stand, out of sight too (the same herds you would meet)
+      const out = [], c0x = Math.floor((x - r) / CFG.CHUNK), c1x = Math.floor((x + r) / CFG.CHUNK), c0z = Math.floor((z - r) / CFG.CHUNK), c1z = Math.floor((z + r) / CFG.CHUNK);
+      for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) {
+        const h = herdAt(cx, cz); if (!h) continue; const left = h.n - hs(h.id).dead.length;
+        if (left > 0 && Math.hypot(h.x - x, h.z - z) < r) out.push({ id: h.id, kind: h.kind, x: h.x, z: h.z, left });
+      }
+      return out;
+    },
+    takeMember(id) {   // one of the herd is gone, and what it left behind
+      const [cx, cz] = id.split(',').map(Number), h = herdAt(cx, cz); if (!h) return [];
+      const st = hs(id); let idx = -1; for (let i = 0; i < h.n; i++) if (st.dead.indexOf(i) < 0) { idx = i; break; }
+      if (idx < 0) return []; st.dead.push(idx);
+      return SPEC[h.kind].drops.map(([item, lo, hi]) => [item, lo + Math.floor(Math.random() * (hi - lo + 1))]).filter(d => d[1] > 0);
+    },
+    prey(x, z, r) { return animals.filter(a => !a.special && !a.dieT && !a.gone && Math.hypot(a.x - x, a.z - z) < r); },
+    strike(a, dmg, fx, fz, fy) { if (a.dieT || a.special) return false; wound(a, dmg, fx, fz, fy); return a.hp <= 0; },
   };
 })();
 
@@ -4998,7 +5039,7 @@ const Vitals = (() => {
     air = clamp(typeof s.air === 'number' ? s.air : 10, 0, 10); ex = s.ex || 0; poison = s.poison || 0;
     drawn = ''; draw();
   }
-  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.', sea: 'Something in the deep took you.' };
+  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.', sea: 'Something in the deep took you.', nemesis: 'Something that moves like you killed you.' };
   return {
     update, damage, feed, reset, respawn: reset, onSleep, exportState, importState, draw,
     hungry: () => food < 20,
@@ -5444,7 +5485,7 @@ const Avatar = (() => {
 
   Settings.on((k, v) => { if (k === 'skin') Skin.set(v); });
   document.getElementById('cross').style.visibility = st.view === 2 ? 'hidden' : '';
-  return { update, overlay, preview, HAND, item1, setView, cycleView() { setView(st.view + 1); }, get view() { return st.view; }, get thirdPerson() { return rig.root.visible; }, st, rig, swing() { st.swing = 1; } };
+  return { update, overlay, preview, HAND, item1, setView, cycleView() { setView(st.view + 1); }, get view() { return st.view; }, get thirdPerson() { return rig.root.visible; }, st, rig, swing() { st.swing = 1; }, makeRig, S };
 })();
 
 /* =====================================================================
@@ -6209,6 +6250,992 @@ const Sea = (() => {
 })();
 
 /* =====================================================================
+   THE OTHER — someone who lives here the way you do. It has your kind of body, a heart bar and a hunger bar.
+   It wakes up somewhere far away without knowing where you are. It has to find you: it listens, watches, reads the
+   marks you leave on the land and remembers. It cuts trees, mines, crafts, eats, builds itself a house, steals,
+   plans, retreats and comes back. Every time it dies it learns something.
+   ===================================================================== */
+const Nemesis = (() => {
+  const B = World.B, CS = CFG.CHUNK, SEAY = CFG.SEA, HEIGHT = CFG.HEIGHT, IT = Inventory.ITEM;
+  const R = Math.random, rnd = (a, b) => a + R() * (b - a), pick = a => a[Math.floor(R() * a.length)], cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const HW = 0.3, HH = 1.8, WALK = 4.0, RUN = 5.9;
+  const ck = (x, z) => Math.floor(x / CS) + ',' + Math.floor(z / CS);
+  const solid = (x, y, z) => World.solid(x, y, z), free = (x, y, z) => !World.solid(x, y, z);
+  const FOOD = id => IT[id] && IT[id].food || 0;
+
+  // ================= what it remembers, from life to life =================
+  const freshMem = () => ({
+    lives: 0, deaths: 0, kills: 0, grace: 480, base: null, home: null, last: null, heat: {}, visited: {}, inspected: {}, ownN: {},
+    caution: 0.35, bold: 0.5, cunning: 0.3, foeDmg: 1, foeHits: 0, stash: {}, lessons: [], killedBy: '', steals: 0,
+    tact: { ambush: [1, 2], open: [1, 2] }, tierSeen: 0, avoid: { fall: 0, water: 0, hunger: 0 },
+  });
+  let mem = freshMem();
+  const lesson = t => { if (mem.lessons.indexOf(t) < 0) { mem.lessons.push(t); if (mem.lessons.length > 14) mem.lessons.shift(); } };
+
+  // ================= who it is right now =================
+  const n = {
+    alive: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, look: 0, hp: 20, food: 20, air: 10, ex: 0, inv: {}, use: {}, onGround: false, inWater: false,
+    respawn: 0, goal: 'search', goalT: 0, tgt: null, path: null, pi: 0, pathGoal: null, replan: 0, cool: 0, stuck: 0, stuckT: 0, lastX: 0, lastZ: 0, failN: 0,
+    belief: null, noise: null, seen: false, seenAt: -99, sawAsleep: false, mine: null, atk: 0, hurt: 0, fall: null, eat: 0, tsk: null, carry: 0, frozen: 0, freezeT: 0,
+    fight: null, fightSince: 0, life: 0, smelt: 0, dead: 0, stepD: 0, scan: 0, thinkT: 0, sense: 0, dig: 0, wander: null, sweep: 0, restT: 0, spawnTry: null, spawnWait: 0,
+    tableAt: null, furnAt: null, wind: 0, lastHp: 20, breath: 0, dmgT: 0, plan: 0, fetch: false, steal: null, sign: null, tgtBlock: null, regen: 0, starve: 0,
+  };
+  const it = { dx: 0, dz: 0, speed: WALK, jump: false, swim: false };   // what the brain wants the body to do this moment
+  let T = 0, own = new Set();
+
+  // ================= things it carries =================
+  const have = id => n.inv[id] || 0;
+  const addInv = (id, k) => { n.inv[id] = (n.inv[id] || 0) + k; };
+  const takeInv = (id, k) => { n.inv[id] = have(id) - k; if (n.inv[id] <= 0) delete n.inv[id]; };
+  const TIERS = ['wood', 'stone', 'silver', 'diamond'];
+  const bestTool = kind => { for (let i = 3; i >= 0; i--) if (have(TIERS[i] + '_' + kind)) return TIERS[i] + '_' + kind; return null; };
+  const tierOf = kind => { const t = bestTool(kind); return t ? TIERS.indexOf(t.split('_')[0]) + 1 : 0; };
+  const CRAFT = {
+    planks: [{ log: 1 }, 4], stick: [{ planks: 2 }, 4], table: [{ planks: 4 }, 1], furnace: [{ stone: 8 }, 1],
+    wood_pickaxe: [{ planks: 3, stick: 2 }, 1], wood_sword: [{ planks: 2, stick: 1 }, 1], wood_axe: [{ planks: 3, stick: 2 }, 1],
+    stone_pickaxe: [{ stone: 3, stick: 2 }, 1], stone_sword: [{ stone: 2, stick: 1 }, 1], stone_axe: [{ stone: 3, stick: 2 }, 1],
+    silver_pickaxe: [{ silver_ingot: 3, stick: 2 }, 1], silver_sword: [{ silver_ingot: 2, stick: 1 }, 1],
+    diamond_pickaxe: [{ diamond: 3, stick: 2 }, 1], diamond_sword: [{ diamond: 2, stick: 1 }, 1],
+  };
+  function craft(id) {
+    const r = CRAFT[id]; if (!r) return false;
+    for (const k in r[0]) if (have(k) < r[0][k]) return false;
+    for (const k in r[0]) takeInv(k, r[0][k]);
+    addInv(id, r[1]); return true;
+  }
+  function wear(tool) {
+    if (!tool) return; n.use[tool] = (n.use[tool] || 0) + 1;
+    if (n.use[tool] > IT[tool].dur) { takeInv(tool, 1); delete n.use[tool]; lesson('tools break'); }
+  }
+  const held = () => bestTool('sword') || bestTool('pickaxe') || null;
+  const swordDmg = () => { const s = bestTool('sword'); return s ? IT[s].damage : 1.5; };
+
+  // ================= the ground under and around it =================
+  const groundY = (x, z) => { for (let y = HEIGHT - 1; y > 0; y--) { const b = World.get(x, y, z); if (b !== B.AIR && b !== B.LEAVES && b !== B.WATER) return y + 1; } return 1; };
+  function bump(x, y, z) {
+    const x0 = Math.floor(x - HW), x1 = Math.floor(x + HW), z0 = Math.floor(z - HW), z1 = Math.floor(z + HW), y0 = Math.floor(y), y1 = Math.floor(y + HH - 0.01);
+    for (let yy = y0; yy <= y1; yy++) for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) if (solid(xx, yy, zz)) return true;
+    return false;
+  }
+  const waterAt = (x, y, z) => World.get(Math.floor(x), Math.floor(y), Math.floor(z)) === B.WATER;
+  function los(ax, ay, az, bx, by, bz, ignore) {   // can you see from a to b? (leaves and stone stop the look)
+    const dx = bx - ax, dy = by - ay, dz = bz - az, L = Math.hypot(dx, dy, dz), N = Math.ceil(L / 0.45);
+    for (let i = 1; i < N; i++) {
+      const t = i / N, x = Math.floor(ax + dx * t), y = Math.floor(ay + dy * t), z = Math.floor(az + dz * t);
+      if (ignore && ignore[0] === x && ignore[1] === y && ignore[2] === z) continue;
+      const b = World.get(x, y, z); if (World.OPAQUE[b] || b === B.LEAVES) return false;
+    }
+    return true;
+  }
+
+  // ================= finding its way: A* over blocks; it can climb one block, drop three, dig through and bridge gaps =================
+  const heap = { a: [], push(f, id) { const a = this.a; a.push([f, id]); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (a[p][0] <= a[i][0]) break; [a[p], a[i]] = [a[i], a[p]]; i = p; } },
+    pop() { const a = this.a, top = a[0], last = a.pop(); if (a.length) { a[0] = last; let i = 0; for (;;) { let l = 2 * i + 1, r = l + 1, m = i; if (l < a.length && a[l][0] < a[m][0]) m = l; if (r < a.length && a[r][0] < a[m][0]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m; } } return top; } };
+  const nid = (x, y, z) => ((x + 40000) * 80001 + (z + 40000)) * 128 + y;
+  function stand(x, y, z) {
+    if (y < 2 || y >= HEIGHT - 2 || !World.hasChunk(x, z)) return false;
+    if (solid(x, y, z) || solid(x, y + 1, z)) return false;
+    return solid(x, y - 1, z) && World.get(x, y + 1, z) !== B.WATER;   // (only shallow water: it does not swim across a lake)
+  }
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const diggable = b => b !== B.AIR && b !== B.WATER;
+  function astar(sx, sy, sz, gx, gy, gz, near, o) {
+    o = o || {}; const maxN = o.maxN || 1200, nodes = new Map(); heap.a.length = 0;
+    const h = (x, y, z) => (Math.hypot(x - gx, z - gz) + Math.abs(y - gy) * 0.6) * 1.15;
+    const s = { x: sx, y: sy, z: sz, g: 0, p: null, act: null }; nodes.set(nid(sx, sy, sz), s); heap.push(h(sx, sy, sz), nid(sx, sy, sz));
+    let best = s, bh = h(sx, sy, sz), N = 0; const seen = new Set();
+    while (heap.a.length && N < maxN) {
+      const [, id] = heap.pop(); if (seen.has(id)) continue; seen.add(id); N++;
+      const c = nodes.get(id), dh = Math.hypot(c.x - gx, c.z - gz);
+      if (dh <= near && Math.abs(c.y - gy) <= 2) { best = c; bh = -1; break; }
+      const hh = h(c.x, c.y, c.z); if (hh < bh) { bh = hh; best = c; }
+      for (const [dx, dz] of DIRS) {
+        const diag = dx && dz;
+        for (const dy of diag ? [0, -1] : [0, 1, -1, -2, -3]) {
+          const tx = c.x + dx, ty = c.y + dy, tz = c.z + dz, tid = nid(tx, ty, tz);
+          if (ty < 2 || ty >= HEIGHT - 3 || seen.has(tid) || !World.hasChunk(tx, tz)) continue;
+          let cost = diag ? 1.42 : 1, act = null, cells = null;
+          const corner = !diag || (free(c.x + dx, c.y, c.z) && free(c.x + dx, c.y + 1, c.z) && free(c.x, c.y, c.z + dz) && free(c.x, c.y + 1, c.z + dz));
+          let ok = corner && stand(tx, ty, tz);
+          if (ok && dy === 1) ok = free(c.x, c.y + 2, c.z);
+          if (ok && dy < 0) { for (let yy = ty; yy <= c.y + 1; yy++) if (solid(tx, yy, tz)) { ok = false; break; } if (ok) cost += -dy * 0.7; }
+          if (ok && dy > 0) cost += 0.6;
+          if (ok && World.get(tx, ty, tz) === B.WATER) cost += 2.5;
+          if (ok && o.avoidFall && dy < -1) ok = false;
+          if (!ok && o.dig && !diag && dy >= -1 && dy <= 1 && corner) {                        // tunnel through it
+            const cs = [[tx, ty, tz], [tx, ty + 1, tz]]; if (dy === 1) cs.push([c.x, c.y + 2, c.z]); if (dy === -1) cs.push([tx, c.y + 1, tz], [tx, c.y, tz]);
+            const need = []; let bad = false;
+            for (const q of cs) { if (solid(q[0], q[1], q[2])) { if (!diggable(World.get(q[0], q[1], q[2])) || q[1] < 2) { bad = true; break; } need.push(q); } }
+            if (!bad && need.length && solid(tx, ty - 1, tz)) { ok = true; act = 'dig'; cells = need; cost += 3 + need.length * 2.5; }
+          }
+          if (!ok && o.bridge && !diag && dy === 0 && free(tx, ty, tz) && free(tx, ty + 1, tz) && !solid(tx, ty - 1, tz) && World.get(tx, ty + 1, tz) !== B.WATER && ty - 1 > 1) { ok = true; act = 'bridge'; cost += 5; }
+          if (!ok) continue;
+          const g = c.g + cost, ex = nodes.get(tid);
+          if (!ex || g < ex.g) { nodes.set(tid, { x: tx, y: ty, z: tz, g, p: c, act, cells }); heap.push(g + h(tx, ty, tz), tid); }
+        }
+      }
+    }
+    if (best === s) return bh === -1 ? [] : null;
+    if (bh !== -1 && h(sx, sy, sz) - bh < 2.5 && !o.partial) return null;
+    const out = []; for (let c = best; c && c !== s; c = c.p) out.push(c);
+    return out.reverse();
+  }
+
+  // ================= the body: gravity, walls, water, steps =================
+  function physics(dt) {
+    const w = waterAt(n.x, n.y + 0.4, n.z); n.inWater = w; n.wet = w ? 0.35 : (n.wet || 0) - dt;
+    const sp = it.speed * (w ? 0.62 : 1), tx = it.dx * sp, tz = it.dz * sp, acc = n.onGround ? 14 : w ? 5 : 3.2;
+    n.vx += (tx - n.vx) * Math.min(1, dt * acc); n.vz += (tz - n.vz) * Math.min(1, dt * acc);
+    if (w) { n.vy += (it.jump || it.swim ? 9 : -3) * dt; n.vy *= 1 - Math.min(1, dt * 2.5); if (n.vy > 3.4) n.vy = 3.4; }
+    else { n.vy -= 26 * dt; if (n.vy < -42) n.vy = -42; if (it.jump && (n.onGround || n.wet > 0)) { n.vy = 8.4; n.onGround = false; n.wet = 0; } }
+    let blocked = false;
+    const nx = n.x + n.vx * dt; if (!bump(nx, n.y, n.z)) n.x = nx; else { blocked = true; n.vx = 0; }
+    const nz = n.z + n.vz * dt; if (!bump(n.x, n.y, nz)) n.z = nz; else { blocked = true; n.vz = 0; }
+    if (blocked && n.onGround && !w && (it.dx || it.dz) && !bump(n.x + it.dx * 0.6, n.y + 1.1, n.z + it.dz * 0.6) && !solid(Math.floor(n.x), Math.floor(n.y + 2.1), Math.floor(n.z))) { n.vy = 8.4; n.onGround = false; }   // a step in the way
+    const ny = n.y + n.vy * dt;
+    if (bump(n.x, ny, n.z)) { if (n.vy < 0) { n.y = Math.floor(ny) + 1; n.onGround = true; } n.vy = 0; } else { n.y = ny; n.onGround = false; }
+    if (w) n.onGround = false;
+    // falling hurts, water doesn't
+    if (!n.onGround && !w && n.vy < -1) { if (n.fall === null) n.fall = n.y; }
+    if ((n.onGround || w) && n.fall !== null) { const d = n.fall - n.y; n.fall = null; if (!w && d > 3.5) hurtSelf(Math.round(d - 3), 'fall'); }
+    if (n.y < -8) hurtSelf(99, 'void');
+    // lungs
+    const under = waterAt(n.x, n.y + 1.6, n.z);
+    if (under) { n.air -= dt; if (n.air <= 0) { n.air = 0.1; n.breath += dt; if (n.breath > 1) { n.breath = 0; hurtSelf(2, 'drown'); } } } else n.air = Math.min(10, n.air + dt * 4);
+    it.jump = false; it.swim = false;
+  }
+  const STEP = { [B.GRASS]: 'step_grass', [B.LEAVES]: 'step_grass', [B.DIRT]: 'step_dirt', [B.SAND]: 'step_sand', [B.GRAVEL]: 'step_gravel', [B.LOG]: 'step_wood', [B.PLANKS]: 'step_wood', [B.GLASS]: 'step_glass' };
+  function footsteps(dt) {
+    const sp = Math.hypot(n.vx, n.vz);
+    if (!n.onGround || sp < 1) { n.stepD = 0; return; }
+    n.stepD += sp * dt; if (n.stepD < (sp > 5 ? 1.9 : 1.55)) return; n.stepD = 0;
+    const b = World.get(Math.floor(n.x), Math.floor(n.y - 0.2), Math.floor(n.z));
+    GameAudio.animal(STEP[b] || 'step_hard', n.x, n.z, sp > 5 ? 0.85 : 0.6, rnd(0.9, 1.05));
+  }
+
+  // ================= walking a path =================
+  function follow(dt, speed) {
+    const wp = n.path && n.path[n.pi]; if (!wp) return 'done';
+    if (wp.act === 'dig') {
+      for (const q of wp.cells) if (solid(q[0], q[1], q[2])) { faceTo(q[0] + 0.5, q[2] + 0.5); it.dx = it.dz = 0; const r = mineAt(q[0], q[1], q[2], dt); if (r === 'no') return 'stuck'; return 'moving'; }
+    } else if (wp.act === 'bridge' && !solid(wp.x, wp.y - 1, wp.z)) {
+      const b = bulkId(); if (!b) return 'stuck';
+      if (Math.hypot(n.x - (wp.x + 0.5), n.z - (wp.z + 0.5)) < 2.2) { placeAt(wp.x, wp.y - 1, wp.z, b); }
+    }
+    const tx = wp.x + 0.5, tz = wp.z + 0.5, dx = tx - n.x, dz = tz - n.z, d = Math.hypot(dx, dz) || 1;
+    it.dx = dx / d; it.dz = dz / d; it.speed = speed;
+    faceTo(tx, tz, true);
+    if (wp.y > n.y + (n.wet > 0 ? 0.15 : 0.45) && (n.onGround || n.wet > 0)) it.jump = true;
+    if (n.inWater && wp.y >= Math.floor(n.y)) it.swim = true;
+    if (d < 0.32 && Math.abs(n.y - wp.y) < 1.3) { n.pi++; return n.pi >= n.path.length ? 'done' : 'moving'; }
+    // are we getting anywhere?
+    n.stuckT += dt;
+    if (n.stuckT > 0.6) { const moved = Math.hypot(n.x - n.lastX, n.z - n.lastZ); n.lastX = n.x; n.lastZ = n.z; n.stuckT = 0; if (moved < 0.35) { n.stuck++; if (n.stuck > 3) { n.stuck = 0; return 'stuck'; } } else n.stuck = 0; }
+    return 'moving';
+  }
+  // goTo returns 'arrived', 'moving' or 'fail'
+  function goTo(x, y, z, near, speed, o) {
+    const d = Math.hypot(n.x - x, n.z - z);
+    if (d <= near && Math.abs(n.y - y) <= 2.6) { n.path = null; return 'arrived'; }
+    const g = n.pathGoal, stale = !n.path || n.pi >= n.path.length || !g || Math.hypot(g.x - x, g.z - z) > Math.max(2.5, near * 0.6) || n.replan <= 0;
+    if (stale && n.plan <= 0) {
+      n.plan = 0.35; n.replan = 3; n.pathGoal = { x, y, z };
+      const p = astar(Math.floor(n.x), Math.floor(n.y + 0.05), Math.floor(n.z), Math.floor(x), Math.floor(y), Math.floor(z), near, Object.assign({ dig: true, bridge: !!bulkId(), avoidFall: mem.avoid.fall > 1 && n.hp < 12 }, o));
+      n.pi = 0; n.path = p; n.pathFailed = !p;
+      if (!p) { n.failN++; return 'fail'; }
+    }
+    if (!n.path) return n.pathFailed ? 'fail' : 'moving';
+    const s = follow(dt0, speed);
+    if (s === 'stuck') { n.path = null; n.replan = 0; n.failN++; if (n.failN > 3) { n.failN = 0; return 'fail'; } return 'moving'; }
+    if (s === 'done') { n.path = null; return Math.hypot(n.x - x, n.z - z) <= near + 1.6 ? 'arrived' : 'moving'; }
+    return 'moving';
+  }
+  let dt0 = 0.016;
+  function faceTo(x, z, soft) {
+    const want = Math.atan2(-(x - n.x), -(z - n.z));
+    let d = want - n.yaw; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    n.yaw += soft ? d * Math.min(1, dt0 * 9) : d * Math.min(1, dt0 * 16);
+  }
+
+  // ================= digging and building =================
+  const owner = (x, z) => { const k = ck(x, z); mem.ownN[k] = (mem.ownN[k] || 0) + 1; };
+  const DIGSND = { [B.STONE]: 'dig_cracky', [B.LOG]: 'dig_choppy', [B.PLANKS]: 'dig_choppy', [B.GLASS]: 'break_glass', [B.LEAVES]: 'dig_snappy' };
+  function mineAt(x, y, z, dt) {
+    const b = World.get(x, y, z);
+    if (b === B.AIR || b === B.WATER) { n.mine = null; return 'done'; }
+    if (y < 2) return 'no';
+    if (Math.hypot(n.x - x - 0.5, n.z - z - 0.5) > 4.6 || Math.abs(n.y + 1.4 - y - 0.5) > 4.6) return 'no';
+    const M = Inventory.MINE[b], kind = M && M[1], tool = kind ? bestTool(kind) : null, alt = !tool && kind === 'pickaxe' ? null : tool;
+    if (!n.mine || n.mine.x !== x || n.mine.y !== y || n.mine.z !== z) n.mine = { x, y, z, t: 0, snd: 0 };
+    const bt = Inventory.breakTimeWith(b, alt), m = n.mine; m.t += dt; m.snd -= dt; n.atk = Math.max(n.atk, 0.25);
+    faceTo(x + 0.5, z + 0.5);
+    if (m.snd <= 0) { m.snd = 0.28; GameAudio.animal(DIGSND[b] || 'dig_crumbly', x + 0.5, z + 0.5, 0.6, rnd(0.9, 1.1)); }
+    if (m.t >= bt.time) {
+      World.set(x, y, z, B.AIR); owner(x, z); own.add(x + ',' + y + ',' + z);
+      const item = Inventory.dropOf(b); if (bt.drops && item) addInv(item, 1);
+      wear(alt); n.mine = null; GameAudio.animal('dug', x + 0.5, z + 0.5, 0.5, rnd(0.9, 1.1)); return 'done';
+    }
+    return 'working';
+  }
+  const BULK = ['dirt', 'grass', 'gravel', 'sand', 'stone', 'planks'];
+  const bulkId = () => { { for (const id of ['stone', 'dirt', 'grass', 'gravel', 'sand']) if (have(id) > 0) return id; return have('planks') > 12 ? 'planks' : null; } };
+  const bulkCount = () => BULK.reduce((a, id) => a + have(id), 0);
+  const BLK = { grass: B.GRASS, planks: B.PLANKS, stone: B.STONE, dirt: B.DIRT, gravel: B.GRAVEL, sand: B.SAND, table: B.TABLE, furnace: B.FURNACE, log: B.LOG };
+  function placeAt(x, y, z, id) {
+    if (!have(id) || solid(x, y, z) || y < 2 || y >= HEIGHT - 1) return false;
+    const x0 = Math.floor(n.x - HW), x1 = Math.floor(n.x + HW), z0 = Math.floor(n.z - HW), z1 = Math.floor(n.z + HW);
+    if (x >= x0 && x <= x1 && z >= z0 && z <= z1 && y >= Math.floor(n.y) && y <= Math.floor(n.y + HH)) return false;   // not where it stands
+    World.set(x, y, z, BLK[id]); takeInv(id, 1); owner(x, z); own.add(x + ',' + y + ',' + z); n.atk = Math.max(n.atk, 0.2);
+    GameAudio.animal(BLK[id] === B.STONE ? 'place_hard' : 'place', x + 0.5, z + 0.5, 0.6, rnd(0.9, 1.1)); return true;
+  }
+
+  // ================= senses: it only knows what it can see, hear or read from the land =================
+  const hear = (x, y, z, r) => {
+    if (!n.alive) return; const d = Math.hypot(x - n.x, z - n.z); if (d > r) return;
+    const e = d * 0.18; n.noise = { x: x + rnd(-e, e), y, z: z + rnd(-e, e), t: T, loud: 1 - d / r };
+  };
+  Events.on('break', t => hear(t.x + 0.5, t.y, t.z + 0.5, 38));
+  Events.on('place', t => hear(t.x + 0.5, t.y, t.z + 0.5, 34));
+  Events.on('dig', t => hear(t.x + 0.5, t.y, t.z + 0.5, 20));
+  Events.on('swing', () => { const P = Player.p; hear(P.x, P.y, P.z, 12); });
+  Events.on('hurt', () => { const P = Player.p; hear(P.x, P.y, P.z, 28); });
+  let signT = 0;
+  function foreign(cx, cz, c) { return c - (mem.ownN[cx + ',' + cz] || 0); }
+  function readLand() {   // the marks of somebody else's hands: dug and placed blocks it did not put there
+    const out = [];
+    for (const [cx, cz, c] of World.editedChunks()) { const f = foreign(cx, cz, c); if (f >= 4) out.push({ x: cx * CS + 8, z: cz * CS + 8, f, k: cx + ',' + cz }); }
+    return out;
+  }
+  function senses(dt) {
+    n.sense -= dt; if (n.sense > 0) return; n.sense = 0.2;
+    const P = Player.p;
+    if (Realm.fake || Vitals.dead || Bed.sleeping && false) { n.seen = false; return; }
+    const ex = n.x, ey = n.y + 1.6, ez = n.z, px = P.x, py = P.y + 1.0, pz = P.z, dx = px - ex, dz = pz - ez, hd = Math.hypot(dx, dz), dist = Math.hypot(hd, py - ey);
+    let vr = 18 + 36 * Sky.state.day; vr *= 1 - 0.55 * Math.min(1, SkyFX.mist); if (Sea.under > 0.5) vr *= 0.4;
+    if (Bed.sleeping) vr *= 0.8;
+    const fx = -Math.sin(n.yaw), fz = -Math.cos(n.yaw), dot = hd > 0.1 ? (dx * fx + dz * fz) / hd : 1;
+    const seen = dist < vr && (dot > 0.2 || hd < 5) && los(ex, ey, ez, px, py, pz);
+    n.seen = seen;
+    if (seen) {
+      n.seenAt = T; n.belief = { x: px, y: P.y, z: pz, t: T, conf: 1 }; mem.last = { x: px, y: P.y, z: pz };
+      const k = ck(px, pz); mem.heat[k] = (mem.heat[k] || 0) + 1;
+      if (dist < 18) { const h = Inventory.held(), d = h && IT[h.id] ? (IT[h.id].damage || 1) : 1; if (d !== mem.foeDmg) { mem.foeDmg = d; if (d >= 4) lesson('the other carries a strong weapon'); } }
+      n.sawAsleep = Bed.sleeping && dist < 14;
+      if (Bed.sleeping || Weather.ctx.inHouse) { const bd = Bed.list[0]; mem.home = bd ? { x: bd.x, y: bd.y, z: bd.z } : { x: px, y: P.y, z: pz }; }
+    } else n.sawAsleep = false;
+    // footsteps carry
+    const sp = Math.hypot(P.vx, P.vz);
+    if (!seen && P.onGround && (sp > 5.2 && dist < 20 || sp > 1 && dist < 8)) hear(P.x, P.y, P.z, 22);
+    // a belief fades, and gets less sure
+    if (n.belief && T - n.belief.t > 50) n.belief = null;
+    // signs on the ground
+    signT -= 0.2;
+    if (signT <= 0 && !seen) {
+      signT = 5; let best = null, bd = 1e9;
+      for (const s of readLand()) {
+        const d = Math.hypot(s.x - n.x, s.z - n.z), base = mem.base && Math.hypot(s.x - mem.base.x, s.z - mem.base.z) < 26;
+        if (base || d > 75 || (mem.inspected[s.k] || -1e9) > T - 240) continue;
+        if (d < bd) { bd = d; best = s; }
+      }
+      n.sign = best;
+    }
+  }
+
+  // ================= how strong is it, next to you? =================
+  const power = (hp, dmg) => (hp + 2) * (dmg + 1.5);
+  const ratio = () => power(n.hp, swordDmg()) / power(Vitals.hp, mem.foeDmg);
+  const engage = () => cl(0.85 + mem.caution * 0.6 - mem.bold * 0.3, 0.6, 1.5);
+
+  // ================= gear: trees, stone, coal, silver, diamonds =================
+  function tryCraft() {
+    let did = false;
+    const c = id => { if (craft(id)) { did = true; return true; } return false; };
+    const pt = tierOf('pickaxe'), st = tierOf('sword');
+    if (pt < 1 || st < 1 || !have('stick')) {
+      while (have('planks') < 7 && have('log') > 0) c('planks');
+      while (have('stick') < 4 && have('planks') >= 2 + 3) c('stick');
+      if (pt < 1) c('wood_pickaxe'); if (st < 1) c('wood_sword');
+    }
+    if (have('stone') >= 5 && (pt < 2 || st < 2)) { if (have('stick') < 3 && have('planks') >= 2) c('stick'); if (pt < 2) c('stone_pickaxe'); if (st < 2) c('stone_sword'); }
+    if (have('raw_silver') > 0 && (have('furnace') || nearBase(10)) && (have('coal') || have('log') || have('planks')) && n.smelt <= 0) {
+      const k = Math.min(3, have('raw_silver')); n.smelt = 5 * k; n.smeltOut = k; takeInv('raw_silver', k); if (have('coal')) takeInv('coal', 1); else if (have('planks')) takeInv('planks', 1); else takeInv('log', 1);
+    }
+    if (pt < 3 && have('silver_ingot') >= 3 && have('stick') >= 2) c('silver_pickaxe'); else if (pt < 3 && have('silver_ingot') >= 3) c('stick');
+    if (st < 3 && have('silver_ingot') >= 2 && have('stick') >= 1) c('silver_sword');
+    if (pt < 4 && have('diamond') >= 3 && have('stick') >= 2) c('diamond_pickaxe');
+    if (st < 4 && have('diamond') >= 2 && have('stick') >= 1) c('diamond_sword');
+    if (have('stone') >= 16 && !have('furnace') && !(mem.base && mem.base.furn) && pt >= 2) c('furnace');
+    return did;
+  }
+  const nearBase = r => !!mem.base && Math.hypot(n.x - mem.base.x, n.z - mem.base.z) < r;
+  function gearNeed() {   // what it needs to go and get, next
+    const pt = tierOf('pickaxe'), st = tierOf('sword');
+    const wood = have('log') + Math.floor(have('planks') / 4);
+    if (pt < 4 && have('stick') < 2 && have('planks') < 2 && !have('log')) return { id: 'log', types: [B.LOG], n: 2 };   // sticks are in every tool
+    if (pt < 1) return wood < 3 ? { id: 'log', types: [B.LOG], n: 3 } : null;
+    if (pt < 2 || st < 2) return have('stone') < 6 ? { id: 'stone', types: [B.STONE], n: 6 } : (wood < 1 ? { id: 'log', types: [B.LOG], n: 1 } : null);
+    const age = T - n.life + (mem.lives - 1) * 200;
+    if (pt < 3) {
+      if (age < 180 && have('stone') >= 8) return null;
+      if (have('stone') < 8 && !have('furnace') && !(mem.base && mem.base.furn)) return { id: 'stone', types: [B.STONE], n: 8 };
+      if (have('coal') < 2 && !have('planks')) return { id: 'coal', types: [B.COAL_ORE], n: 2, deep: 30 };
+      if (have('raw_silver') + have('silver_ingot') < 5) return { id: 'raw_silver', types: [B.SILVER_ORE], n: 5, deep: 20 };
+      return null;
+    }
+    if (pt < 4) return age < 480 ? null : have('diamond') < 3 ? { id: 'diamond', types: [B.DIAMOND_ORE], n: 5, deep: 11 } : null;
+    return null;
+  }
+  // the nearest block of a kind it could get at (ores must show; a tree is a tree)
+  function findBlock(types, r, deep) {
+    const cx = Math.floor(n.x), cz = Math.floor(n.z), cy = Math.floor(n.y); let best = null, bd = 1e9;
+    const y0 = deep ? 3 : Math.max(2, cy - 7), y1 = deep ? Math.min(HEIGHT - 2, cy + 14) : Math.min(HEIGHT - 2, cy + 9);
+    for (let z = cz - r; z <= cz + r; z++) for (let x = cx - r; x <= cx + r; x++) {
+      if (!World.hasChunk(x, z)) continue;
+      const dh = Math.hypot(x - n.x, z - n.z); if (dh > r) continue;
+      for (let y = y0; y <= y1; y++) {
+        const b = World.get(x, y, z); if (types.indexOf(b) < 0) continue;
+        if (deep && !(free(x + 1, y, z) || free(x - 1, y, z) || free(x, y, z + 1) || free(x, y, z - 1) || free(x, y + 1, z) || free(x, y - 1, z)) && dh > 7) continue;
+        if (types[0] === B.LOG && solid(x, y - 1, z) === false && World.get(x, y - 1, z) === B.LOG) { /* lowest log counts */ }
+        const d = dh + Math.abs(y - n.y) * 1.3; if (d < bd) { bd = d; best = { x, y, z }; }
+      }
+    }
+    return best;
+  }
+  // wander to somewhere 20-40 blocks off, looking for what it wants
+  function wanderTo(speed) {
+    if (!n.wander || Math.hypot(n.wander.x - n.x, n.wander.z - n.z) < 4 || n.goalT - (n.wander.t || 0) > 20) {
+      const a = R() * Math.PI * 2, d = rnd(18, 38), x = n.x + Math.cos(a) * d, z = n.z + Math.sin(a) * d;
+      n.wander = { x, z, t: n.goalT };
+    }
+    return travel(n.wander.x, n.wander.z, 3, speed);
+  }
+  // a long way is walked in hops of 30 blocks, over ground that exists
+  function travel(x, z, near, speed, o) {
+    let dx = x - n.x, dz = z - n.z, d = Math.hypot(dx, dz);
+    if (d <= near) return 'arrived';
+    let hop = Math.min(d, 30), hx, hz;
+    for (let k = 0; k < 4; k++) { hx = n.x + dx / d * hop; hz = n.z + dz / d * hop; if (World.hasChunk(hx, hz)) break; hop *= 0.6; }
+    const hy = groundY(Math.floor(hx), Math.floor(hz));
+    const r = goTo(hx, hy, hz, hop < d ? 2.5 : near, speed, o);
+    if (r === 'arrived' && hop < d) return 'moving';
+    return r;
+  }
+
+  // ================= a house =================
+  function chooseSite() {
+    let best = null, bs = 1e9;
+    for (let i = 0; i < 40; i++) {
+      const a = R() * Math.PI * 2, d = rnd(10, 45), x = Math.floor(n.x + Math.cos(a) * d), z = Math.floor(n.z + Math.sin(a) * d);
+      if (!World.hasChunk(x - 4, z - 4) || !World.hasChunk(x + 4, z + 4)) continue;
+      let lo = 99, hi = -99, bad = false;
+      for (let dz = -3; dz <= 3 && !bad; dz += 2) for (let dx = -3; dx <= 3; dx += 2) { const h = groundY(x + dx, z + dz); if (h <= SEAY + 2 || World.get(x + dx, h - 1, z + dz) === B.LEAVES) bad = true; lo = Math.min(lo, h); hi = Math.max(hi, h); }
+      if (bad || hi - lo > 2) continue;
+      let s = (hi - lo) * 4 + d * 0.15 - World.forestAt(x, z) * 3;
+      if (mem.home && Math.hypot(x - mem.home.x, z - mem.home.z) < 40) s += 60;
+      for (const f of readLand()) if (Math.hypot(f.x - x, f.z - z) < 24) s += 50;
+      if (s < bs) { bs = s; best = { x, z, y: hi }; }
+    }
+    return best;
+  }
+  function blueprint(b) {   // a small house: walls three high, a roof, a way in, a table and (later) a furnace
+    const out = [];
+    for (let y = -2; y < 0; y++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) === 2 || Math.abs(dz) === 2) out.push([dx, y, dz, 'wall']);   // a footing, where the ground dips
+    for (let y = 0; y < 3; y++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (Math.abs(dx) < 2 && Math.abs(dz) < 2) continue;
+      if (dx === 0 && dz === -2 && y < 2) continue;
+      out.push([dx, y, dz, 'wall']);
+    }
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) out.push([dx, 3, dz, 'wall']);
+    out.push([-1, 0, 1, 'table'], [1, 0, 1, 'furnace']);
+    // and a lone pillar a little way off, to be seen from far
+    for (let y = 0; y < 5; y++) out.push([5, y, 5, 'wall']);
+    return out;
+  }
+  function buildStep(dt) {
+    const bs = mem.base; if (!bs) return 'none';
+    if (bs.lastI !== bs.i) { bs.lastI = bs.i; bs.tI = 0; } else if (!bs.needing) { bs.tI = (bs.tI || 0) + dt; if (bs.tI > 40) { bs.i++; bs.tI = 0; } }
+    bs.needing = false;
+    // find the next thing that is missing
+    while (bs.i < bs.todo.length) {
+      const [dx, dy, dz, kind] = bs.todo[bs.i], x = bs.x + dx, y = bs.y + dy, z = bs.z + dz, cur = World.get(x, y, z);
+      if (kind === 'table' ? cur === B.TABLE : kind === 'furnace' ? cur === B.FURNACE : cur !== B.AIR && cur !== B.WATER && (kind === 'wall') && cur !== B.LEAVES) { bs.i++; continue; }
+      if (cur !== B.AIR && cur !== B.WATER) { if (mineAt(x, y, z, dt) === 'no') { const r = goTo(x + 0.5, y, z + 0.5, 3, WALK); if (r === 'fail') bs.i++; } return 'working'; }
+      // is there something to put there?
+      let id = kind === 'table' ? 'table' : kind === 'furnace' ? 'furnace' : bulkId();
+      if (kind === 'table' && !have('table')) { if (have('planks') >= 4) craft('table'); else if (have('log')) { craft('planks'); } }
+      if (kind === 'furnace' && !have('furnace')) { if (have('stone') >= 8) craft('furnace'); else { bs.i++; continue; } }
+      id = kind === 'table' ? 'table' : kind === 'furnace' ? 'furnace' : bulkId();
+      if (!id || !have(id)) { bs.needing = true; bs.needs = kind; bs.needT = (bs.needT || 0) + dt; if (kind !== 'wall' && bs.needT > 150) { bs.i++; bs.needT = 0; } return 'need'; }
+      bs.needT = 0;
+      // stand somewhere outside it, a couple of blocks off, and place
+      const dist = Math.hypot(n.x - x - 0.5, n.z - z - 0.5), dv = n.y + 1.5 - y - 0.5;
+      const ox = Math.sign(dx) || 0, oz = Math.sign(dz) || (dx ? 0 : -1);
+      if (dist > 4.2 || Math.abs(dv) > 3.6 || dist < 1.25 && Math.abs(dv) < 2.2) {
+        const sx = x + 0.5 + ox * 2.6, sz = z + 0.5 + oz * 2.6;
+        const r = goTo(sx, groundY(Math.floor(sx), Math.floor(sz)), sz, 0.6, WALK);
+        if (r === 'fail') { if (n.failN > 1) { bs.i++; n.failN = 0; } }
+        return 'working';
+      }
+      faceTo(x + 0.5, z + 0.5);
+      if (placeAt(x, y, z, id)) { bs.i++; if (kind === 'table') bs.stash = { x, y, z }; if (kind === 'furnace') bs.furn = true; n.cool2 = 0.35; }
+      else if (dist < 1.5) { it.dx = it.dz = 0; it.jump = false; goTo(n.x + rnd(-2, 2), n.y, n.z + rnd(-2, 2), 0.5, WALK); }
+      return 'working';
+    }
+    bs.done = true; return 'done';
+  }
+
+  // ================= the goals =================
+  const setGoal = g => { if (n.goal !== g) { if (n.goal === 'fight') endFight(); n.goal = g; n.goalT = 0; n.path = null; n.tgt = null; n.wander = null; n.mine = null; n.tgtBlock = null; n.frozen = 0; if (g === 'fight') startFight(); } };
+  function startFight() { n.fight = { kind: n.fightKind || 'open', hits: 0, t: 0 }; n.fightKind = null; }
+  function endFight(result) {
+    if (!n.fight) return; const t = mem.tact[n.fight.kind]; if (t) { t[1]++; if (result === 'win') t[0]++; else if (result === 'draw') t[0] += 0.3; }
+    n.fight = null;
+  }
+  function eyeDist() { const P = Player.p; return Math.hypot(P.x - n.x, P.z - n.z); }
+  const seenNow = () => n.seen && T - n.seenAt < 1.6;
+  const foePos = () => seenNow() ? Player.p : n.belief;
+
+  function think() {
+    const S = {}, sn = seenNow(), r = ratio(), eng = engage();
+    const ago = n.belief ? T - n.belief.t : 1e9;
+    S.flee = n.hp <= 5 && (sn || ago < 25) ? 1.6 : n.hp < 9 && r < eng ? 1.05 : n.carry > 0 && sn ? 1.1 : sn && r < eng * 0.7 ? 0.9 : 0;
+    const fd = sn ? eyeDist() : 99, close = fd < 9 || n.goal === 'fight' || Vitals.hp < 8 || n.sawAsleep;   // it watches first, and strikes when it is close or sure
+    S.fight = sn && close && n.carry <= 0 ? (r >= eng ? 0.82 + Math.min(0.25, (r - eng) * 0.3) : n.sawAsleep && n.hp > 10 ? 0.95 : 0) : 0;
+    if (n.goal === 'fight' && sn && S.fight === 0 && r >= eng * 0.75 && n.hp > 8) S.fight = 0.8;   // once it is in it, it does not drop it for a small thing
+    S.stalk = !sn && ago < 45 && r >= eng * 0.9 ? 0.64 + mem.bold * 0.2 : sn && r >= eng * 0.9 ? 0.92 : 0;
+    S.investigate = n.noise && T - n.noise.t < 30 && !sn ? 0.58 : n.sign ? 0.44 : 0;
+    S.eat = n.food < 3 ? 1.3 : n.food < (mem.avoid.hunger ? 11 : 8) ? 0.6 + (8 - n.food) * 0.07 : 0;
+    S.rest = n.hp < 13 && !sn ? 0.6 + (13 - n.hp) * 0.03 : 0;
+    S.steal = n.steal && !sn ? 0.63 : 0;
+    S.fetch = mem.base && n.fetch ? 0.7 : 0;
+    const gear = tryCraft() || n.smelt > 0 || gearNeed();
+    S.gear = gear ? 0.47 : 0;
+    S.build = mem.base && mem.base.done ? 0 : 0.44;
+    if (S.build && tierOf('pickaxe') < 1 && !bulkCount()) S.build = 0.2;
+    // a rhythm: some minutes of getting ready, then some minutes of looking for you (whatever it heard or saw restarts the count)
+    const contact = Math.max(n.seenAt, n.noise ? n.noise.t : -1e9, n.life), cyc = (T - contact) % 210, prep = cyc < 90;
+    S.search = 0.3 + (prep ? 0 : 0.3);
+    if (prep) { if (S.gear) S.gear += 0.25; if (S.build) S.build += 0.2; }
+    // the thing it is doing already gets a small bonus, so it doesn't flicker between two
+    if (S[n.goal] !== undefined && S[n.goal] > 0) S[n.goal] += n.goal === 'fight' || n.goal === 'flee' ? 0.25 : 0.12;
+    n.scores = S;
+    let best = 'search', bv = -1; for (const g in S) if (S[g] > bv) { bv = S[g]; best = g; }
+    if (best !== n.goal && (n.goalT > 2.5 || bv >= 1)) {
+      if (best === 'fight' && n.goal === 'stalk') n.fightKind = 'ambush';
+      if (best === 'fight' && n.goal !== 'stalk') n.fightKind = 'open';
+      if (best === 'fight' && !n.fightKind) n.fightKind = 'open';
+      setGoal(best);
+    }
+  }
+
+  function run(dt) {
+    n.goalT += dt; n.cool -= dt;
+    switch (n.goal) {
+      case 'flee': return doFlee(dt);
+      case 'fight': return doFight(dt);
+      case 'stalk': return doStalk(dt);
+      case 'investigate': return doInvestigate(dt);
+      case 'eat': return doEat(dt);
+      case 'rest': return doRest(dt);
+      case 'steal': return doSteal(dt);
+      case 'fetch': return doFetch(dt);
+      case 'hold': return;                                          // (debugging) stands there
+      case 'gear': return doGear(dt);
+      case 'build': return doBuild(dt);
+      default: return doSearch(dt);
+    }
+  }
+
+  // ---- the fight
+  function attack() {
+    const P = Player.p, dx = P.x - n.x, dz = P.z - n.z, d = Math.hypot(dx, dz) || 1;
+    const sneak = !Player.locked ? 1 : (Math.abs(((Math.atan2(-dx, -dz) - P.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI) > 2.2 ? 1.4 : 1);
+    const crit = !n.onGround && n.vy < 0 ? 1.5 : 1, asleep = Bed.sleeping ? 2 : 1;
+    const dmg = Math.round(swordDmg() * sneak * crit * asleep * 10) / 10 + (bestTool('sword') ? 0 : 0.5);
+    n.cool = bestTool('sword') ? 0.7 : 0.95; wear(bestTool('sword'));
+    if (n.fight) n.fight.hits++;
+    GameAudio.animal('hit1', n.x, n.z, 0.7, rnd(0.9, 1.1));
+    Vitals.damage(dmg, 'nemesis');
+    if (Vitals.dead) return;
+    P.vx += dx / d * 5.5; P.vz += dz / d * 5.5; P.vy = Math.max(P.vy, 4.2);
+    // a hand in the pockets
+    const chance = 0.1 + mem.cunning * 0.3 + (Bed.sleeping ? 0.6 : 0) + (n.food < 10 ? 0.15 : 0);
+    if (R() < chance && n.carry < 3) {
+      const s = Inventory.steal((id, sl) => (n.food < 12 && FOOD(id) ? 3 + FOOD(id) * 0.3 : 0) + ({ diamond: 8, silver_ingot: 5, gold_bar: 4, gold_coin: 2, raw_silver: 3, coal: 1 }[id] || 0) + (IT[id].tool ? 2 + (IT[id].tier || 1) : 0) + 0.1);
+      if (s) {
+        addInv(s.id, s.n); n.carry += 1; mem.steals++; lesson('it takes from the pockets');
+        Inventory.toast('Something took your ' + IT[s.id].name.toLowerCase()); Events.emit('nemesisSteal', s);
+      }
+    }
+  }
+  function doFight(dt) {
+    const P = Player.p, sn = seenNow(), pos = foePos();
+    if (!pos) { setGoal('search'); return; }
+    const dx = pos.x - n.x, dz = pos.z - n.z, d = Math.hypot(dx, dz);
+    if (n.fight) n.fight.t += dt;
+    if (!sn && T - n.seenAt > 7) { endFight('draw'); setGoal('stalk'); return; }
+    // hold the sword
+    if (d > 2.7 || Math.abs((pos.y || n.y) - n.y) > 2.2) {
+      const clear = d < 9 && los(n.x, n.y + 1.5, n.z, pos.x, (pos.y || n.y) + 1, pos.z) && Math.abs((pos.y || n.y) - n.y) < 1.5;
+      if (clear) { it.dx = dx / d; it.dz = dz / d; it.speed = RUN; faceTo(pos.x, pos.z); if (n.onGround && d < 4 && R() < dt * 1.2 && !n.inWater) it.jump = true; }
+      else goTo(pos.x, pos.y || n.y, pos.z, 1.8, RUN, { maxN: 700 });
+    } else {
+      faceTo(P.x, P.z);
+      if (n.wind > 0) { n.wind -= dt; n.atk = 0.3; if (n.wind <= 0) { n.wind = 0; if (Math.hypot(P.x - n.x, P.z - n.z) < 3.4) attack(); else n.cool = 0.3; } }
+      else if (n.cool <= 0) { if (n.onGround && R() < 0.35 && !n.inWater) { it.jump = true; n.cool = 0.12; } else n.wind = 0.3; }
+      else { const sgn = (Math.floor(T / 1.4) % 2) ? 1 : -1, px = -dz / (d || 1) * sgn, pz = dx / (d || 1) * sgn; it.dx = px * 0.8 - dx / (d || 1) * (d < 1.6 ? 0.9 : 0); it.dz = pz * 0.8 - dz / (d || 1) * (d < 1.6 ? 0.9 : 0); it.speed = WALK; }
+    }
+    if (Vitals.dead) killedYou();
+  }
+  function killedYou() { if (T - (n.killT || -99) < 5) return; n.killT = T; mem.kills++; mem.bold = Math.min(0.95, mem.bold + 0.08); mem.caution = Math.max(0.1, mem.caution - 0.04); lesson('it has killed the other'); endFight('win'); n.belief = null; n.seen = false; n.carry = 0; setGoal('search'); }
+  // ---- creeping up on you: it stops when you look, and comes when you don't
+  function doStalk(dt) {
+    const P = Player.p, sn = seenNow(), pos = foePos();
+    if (!pos) { setGoal('search'); return; }
+    const dx = pos.x - n.x, dz = pos.z - n.z, d = Math.hypot(dx, dz) || 1;
+    if (n.backT > 0) { n.backT -= dt; travel(n.x - dx / d * 25, n.z - dz / d * 25, 3, WALK); return; }        // it has been stared at long enough. it steps back out of sight.
+    if (sn) {
+      const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), looked = -(dx * fx + dz * fz) / d > 0.93 && d > 5;
+      if (looked && d > 7) {                       // you are looking at it. it stands perfectly still.
+        n.frozen += dt; it.dx = it.dz = 0; faceTo(P.x, P.z);
+        n.frozeMax = n.frozeMax || rnd(6, 11);
+        if (n.frozen > n.frozeMax) { n.frozen = 0; n.frozeMax = 0; n.path = null; n.backT = 5; }
+        return;
+      }
+      n.frozen = 0;
+      if (d < 5.5 || (r0() >= engage() * 1.1 && d < 8)) { n.fightKind = looked ? 'open' : 'ambush'; setGoal('fight'); return; }
+      const ambush = mem.tact.ambush[0] / mem.tact.ambush[1] >= mem.tact.open[0] / mem.tact.open[1];
+      if (ambush && d > 9) {                      // to where you are not looking
+        const bx = P.x - fx * 6, bz = P.z - fz * 6;
+        travel(bx, bz, 2.5, RUN * 0.9);
+      } else travel(P.x, P.z, 4, WALK * 1.1);
+      return;
+    }
+    const r = travel(pos.x, pos.z, 6, ago0() < 6 ? RUN : WALK);
+    if (r === 'arrived') { n.sweep += dt; n.yaw += dt * 1.6; if (n.sweep > 4) { n.sweep = 0; n.belief = null; setGoal('search'); } }
+  }
+  const r0 = ratio, ago0 = () => n.belief ? T - n.belief.t : 1e9;
+  function doInvestigate(dt) {
+    const tg = n.noise && T - n.noise.t < 30 ? n.noise : n.sign;
+    if (!tg) { setGoal('search'); return; }
+    const r = travel(tg.x, tg.z, n.noise && tg === n.noise ? 5 : 16, n.noise && tg === n.noise && T - n.noise.t < 6 ? RUN : WALK);
+    if (r === 'arrived') {
+      n.sweep += dt; n.yaw += dt * 1.8;
+      if (n.sweep > 3) { n.sweep = 0; if (tg === n.sign) { mem.inspected[tg.k] = T; mem.heat[tg.k] = (mem.heat[tg.k] || 0) + 3; n.sign = null; } else { n.belief = { x: tg.x, y: tg.y, z: tg.z, t: T, conf: 0.4 }; n.noise = null; } }
+    } else if (r === 'fail') { if (tg === n.sign) { mem.inspected[tg.k] = T; n.sign = null; } else n.noise = null; }
+  }
+  function doFlee(dt) {
+    const pos = foePos() || n.belief || { x: n.x + 1, z: n.z, y: n.y };
+    const dx = n.x - pos.x, dz = n.z - pos.z, d = Math.hypot(dx, dz) || 1;
+    if (!n.tgt || n.goalT % 6 < dt) {
+      const home = mem.base && Math.hypot(mem.base.x - pos.x, mem.base.z - pos.z) > 18 ? mem.base : null;
+      if (home) n.tgt = { x: home.x, z: home.z, base: true };
+      else { const a = Math.atan2(dz, dx) + rnd(-0.7, 0.7); n.tgt = { x: n.x + Math.cos(a) * 45, z: n.z + Math.sin(a) * 45 }; }
+    }
+    const r = travel(n.tgt.x, n.tgt.z, n.tgt.base ? 3 : 6, RUN);
+    if (r === 'arrived' || r === 'fail') n.tgt = null;
+    if (!seenNow() && d > 26) { n.fleeSafe = (n.fleeSafe || 0) + dt; if (n.fleeSafe > 6) { n.fleeSafe = 0; setGoal(n.hp < 14 ? 'rest' : 'search'); } } else n.fleeSafe = 0;
+    if (n.carry > 0 && !seenNow() && d > 30) { depositLoot(); }
+  }
+  function depositLoot() {
+    if (!mem.base || !nearBase(8)) return;
+    for (const id in n.inv) { if (IT[id].tool || FOOD(id) || BULK.indexOf(id) >= 0) continue; if (id === 'log' || id === 'planks' || id === 'stick' || id === 'coal') continue; mem.stash[id] = (mem.stash[id] || 0) + n.inv[id]; delete n.inv[id]; }
+    n.carry = 0;
+  }
+  function doRest(dt) {
+    n.restT += dt; it.dx = it.dz = 0;
+    if (mem.base && !nearBase(4) && n.restT < 30) { const r = goTo(mem.base.x + 0.5, groundY(mem.base.x, mem.base.z), mem.base.z + 0.5, 2.5, WALK); if (r !== 'arrived') return; }
+    n.regen2 = 1;
+    if (n.food < 12 && foodItem()) return eatNow(dt);
+    if (n.hp >= 18 || n.restT > 100) { n.restT = 0; n.regen2 = 0; setGoal('search'); }
+  }
+  const foodItem = () => { let b = null, bv = 0; for (const id in n.inv) if (FOOD(id) > bv) { bv = FOOD(id); b = id; } return b; };
+  function eatNow(dt) {
+    it.dx = it.dz = 0; n.eat += dt; n.atk = Math.max(n.atk, 0.1);
+    if (n.eat > 1.3) { n.eat = 0; const f = foodItem(); if (f) { n.food = Math.min(20, n.food + FOOD(f)); takeInv(f, 1); } }
+  }
+  function doEat(dt) {
+    if (foodItem()) { if (n.food < 16) return eatNow(dt); setGoal('search'); return; }
+    // hunt
+    const prey = Animals.prey(n.x, n.z, 55); let a = null, bd = 1e9;
+    for (const p of prey) { const d = Math.hypot(p.x - n.x, p.z - n.z); if (d < bd) { bd = d; a = p; } }
+    if (a) {
+      if (bd > 2.1) goTo(a.x, a.y, a.z, 1.6, RUN, { maxN: 500 });
+      else { faceTo(a.x, a.z); it.dx = it.dz = 0; if (n.cool <= 0) { n.cool = 0.6; n.atk = 0.3; Animals.strike(a, swordDmg(), n.x, n.z, n.y + 1); GameAudio.animal('hit1', n.x, n.z, 0.6, 1); } }
+    } else {
+      // no animals close enough to exist yet: it goes where the herds stand
+      let site = null, sd = 1e9; for (const h of Animals.herdSites(n.x, n.z, 110)) { const d = Math.hypot(h.x - n.x, h.z - n.z); if (d < sd) { sd = d; site = h; } }
+      if (site) {
+        const r = travel(site.x, site.z, 6, RUN * 0.9);
+        if (r === 'arrived' || sd < 8) { it.dx = it.dz = 0; n.hunt = (n.hunt || 0) + dt; n.atk = Math.max(n.atk, n.hunt % 0.7 < 0.3 ? 0.3 : 0);
+          if (n.hunt > 9) { n.hunt = 0; for (const [item, k] of Animals.takeMember(site.id)) addInv(item, k); } }
+      } else if (n.steal) setGoal('steal'); else wanderTo(WALK);
+    }
+  }
+  function pickup(dt) {
+    n.pickT = (n.pickT || 0) - dt; if (n.pickT > 0) return; n.pickT = 0.3;
+    for (const d of Inventory.dropsNear(n.x, n.y + 0.5, n.z, 1.7)) { const it2 = Inventory.takeDrop(d); if (it2) { addInv(it2.id, it2.n); if (it2.n && (IT[it2.id].tool || it2.id === 'diamond' || it2.id === 'silver_ingot')) n.carry += 0; } }
+  }
+  // ---- taking what is not its own
+  function stealScan(dt) {
+    n.scan -= dt; if (n.scan > 0) return; n.scan = 6;
+    const away = !seenNow() && (!n.belief || Math.hypot(n.belief.x - n.x, n.belief.z - n.z) > 25 || T - n.belief.t > 20);
+    n.steal = null; if (!away || n.hp < 8) return;
+    let best = null, bs = 0;
+    for (const d of Inventory.dropsNear(n.x, n.y, n.z, 50)) { const v = (FOOD(d.id) ? 2 : 1) + (IT[d.id].tool ? 2 : 0), s = v / (8 + Math.hypot(d.x - n.x, d.z - n.z)); if (s > bs) { bs = s; best = { kind: 'drop', d }; } }
+    const F = Inventory.exportFurnaces();
+    for (const k in F) {
+      const [x, y, z] = k.split(',').map(Number), f = F[k], cnt = f.s.reduce((a, s) => a + (s ? s.n : 0), 0);
+      if (!cnt || Math.hypot(x - n.x, z - n.z) > 70) continue;
+      const s = (1 + cnt * 0.3) / (8 + Math.hypot(x - n.x, z - n.z)); if (s > bs) { bs = s; best = { kind: 'furn', x, y, z, k }; }
+    }
+    n.steal = best;
+  }
+  function doSteal(dt) {
+    const s = n.steal; if (!s || seenNow()) { setGoal(seenNow() ? 'stalk' : 'search'); return; }
+    if (s.kind === 'drop') {
+      const dd = s.d; if (Inventory.dropsNear(dd.x, dd.y, dd.z, 0.5).indexOf(dd) < 0) { n.steal = null; setGoal('search'); return; }
+      const r = goTo(dd.x, Math.floor(dd.y), dd.z, 1.3, WALK, { maxN: 900 }); if (r === 'fail') { n.steal = null; }
+    } else {
+      const r = goTo(s.x + 0.5, s.y, s.z + 0.5, 2.2, WALK, { maxN: 900 });
+      if (r === 'arrived') {
+        const f = Inventory.exportFurnaces()[s.k]; let got = 0;
+        if (f) for (let i = 0; i < 3; i++) if (f.s[i]) { addInv(f.s[i].id, f.s[i].n); got += f.s[i].n; f.s[i] = null; }
+        if (got) { n.carry += 1; mem.steals++; lesson('it empties what you leave behind'); Events.emit('nemesisSteal', { furnace: true }); GameAudio.animal('dig_choppy', s.x + 0.5, s.z + 0.5, 0.4, 1.4); }
+        n.steal = null; setGoal('flee');
+      } else if (r === 'fail') n.steal = null;
+    }
+  }
+  function doFetch(dt) {
+    const bs = mem.base; if (!bs || !n.fetch) { n.fetch = false; setGoal('search'); return; }
+    const r = travel(bs.x + 0.5, bs.z + 0.5, 3, RUN);
+    if (r === 'arrived') {
+      for (const id in mem.stash) { if (IT[id].tool || FOOD(id) || id === 'coal') { addInv(id, mem.stash[id]); delete mem.stash[id]; } }
+      n.fetch = false; setGoal('search');
+    } else if (r === 'fail') { n.fetch = false; }
+  }
+  // ---- getting stronger
+  function gatherFor(need, dt) {
+    let tb = n.tgtBlock;
+    if (tb && need.types.indexOf(World.get(tb.x, tb.y, tb.z)) < 0) tb = n.tgtBlock = null;
+    n.scanT = (n.scanT || 0) - dt;
+    if (!tb && n.scanT <= 0) { n.scanT = 1.2; tb = n.tgtBlock = findBlock(need.types, need.deep ? 16 : 28, !!need.deep); }
+    if (!tb) {
+      if (need.deep) {                           // no ore in sight: dig down and along, where ore lives
+        if (!n.tun || n.goalT - n.tun.t > 45) { const a = Math.floor(R() * 4) * Math.PI / 2; n.tun = { dx: Math.round(Math.cos(a)), dz: Math.round(Math.sin(a)), t: n.goalT }; }
+        const gy = n.y > need.deep + 2 ? need.deep : Math.floor(n.y);
+        goTo(n.x + n.tun.dx * 16, gy, n.z + n.tun.dz * 16, 2, WALK, { maxN: 1500, dig: true });
+      } else wanderTo(WALK);
+      return;
+    }
+    const d = Math.hypot(tb.x + 0.5 - n.x, tb.z + 0.5 - n.z), dv = Math.abs(tb.y + 0.5 - n.y - 1.4);
+    if (d < 4.2 && dv < 4 && (los(n.x, n.y + 1.5, n.z, tb.x + 0.5, tb.y + 0.5, tb.z + 0.5, [tb.x, tb.y, tb.z]) || d < 1.8)) {
+      it.dx = it.dz = 0; n.path = null;
+      const r = mineAt(tb.x, tb.y, tb.z, dt);
+      if (r === 'done') n.tgtBlock = null;
+    } else {
+      const r = goTo(tb.x + 0.5, tb.y, tb.z + 0.5, d < 5 ? 1.5 : 3, WALK, { maxN: 1200, dig: true });
+      if (r === 'fail') n.tgtBlock = null;
+    }
+  }
+  function doGear(dt) {
+    if (n.smelt > 0) { n.smelt -= dt; it.dx = it.dz = 0; if (n.smelt <= 0) { addInv('silver_ingot', n.smeltOut || 1); n.smeltOut = 0; } return; }
+    n.craftT = (n.craftT || 0) - dt; if (n.craftT <= 0) { n.craftT = 0.4; tryCraft(); }
+    const need = gearNeed();
+    if (!need) return;
+    gatherFor(need, dt);
+  }
+  function doBuild(dt) {
+    n.craftT = (n.craftT || 0) - dt; if (n.craftT <= 0) { n.craftT = 0.5; tryCraft(); }
+    if (!mem.base) {
+      const s = chooseSite(); if (!s) { wanderTo(WALK); return; }
+      mem.base = { x: s.x, y: s.y, z: s.z, i: 0, todo: blueprint(), done: false, stash: null, furn: false }; lesson('it wants a home'); return;
+    }
+    if (mem.base.done) return;
+    const bs = mem.base, d = Math.hypot(n.x - bs.x, n.z - bs.z);
+    if (d > 60 && !mem.base.i) { mem.base = null; return; }
+    if (d > 32) { const r = travel(bs.x + 0.5, bs.z + 0.5, 14, RUN * 0.9); n.baseFail = r === 'fail' ? (n.baseFail || 0) + 1 : 0; if (n.baseFail > 8) { n.baseFail = 0; mem.base = null; lesson('the way home was lost'); } return; }
+    const r = buildStep(dt);
+    if (r === 'need' && mem.base.needs === 'table') gatherFor({ id: 'log', types: [B.LOG], n: 2 }, dt);
+    else if (r === 'need' && mem.base.needs === 'furnace') gatherFor({ id: 'stone', types: [B.STONE], n: 8 }, dt);
+    else if (r === 'need') {
+      // gather something to build with: stone if it can, else soil
+      const types = tierOf('pickaxe') >= 1 && R() < 0.7 ? [B.STONE] : [B.DIRT, B.GRASS];
+      gatherFor({ id: 'bulk', types, n: 20 }, dt);
+    }
+  }
+  // ---- looking for you
+  function doSearch(dt) {
+    n.visT = (n.visT || 0) - dt; if (n.visT <= 0) { n.visT = 1; mem.visited[ck(n.x, n.z)] = T; }
+    if (!n.tgt || n.goalT - (n.tgt.t || 0) > 70) {
+      const opts = []; const near = (x, z) => Math.hypot(x - n.x, z - n.z);
+      const add = (x, z, w, tag) => { const k = ck(x, z); if ((mem.visited[k] || -1e9) > T - 150) return; opts.push({ x, z, w, tag, t: n.goalT }); };
+      if (mem.home) add(mem.home.x, mem.home.z, 3, 'home');
+      if (mem.last) add(mem.last.x, mem.last.z, 2, 'last');
+      const hk = Object.keys(mem.heat).sort((a, b) => mem.heat[b] - mem.heat[a]).slice(0, 5);
+      hk.forEach((k, i) => { const [cx, cz] = k.split(',').map(Number); add(cx * CS + 8, cz * CS + 8, 1.8 - i * 0.2, 'heat'); });
+      const land = readLand().sort((a, b) => b.f / (60 + near(b.x, b.z)) - a.f / (60 + near(a.x, a.z))).slice(0, 4);
+      land.forEach((s, i) => add(s.x, s.z, 2.6 - i * 0.3, 'land'));
+      for (let i = 0; i < 4; i++) { const a = R() * Math.PI * 2, d = rnd(50, 95); add(n.x + Math.cos(a) * d, n.z + Math.sin(a) * d, 0.7, 'wander'); }
+      if (!opts.length) add(n.x + rnd(-80, 80), n.z + rnd(-80, 80), 1, 'wander');
+      let tot = 0; for (const o of opts) tot += o.w; let pk = R() * tot, ch = opts[0];
+      for (const o of opts) { pk -= o.w; if (pk <= 0) { ch = o; break; } }
+      n.tgt = ch;
+    }
+    const r = travel(n.tgt.x, n.tgt.z, 8, dist2(n.tgt) > 50 ? RUN * 0.85 : WALK);
+    if (r === 'arrived') { n.sweep += dt; n.yaw += dt * 1.4; if (n.sweep > 3) { n.sweep = 0; mem.visited[ck(n.tgt.x, n.tgt.z)] = T; n.tgt = null; } }
+    else if (r === 'fail') { n.failS = (n.failS || 0) + 1; if (n.failS > 2) { n.failS = 0; mem.visited[ck(n.tgt.x, n.tgt.z)] = T; n.tgt = null; } }
+  }
+  const dist2 = t => Math.hypot(t.x - n.x, t.z - n.z);
+
+  // ================= being born, being hurt, dying =================
+  let forced = false;   // (debug) allowed even in creative
+  const enabled = () => !!Settings.v.nemesis && (forced || GAME.mode !== 'creative');
+  function hurtSelf(d, why) {
+    if (!n.alive || d <= 0) return;
+    n.hp -= d; n.hurt = 0.4; n.lastHurt = why + ' ' + d;
+    if (n.hp <= 0) die(why);
+  }
+  function hurt(dmg, fx, fz, byPlayer) {
+    if (!n.alive) return;
+    const dx = n.x - fx, dz = n.z - fz, d = Math.hypot(dx, dz) || 1;
+    n.hp -= dmg; n.hurt = 0.4; n.vx = dx / d * 6; n.vz = dz / d * 6; n.vy = 4.5; n.onGround = false; n.path = null; n.mine = null;
+    GameAudio.animal('hit1', n.x, n.z, 0.7, 0.8);
+    if (byPlayer) {
+      const P = Player.p; n.belief = { x: P.x, y: P.y, z: P.z, t: T, conf: 1 }; n.seenAt = T; n.seen = true; mem.foeHits++;
+      const h = Inventory.held(); mem.foeDmg = h && IT[h.id] ? (IT[h.id].damage || 1) : 1; mem.last = { x: P.x, y: P.y, z: P.z };
+      n.lastHitBy = h ? h.id : 'hand';
+    }
+    n.thinkT = 0;
+    if (n.hp <= 0) die(byPlayer ? 'player' : 'other');
+  }
+  function die(why) {
+    if (!n.alive) return;
+    n.alive = false; n.dead = 1.6; n.path = null; n.mine = null;
+    const shed = Object.keys(n.inv);
+    for (const id of shed) { if (IT[id]) Inventory.drop(id, n.x, n.y + 0.4, n.z, n.inv[id]); }
+    n.inv = {}; n.use = {}; n.carry = 0;
+    mem.deaths++;
+    if (why === 'player') {
+      mem.caution = Math.min(0.95, mem.caution + 0.1); mem.bold = Math.max(0.1, mem.bold - 0.04); mem.cunning = Math.min(0.95, mem.cunning + 0.08);
+      lesson('the other kills with ' + (n.lastHitBy || 'a hand').replace(/_/g, ' '));
+      endFight('lose'); mem.killedBy = n.lastHitBy || 'hand';
+    } else if (why === 'fall') { mem.avoid.fall++; lesson('heights hurt'); }
+    else if (why === 'drown') { mem.avoid.water++; lesson('water is not a friend'); }
+    else if (why === 'starve') { mem.avoid.hunger++; lesson('eat before it is too late'); }
+    n.fight = null;
+    n.respawn = rnd(150, 260) * (1 - Math.min(0.35, mem.deaths * 0.04));
+    Events.emit('nemesisDied', { why, deaths: mem.deaths });
+    World.setAnchor(null);
+  }
+  Events.on('death', () => {   // if it was you who fell, it remembers who did it
+    if (Vitals.cause === 'Something that moves like you killed you.' || n.alive && n.goal === 'fight') {
+      if (n.alive) killedYou();
+    }
+  });
+  function spawnAt(x, z) {
+    n.alive = true; n.dead = 0; n.x = x + 0.5; n.z = z + 0.5; n.y = groundY(Math.floor(x), Math.floor(z)) + 0.05; n.vx = n.vy = n.vz = 0; n.hp = 20; n.food = rnd(13, 19); n.air = 10;
+    n.inv = {}; n.use = {}; n.belief = null; n.noise = null; n.sign = null; n.seen = false; n.seenAt = -99; n.carry = 0; n.fall = null; n.fight = null; n.path = null; n.tgt = null;
+    n.yaw = R() * Math.PI * 2; n.goal = 'search'; n.goalT = 0; n.steal = null; n.smelt = 0; n.restT = 0; n.frozen = 0; n.fetch = !!(mem.base && Object.keys(mem.stash).length);
+    mem.lives++; mem.visited = {}; n.life = T;
+    makeSkin(); Events.emit('nemesisBorn', { lives: mem.lives });
+  }
+  function trySpawn(dt) {
+    if (!n.spawnTry) {
+      const P = Player.p, a = R() * Math.PI * 2, d = rnd(110, 170);
+      n.spawnTry = { x: Math.floor(P.x + Math.cos(a) * d), z: Math.floor(P.z + Math.sin(a) * d), t: 0 };
+      World.setAnchor(n.spawnTry.x, n.spawnTry.z);
+    }
+    const s = n.spawnTry; s.t += dt;
+    if (!World.hasChunk(s.x, s.z) || !World.hasChunk(s.x + 8, s.z + 8) || !World.hasChunk(s.x - 8, s.z - 8)) { if (s.t > 25) { n.spawnTry = null; World.setAnchor(null); } return; }
+    const gy = groundY(s.x, s.z), b = World.get(s.x, gy - 1, s.z);
+    if (gy <= SEAY + 1 || b === B.WATER || b === B.LEAVES || bump(s.x + 0.5, gy + 0.05, s.z + 0.5)) { n.spawnTry = null; World.setAnchor(null); return; }
+    spawnAt(s.x, s.z); n.spawnTry = null;
+  }
+
+  // ================= a body that looks like you, if you were emptier =================
+  let rig = null, mat = null, tex = null, cv = null, eyeL = null, eyeR = null, heldSpr = null, heldId = null, ph = 0, look = 0, wasStill = 0;
+  function makeSkin() {
+    if (!cv) { cv = document.createElement('canvas'); cv.width = Skin.W; cv.height = Skin.H; }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height); g.drawImage(Skin.canvas, 0, 0);
+    const im = g.getImageData(0, 0, cv.width, cv.height), d = im.data;
+    for (let i = 0; i < d.length; i += 4) { const l = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) * 0.72; d[i] = l * 0.95 + d[i] * 0.05; d[i + 1] = l * 0.98 + d[i + 1] * 0.02; d[i + 2] = l * 1.04; }
+    g.putImageData(im, 0, 0);
+    const F = Skin.faces('head').pz; g.fillStyle = '#050508';                    // no eyes, and no mouth
+    g.fillRect(F[0] + 1, F[1] + 4, 2, 1); g.fillRect(F[0] + 5, F[1] + 4, 2, 1); g.fillStyle = '#5d6068'; g.fillRect(F[0] + 3, F[1] + 6, 2, 1);
+    if (!tex) { tex = new THREE.CanvasTexture(cv); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; }
+    tex.needsUpdate = true;
+  }
+  function buildRig() {
+    if (rig) return;
+    makeSkin();
+    mat = new THREE.MeshLambertMaterial({ map: tex, emissive: new THREE.Color(0.08, 0.08, 0.1) }); World.patchFog(mat);
+    rig = Avatar.makeRig(mat);
+    const eyeM = new THREE.MeshBasicMaterial({ color: 0xd8ecff, fog: false });
+    const S = Avatar.S; eyeL = new THREE.Mesh(new THREE.PlaneGeometry(S * 1.6, S * 0.9), eyeM); eyeR = eyeL.clone();
+    eyeL.position.set(-2 * S, 0.5 * S, 4.05 * S); eyeR.position.set(2 * S, 0.5 * S, 4.05 * S); rig.head.add(eyeL, eyeR);
+    heldSpr = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, alphaTest: 0.3 })); heldSpr.scale.set(0.5, 0.5, 1); heldSpr.position.set(0, 0.05, 0.22); heldSpr.visible = false; rig.hand.add(heldSpr);
+    rig.root.visible = false; rig.root.frustumCulled = false; scene.add(rig.root);
+  }
+  function render(dt) {
+    if (!rig) { if (!n.alive) return; buildRig(); }
+    const P = Player.p, vis = (n.alive || n.dead > 0) && !Realm.fake && Math.hypot(n.x - P.x, n.z - P.z) < CFG.VIEW * CS + 10;
+    rig.root.visible = vis; if (!vis) return;
+    const R2 = rig, sp = Math.hypot(n.vx, n.vz);
+    R2.root.position.set(n.x, n.y, n.z); R2.root.rotation.y = n.yaw + Math.PI;
+    ph += dt * sp * (n.inWater ? 1.5 : 2.2); const sw = Math.sin(ph) * Math.min(1, sp / 3.5) * 0.95;
+    R2.legR.rotation.set(sw, 0, 0); R2.legL.rotation.set(-sw, 0, 0);
+    R2.armL.rotation.set(-sw, 0, 0.05); R2.armR.rotation.set(sw, 0, -0.05);
+    if (!n.alive) {                                                                              // it falls over, and is gone
+      n.dead -= dt; R2.lying.rotation.x = Math.min(1.5, (1.6 - n.dead) * 3); R2.armL.rotation.set(-0.3, 0, 1.2); R2.armR.rotation.set(-0.2, 0, -1.3);
+      mat.opacity = 1; if (n.dead <= 0) R2.root.visible = false; return;
+    }
+    R2.lying.rotation.x = 0;
+    if (n.atk > 0) { const s = Math.sin((1 - n.atk / 0.3) * Math.PI); R2.armR.rotation.x = -1.7 * s; R2.lean.rotation.y = -0.2 * s; } else R2.lean.rotation.y = 0;
+    if (n.mine) { R2.armR.rotation.x = -1.2 - Math.sin(T * 14) * 0.6; }
+    if (sp < 0.4 && !n.atk) { R2.armL.rotation.z = 0.05 + Math.sin(T * 1.6) * 0.02; R2.armR.rotation.z = -0.05 - Math.sin(T * 1.6) * 0.02; }
+    // the head turns to whatever it is watching
+    const tgtLook = n.seen && Math.hypot(P.x - n.x, P.z - n.z) < 40 ? (() => { let d = Math.atan2(-(P.x - n.x), -(P.z - n.z)) - n.yaw; while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832; return cl(d, -1.1, 1.1); })() : 0;
+    look += (tgtLook - look) * Math.min(1, dt * 6); R2.head.rotation.y = look;
+    const h = bestTool('sword') || bestTool('pickaxe'), id = n.mine ? bestTool('pickaxe') || h : h;
+    if (id !== heldId) { heldId = id; if (id) { heldSpr.material.map = Inventory.iconOf(id).mat.map; heldSpr.material.needsUpdate = true; } heldSpr.visible = !!id; }
+    mat.emissive.setRGB(n.hurt > 0 ? 0.55 : 0.08, n.hurt > 0 ? 0.08 : 0.08, n.hurt > 0 ? 0.08 : 0.1);
+  }
+
+  // ================= hitting it =================
+  function rayBox(o, d, x0, y0, z0, x1, y1, z1, maxT) {
+    let t0 = 0, t1 = maxT;
+    for (const [oo, dd, lo, hi] of [[o.x, d.x, x0, x1], [o.y, d.y, y0, y1], [o.z, d.z, z0, z1]]) {
+      if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) return -1; continue; }
+      let a = (lo - oo) / dd, b = (hi - oo) / dd; if (a > b) { const s = a; a = b; b = s; }
+      t0 = Math.max(t0, a); t1 = Math.min(t1, b); if (t0 > t1) return -1;
+    }
+    return t0;
+  }
+  let hitCool = 0;
+  Player.setHook((kind, blockDist) => {
+    if (!n.alive || Realm.fake) return false;
+    Player.refreshAim();
+    const t = rayBox(Player.eyePos, Player.aimDir, n.x - 0.36, n.y, n.z - 0.36, n.x + 0.36, n.y + HH, n.z + 0.36, Math.min(CFG.REACH, blockDist + 0.3));
+    if (t < 0) return false;
+    if (kind === 'aim') return true;
+    if (kind === 'break' && hitCool <= 0) {
+      hitCool = 0.4; const P = Player.p, h = Inventory.held(); Inventory.wearHeld(1); GameAudio.hit();
+      hurt(Inventory.attackDamage() * (Player.p.vy < -1 && !Player.p.onGround ? 1.5 : 1), P.x, P.z, true);
+    }
+    return true;
+  });
+  Events.on('break', t => {   // the table it keeps its things under
+    const b = mem.base; if (b && b.stash && b.stash.x === t.x && b.stash.y === t.y && b.stash.z === t.z) {
+      for (const id in mem.stash) Inventory.drop(id, t.x + 0.5, t.y + 0.5, t.z + 0.5, mem.stash[id]);
+      mem.stash = {}; lesson('somebody found its hoard'); b.stash = null;
+    }
+  });
+
+  // ================= every frame =================
+  function update(dt) {
+    dt0 = dt; hitCool -= dt;
+    if (dt <= 0) return;
+    if (!enabled()) { if (n.alive) { n.alive = false; World.setAnchor(null); if (rig) rig.root.visible = false; } return; }
+    T += dt;
+    if (Realm.fake) { if (rig) rig.root.visible = false; return; }
+    if (!n.alive) {
+      if (n.dead > 0) render(dt);
+      if (GAME.temp || GAME.mode === 'creative' && !forced) return;
+      if (mem.lives === 0 && mem.grace > 0) { mem.grace -= dt; if (mem.grace > 0) return; }
+      else if (n.respawn > 0) { n.respawn -= dt; if (n.respawn > 0) return; }
+      if (Vitals.dead) return;
+      trySpawn(dt); return;
+    }
+    n.plan -= dt; n.replan -= dt; n.hurt = Math.max(0, n.hurt - dt); n.atk = Math.max(0, n.atk - dt);
+    // hunger and health, the same rules as you
+    const sp = Math.hypot(n.vx, n.vz);
+    n.food = Math.max(0, n.food - dt * (0.012 + (sp > 5 ? 0.03 : 0) + (n.atk > 0 ? 0.01 : 0)));
+    n.regen = (n.regen || 0) + dt;
+    if (n.food >= 6 && n.hp < 20 && n.regen > (n.regen2 ? 1.6 : 4.5)) { n.regen = 0; n.hp = Math.min(20, n.hp + 1); }
+    if (n.food <= 0) { n.starve = (n.starve || 0) + dt; if (n.starve > 4) { n.starve = 0; hurtSelf(1, 'starve'); } }
+    if (!n.alive) return;
+    senses(dt); pickup(dt); stealScan(dt);
+    n.thinkT -= dt; if (n.thinkT <= 0) { n.thinkT = 0.45; think(); }
+    it.dx = it.dz = 0; it.speed = WALK;
+    if (n.inWater && waterAt(n.x, n.y + 1.6, n.z) && n.air < 5) {        // out of breath: to the nearest shore, now
+      let best = null, bd = 1e9; const cx = Math.floor(n.x), cz = Math.floor(n.z);
+      for (let r = 1; r <= 16; r += 1) { for (let a = 0; a < 20; a++) { const x = Math.floor(cx + Math.cos(a / 20 * 6.283) * r), z = Math.floor(cz + Math.sin(a / 20 * 6.283) * r), y = groundY(x, z); if (World.hasChunk(x, z) && stand(x, y, z) && !waterAt(x, y, z) && r < bd) { bd = r; best = [x + 0.5, y, z + 0.5]; } } if (best) break; }
+      if (best) {
+        const dx = best[0] - n.x, dz = best[2] - n.z, d = Math.hypot(dx, dz) || 1; it.dx = dx / d; it.dz = dz / d; it.speed = WALK; it.swim = true; n.path = null;
+        if (n.air < 1.5) { n.x = best[0]; n.y = best[1] + 0.02; n.z = best[2]; n.vx = n.vy = n.vz = 0; n.air = 10; }
+      }
+    } else if (n.escape > 0) { n.escape -= dt; it.dx = Math.cos(n.escA); it.dz = Math.sin(n.escA); it.speed = WALK; if (n.onGround && R() < dt * 2) it.jump = true; if (n.inWater) it.swim = true; }
+    else run(dt);
+    if (it.dx || it.dz) n.mvT = (n.mvT || 0) + dt;
+    n.chkT = (n.chkT || 0) + dt;
+    if (n.chkT >= 15) {          // trying to go somewhere and not getting anywhere?
+      const moved = Math.hypot(n.x - (n.chkX || n.x), n.z - (n.chkZ || n.z));
+      if (n.mvT > 9 && moved < 2.5 && !n.mine) { n.stuckN = (n.stuckN || 0) + 1; unstick(); } else if (moved >= 2.5) n.stuckN = 0;
+      n.chkT = 0; n.mvT = 0; n.chkX = n.x; n.chkZ = n.z;
+    }
+    if (n.alive) { physics(dt); footsteps(dt); }
+    if (n.alive) World.setAnchor(n.x, n.z);
+    if (n.smelt > 0 && n.goal !== 'gear') { n.smelt -= dt; if (n.smelt <= 0) { addInv('silver_ingot', n.smeltOut || 1); n.smeltOut = 0; } }
+    render(dt);
+  }
+  function unstick() {
+    n.path = null; n.replan = 0; n.wander = null; n.tgt = null; n.tgtBlock = null; n.escape = 2.5; n.escA = R() * Math.PI * 2; lesson('it gets stuck sometimes');
+    if (n.stuckN >= 2) {                 // it climbs out however it can
+      const cx = Math.floor(n.x), cz = Math.floor(n.z); let best = null, bd = 1e9;
+      for (let r = 2; r <= 10 && !best; r += 2) for (let a = 0; a < 16; a++) {
+        const x = Math.floor(cx + Math.cos(a / 16 * 6.283) * r), z = Math.floor(cz + Math.sin(a / 16 * 6.283) * r), y = groundY(x, z);
+        if (stand(x, y, z) && World.get(x, y - 1, z) !== B.WATER && !waterAt(x, y, z)) { const d = Math.hypot(x - n.x, z - n.z); if (d < bd) { bd = d; best = [x, y, z]; } }
+      }
+      if (best) { n.x = best[0] + 0.5; n.y = best[1] + 0.02; n.z = best[2] + 0.5; n.vx = n.vy = n.vz = 0; }
+    }
+    if (n.stuckN >= 4) { n.stuckN = 0; setGoal('search'); }
+  }
+  function renderOnly(dt) { render(dt); }
+
+  // ================= remembered between sessions =================
+  function exportState() {
+    const heat = {}; Object.keys(mem.heat).sort((a, b) => mem.heat[b] - mem.heat[a]).slice(0, 40).forEach(k => { heat[k] = mem.heat[k]; });
+    const m = Object.assign({}, mem, { heat, visited: {}, inspected: {}, base: mem.base ? Object.assign({}, mem.base, { todo: null }) : null });
+    return { mem: m, alive: n.alive, x: n.x, y: n.y, z: n.z, hp: n.hp, food: n.food, inv: n.inv, use: n.use, respawn: n.respawn, carry: n.carry };
+  }
+  function importState(s) {
+    mem = freshMem(); n.alive = false; n.dead = 0; n.respawn = 0; n.inv = {}; n.use = {}; n.spawnTry = null; own = new Set(); World.setAnchor(null);
+    if (!s || !s.mem) return;
+    mem = Object.assign(freshMem(), s.mem); mem.tact = Object.assign(freshMem().tact, mem.tact); mem.avoid = Object.assign(freshMem().avoid, mem.avoid); mem.ownN = mem.ownN || {}; if (mem.base) mem.base.todo = blueprint();
+    n.respawn = s.respawn || 0;
+    if (s.alive) { n.alive = true; n.x = s.x; n.y = s.y; n.z = s.z; n.hp = s.hp; n.food = s.food; n.inv = s.inv || {}; n.use = s.use || {}; n.carry = s.carry || 0; n.goal = 'search'; n.path = null; n.vx = n.vy = n.vz = 0; n.belief = null; n.seenAt = -99; }
+  }
+  function info() {
+    const P = Player.p;
+    if (!n.alive) return `the other  ${enabled() ? 'not here' : 'off'}${mem.lives === 0 ? ' · arrives in ' + Math.ceil(Math.max(0, mem.grace)) + 's' : ' · back in ' + Math.ceil(Math.max(0, n.respawn)) + 's'} · lives ${mem.lives} deaths ${mem.deaths}`;
+    const inv = Object.keys(n.inv).map(k => k + ':' + n.inv[k]).join(' ') || '—';
+    return `the other  ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
+      `           has ${inv}\n           base ${mem.base ? (mem.base.done ? 'built' : mem.base.i + '/' + mem.base.todo.length) : 'none'} · lives ${mem.lives} deaths ${mem.deaths} kills ${mem.kills} · bold ${mem.bold.toFixed(2)} careful ${mem.caution.toFixed(2)}\n` +
+      `           learned: ${mem.lessons.slice(-3).join('; ') || '—'}`;
+  }
+  return {
+    update, renderOnly, exportState, importState, info, hurt,
+    get alive() { return n.alive; }, get pos() { return { x: n.x, y: n.y, z: n.z }; }, get goal() { return n.goal; }, get mem() { return mem; }, n,
+    // debug
+    spawnNear(aware) {
+      forced = true; const P = Player.p, a = P.yaw + Math.PI * 0.6, d = 34;
+      const x = Math.floor(P.x - Math.sin(a) * d), z = Math.floor(P.z - Math.cos(a) * d);
+      if (!World.hasChunk(x, z)) return false;
+      if (n.alive) { n.alive = false; } spawnAt(x, z); mem.lives = Math.max(mem.lives, 1); mem.grace = 0;
+      if (aware) { n.belief = { x: P.x, y: P.y, z: P.z, t: T, conf: 1 }; n.seenAt = T; }
+      return true;
+    },
+    kill() { if (n.alive) die('debug'); },
+    reveal() { const P = Player.p; n.belief = { x: P.x, y: P.y, z: P.z, t: T, conf: 1 }; },
+    give(id, k) { addInv(id, k); },
+    set(k, v) { n[k] = v; },
+    reset() { mem = freshMem(); n.alive = false; World.setAnchor(null); },
+    force() { forced = true; },
+  };
+})();
+
+/* =====================================================================
    DIRECTOR — Phase 4
    ===================================================================== */
 const Director = { update() {} };
@@ -6247,6 +7274,9 @@ const Debug = (() => {
   el.querySelectorAll('[data-creep]').forEach(b => b.addEventListener('click', () => Animals.creep(b.dataset.creep)));
   el.querySelectorAll('[data-mood]').forEach(b => b.addEventListener('click', () => Animals.mood(b.dataset.mood)));
   document.getElementById('dbgDeer').addEventListener('click', () => Animals.spawnDeer());
+  document.getElementById('dbgOther').addEventListener('click', () => Nemesis.spawnNear(false));
+  document.getElementById('dbgOtherA').addEventListener('click', () => Nemesis.spawnNear(true));
+  document.getElementById('dbgOtherK').addEventListener('click', () => Nemesis.kill());
   document.getElementById('dbgItems').addEventListener('click', () => Inventory.giveAll());
   el.querySelectorAll('[data-gmode]').forEach(b => b.addEventListener('click', () => {
     GAME.mode = b.dataset.gmode; if (!GAME.temp) Worlds.update(GAME.id, { mode: GAME.mode }); applyMode();
@@ -6284,7 +7314,7 @@ const Debug = (() => {
       `time       ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}  (${t.toFixed(3)})\n` +
       `daylight   ${Sky.state.day.toFixed(2)}\n` +
       `looking at ${tg ? World.INFO[tg.b].name + ' ' + tg.x + ',' + tg.y + ',' + tg.z : '—'}\n` +
-      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() + '\n' + GameAudio.info() + '\n' + Animals.info() +
+      `draw calls ${renderer.info.render.calls}, tris ${renderer.info.render.triangles}\n` + Weather.info() + '\n' + GameAudio.info() + '\n' + Animals.info() + '\n' + Nemesis.info() +
       (Save.locked() ? `\nlocked out ${Math.ceil((Save.lockUntil - Date.now()) / 1000)}s` : '');
   }
   return { update, get timeSpeed() { return timeSpeed; }, get fps() { return fps; } };
@@ -6331,7 +7361,7 @@ const Save = (() => {
   function write() {
     if (GAME.temp || GAME.dead || !GAME.id) return;
     const rv = Realm.saveView(), p = rv ? rv.p : Player.p, days = Weather.exportState().days;
-    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: Realm.fake ? Realm.realSeed : World.getSeed(), edits: World.exportEdits(), fake: rv ? rv.fake : undefined, cave: Cave.exportState(), sea: Sea.exportState(),
+    const ok = Worlds.store(GAME.id, { v: 2, mode: GAME.mode, seed: Realm.fake ? Realm.realSeed : World.getSeed(), edits: World.exportEdits(), fake: rv ? rv.fake : undefined, cave: Cave.exportState(), sea: Sea.exportState(), nemesis: Nemesis.exportState(),
       p: { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: false }, time: rv ? rv.time : Sky.time, weather: rv ? rv.weather : Weather.exportState(),
       animals: Animals.exportState(), inv: Inventory.exportState(), furnaces: Inventory.exportFurnaces(), vitals: Vitals.exportState(), bed: rv ? rv.bed : Bed.exportState() });
     Worlds.update(GAME.id, { played: Date.now(), day: days });
@@ -6375,7 +7405,7 @@ try { enterAfterLoad = sessionStorage.getItem('stainless-enter') === '1'; sessio
   Vitals.importState(saved && saved.vitals);
   Inventory.importFurnaces(saved && saved.furnaces);
   Bed.importState(saved && saved.bed);
-  Cave.importState(saved && saved.cave); Sea.importState(saved && saved.sea);
+  Cave.importState(saved && saved.cave); Sea.importState(saved && saved.sea); Nemesis.importState(saved && saved.nemesis);
   if (saved && saved.fake) Realm.resume(saved.fake, saved);
 }
 World.update(Player.p.x, Player.p.z);
@@ -6483,7 +7513,7 @@ const Menu = (() => {
       // the untouched world behind the menu becomes this world: no loading
       const w = Worlds.create(name, newMode, World.getSeed());
       Object.assign(GAME, { id: w.id, name: w.name, mode: w.mode, temp: false, fresh: false });
-      Worlds.setCurrent(w.id); Inventory.reset(); Inventory.importFurnaces(null); Bed.clear(); Vitals.reset(); applyMode(); Save.write();
+      Worlds.setCurrent(w.id); Inventory.reset(); Inventory.importFurnaces(null); Nemesis.importState(null); Bed.clear(); Vitals.reset(); applyMode(); Save.write();
       play();
       return;
     }
@@ -6499,6 +7529,7 @@ const Menu = (() => {
     { k: 'quality', name: 'Graphics', type: 'pick', options: [['low', 'Fast'], ['normal', 'Normal'], ['high', 'Sharp']] },
     { k: 'fov', name: 'Field of view', type: 'num', min: 50, max: 110, step: 5, fmt: v => v + '°' },
     { k: 'sens', name: 'Look speed', type: 'num', min: 0.3, max: 3, step: 0.1, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'nemesis', name: 'The Other', note: 'a hostile who lives here too (survival)', type: 'bool' },
     { k: 'hand', name: 'Show hand', note: 'in the first person view', type: 'bool' },
     { k: 'autoJump', name: 'Auto jump', note: 'step up blocks as you walk', type: 'bool' },
     { k: 'lefty', name: 'Left-handed', note: 'joystick on the right', type: 'bool', touch: true },
@@ -6807,6 +7838,7 @@ function step() {
   Sky.update(dt, Player.locked && !Realm.fake ? Debug.timeSpeed : 0);
   Weather.update(gdt);
   Animals.update(gdt);
+  Nemesis.update(gdt);
   Inventory.update(gdt);
   Vitals.update(gdt);
   GameAudio.update(gdt);
