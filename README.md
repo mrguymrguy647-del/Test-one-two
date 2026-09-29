@@ -279,3 +279,11 @@ A hostile who lives in the world the way you do. Survival and hardcore only (swi
 - **It steals:** a hit can take something from your pockets (it prefers what it needs), and when you are away it empties your furnaces and picks up what you dropped. Kill it to get your things back.
 - **It learns:** every death teaches it (your weapon, whether ambushing or open fights win, that heights and water hurt) and it comes back more careful and cleverer. It keeps its memory (and its house) between sessions.
 - **Debug (F3):** “The Other” spawns one unaware, “(hunting)” one that knows where you are, “Kill it”; the debug text shows what it is doing, what it carries and what it has learned.
+
+## 8.6 – The Other thinks
+It now has one purpose and works out the rest for itself.
+- **One fixed goal:** end the other (you). Every other goal is one it invents because it would get it closer.
+- **It weighs its options** every second or so: finish you now, get stronger first, heal, lay in food, build a shelter, watch you from a distance, wait near where you sleep, climb a hill to look around, take what you leave lying around, take your bed, take back what it dropped when it died. Each has a reason it can state (see the debug text: “plan” and its last thoughts), and each is judged by how well that kind of plan has worked for it before.
+- **It predicts fights:** it works out how a fight would go from both sides' health, weapons, hunger, whether you are asleep, and only commits when its chance is high enough (bolder or more careful depending on its history). After each fight it compares what it expected with what happened and corrects its own judgement.
+- **It learns your habits:** when it has seen you asleep, it notes the hour and waits for it. It remembers where you sleep and where you spend time.
+- **It improvises like a player:** if you stand on a ledge or a pillar, it builds a stair of blocks under its feet to reach you; if a plan stalls or takes too long it gives up and tries another.
