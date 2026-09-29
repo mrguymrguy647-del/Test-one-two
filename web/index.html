@@ -459,7 +459,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.9';
+const GAME_VERSION = '9.0';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -3297,7 +3297,7 @@ const Inventory = (() => {
     if (!d || d.food === undefined || !survivalMode()) return false;
     if (!Vitals.hungry()) { toast('You are not hungry'); return true; }
     if (--s.n <= 0) slots[sel] = null;
-    Vitals.feed(d.food, s.id); GameAudio.eat(); changed();
+    const spiked = s.d === 99; Vitals.feed(d.food, s.id); if (spiked) Vitals.poisonNow(45); GameAudio.eat(); changed();
     return true;
   }
   const attackDamage = () => { const d = held() && ITEM[held().id]; return d && d.damage || 1; };
@@ -3757,6 +3757,7 @@ const Inventory = (() => {
     MINE, dropOf: b => b === B.GLASS || b === B.LAMP ? null : DROP[b] || BLOCK_ITEM[b] || null,
     breakTimeWith(b, id) { const m = MINE[b] || [1], d = id && ITEM[id], right = !!(d && d.tool && d.tool === m[1]); const ok = !m[2] || (right && (d.tier || 1) >= (m[3] || 1)); return { time: m[0] * (ok ? 1.5 : 5) / (right ? d.speed : 1), drops: ok }; },
     takeHeld(k) { const s = slots[sel]; if (!s) return null; const q = Math.min(k || 1, s.n), out = { id: s.id, n: q, d: s.d }; s.n -= q; if (s.n <= 0) slots[sel] = null; changed(); return out; },
+    peek(score) { let best = null, bs = 0.05; for (let i = 0; i < 36; i++) { const s = slots[i]; if (!s) continue; const v = score(s.id); if (v > bs) { bs = v; best = { id: s.id, n: s.n }; } } return best; },
     dropsNear(x, y, z, r) { return drops.filter(d => Math.hypot(d.x - x, d.z - z) < r && Math.abs(d.y - y) < r && d.t > 0.6); },
     takeDrop(d) { const i = drops.indexOf(d); if (i < 0) return null; scene.remove(d.sprite); drops.splice(i, 1); return { id: d.id, n: d.n, d: d.d }; },
     steal(score) {   // a hand in your pockets: takes the stack it likes most (a part of it, if it is a big one)
@@ -4949,7 +4950,7 @@ const Animals = (() => {
    ===================================================================== */
 const Vitals = (() => {
   const B = World.B;
-  let hp = 20, food = 20, air = 10, ex = 0, poison = 0, regenT = 0, starveT = 0, airT = 0, peak = null, wasGround = true, dead = false, cause = '', flash = 0, waveT = 0;
+  let poisonT = 0, hp = 20, food = 20, air = 10, ex = 0, poison = 0, regenT = 0, starveT = 0, airT = 0, peak = null, wasGround = true, dead = false, cause = '', flash = 0, waveT = 0;
   const el = document.getElementById('vitals'), hurtEl = document.getElementById('hurt');
   const cv = { hp: document.getElementById('vHearts'), food: document.getElementById('vFood'), air: document.getElementById('vAir') };
 
@@ -5029,7 +5030,7 @@ const Vitals = (() => {
     // hunger: everything you do makes you hungrier (running most of all)
     const sp = Math.hypot(P.vx, P.vz);
     let rate = 0.0022 + (sp > 0.5 ? (sp > 5 ? 0.016 : 0.0045) : 0);       // a lot slower than before: a full stomach lasts an hour of walking
-    if (poison > 0) { poison -= dt; rate += 0.04; }
+    if (poison > 0) { poison -= dt; rate += 0.04; if (hp > 4) { poisonT += dt; if (poisonT > 3.2) { poisonT = 0; damage(1, 'poison'); } } }
     if (GAME.mode === 'hardcore') rate *= 1.25;
     rate *= 1 + Cave.k * 1.2;                                                  // the deep takes more out of you
     if (wasGround && !P.onGround && P.vy > 5) ex += 0.012;                     // a jump
@@ -5058,13 +5059,14 @@ const Vitals = (() => {
     air = clamp(typeof s.air === 'number' ? s.air : 10, 0, 10); ex = s.ex || 0; poison = s.poison || 0;
     drawn = ''; draw();
   }
-  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.', sea: 'Something in the deep took you.', nemesis: 'Something that moves like you killed you.' };
+  const WHY = { fall: 'You fell from a high place.', drown: 'You drowned.', starve: 'You starved.', void: 'You fell out of the world.', sea: 'Something in the deep took you.', poison: 'You were poisoned.', nemesis: 'Something that moves like you killed you.' };
   return {
     update, damage, feed, reset, respawn: reset, onSleep, exportState, importState, draw,
     hungry: () => food < 20,
     get dead() { return dead; }, get cause() { return WHY[cause] || 'You died.'; },
     get hp() { return hp; }, get food() { return food; }, get air() { return air; },
     // debug
+    poisonNow(t) { poison = Math.max(poison, t); Inventory.toast('That tasted wrong'); },
     heal() { hp = 20; food = 20; poison = 0; drawn = ''; draw(); },
     setFood(v) { food = v; drawn = ''; draw(); },
   };
@@ -6287,7 +6289,7 @@ const Nemesis = (() => {
     lives: 0, deaths: 0, kills: 0, grace: 480, base: null, home: null, last: null, heat: {}, visited: {}, inspected: {}, ownN: {},
     caution: 0.35, bold: 0.5, cunning: 0.3, foeDmg: 1, foeHits: 0, stash: {}, lessons: [], killedBy: '', steals: 0,
     tact: { ambush: [1, 2], open: [1, 2] }, tierSeen: 0, avoid: { fall: 0, water: 0, hunger: 0 },
-    foeHp: 20, foeHpAt: 0, calib: 0, strat: {}, death: null, recon: -1e9, lookAt: -1e9, sleepAt: null, fights: 0,
+    foeHp: 20, foeHpAt: 0, calib: 0, strat: {}, scheme: {}, forgiven: 0, corpse: null, death: null, recon: -1e9, lookAt: -1e9, sleepAt: null, fights: 0,
   });
   let mem = freshMem();
   const lesson = t => { if (mem.lessons.indexOf(t) < 0) { mem.lessons.push(t); if (mem.lessons.length > 14) mem.lessons.shift(); } };
@@ -6605,7 +6607,7 @@ const Nemesis = (() => {
   function deliberate() {
     const A = mind.A = assess(), cur = mind.obj, cands = [];
     const succ = k => { const s = mem.strat[k]; return s ? (s[0] + 1) / (s[1] + 2) : 0.5; };      // how well has this kind of plan gone before?
-    const add = (k, label, value, why, bias, timeout) => cands.push({ k, label, value: value * (0.6 + succ(k) * 0.8) + (cur && cur.k === k ? 0.15 : 0), why, bias, timeout });
+    const add = (k, label, value, why, bias, timeout, pos) => cands.push({ k, label, value: value * (0.6 + succ(k) * 0.8) + (cur && cur.k === k ? 0.15 : 0), why, bias, timeout, pos });
     const pct = v => Math.round(v * 100) + '%';
     const contactAgo = T - Math.max(n.seenAt, n.noise ? n.noise.t : -1e9, n.life);
     // --- close in: it can win, and it knows where you are
@@ -6631,6 +6633,8 @@ const Nemesis = (() => {
     // --- making your life harder while it is not ready
     if (n.steal && !A.sn) add('harass', 'take what you leave lying around', 0.5 + (A.ready ? 0 : 0.15) + mem.cunning * 0.2, 'your furnace or your dropped things: you feel weaker, it feels stronger', { steal: 0.45 }, 120);
     if (mem.home && Bed.list.length && !A.sn && mem.cunning > 0.35 && !n.sabDone && T - n.life > 200) add('sabotage', 'take your bed', 0.5 + mem.cunning * 0.25, 'without a bed you wake up somewhere you do not expect', { sabotage: 0.8 }, 200);
+    // --- what you lost (it is only too glad to help)
+    if (mem.corpse && T - mem.corpse.at < 500 && Inventory.dropsNear(mem.corpse.x, mem.corpse.y, mem.corpse.z, 10).length) add('loot', 'take what you dropped', 0.95, 'everything you carried is lying there', { retrieve: 1.0 }, 140, mem.corpse);
     // --- what it lost
     if (mem.death && T - mem.death.at < 700 && Inventory.dropsNear(mem.death.x, mem.death.y, mem.death.z, 10).length) add('retrieve', 'take back what it dropped', 0.85, 'its own things are still lying where it fell', { retrieve: 1.0 }, 120);
     // --- a home: somewhere to heal, to keep things, to wait from
@@ -6652,7 +6656,7 @@ const Nemesis = (() => {
     }
     if (!mind.obj || pick.k !== mind.obj.k) {
       if (mind.obj) endObj(null, 'something better came up');
-      mind.obj = { k: pick.k, label: pick.label, why: pick.why, bias: pick.bias, at: T, timeout: pick.timeout, done: false, fail: false };
+      mind.obj = { k: pick.k, label: pick.label, why: pick.why, bias: pick.bias, pos: pick.pos, at: T, timeout: pick.timeout, done: false, fail: false };
       say('→ ' + pick.label + ' — ' + pick.why);
     } else { mind.obj.why = pick.why; }
   }
@@ -6669,7 +6673,7 @@ const Nemesis = (() => {
     }
   }
   const finish = (ok) => { if (mind.obj) { if (ok) mind.obj.done = true; else mind.obj.fail = true; } };
-  Events.on('death', () => { if (mind.obj && mind.obj.k === 'engage') finish(true); });
+  Events.on('death', () => { const P = Player.p; mem.corpse = { x: P.x, y: P.y, z: P.z, at: T }; if (mind.obj && mind.obj.k === 'engage') finish(true); });
 
   // ================= talking to it, and what it does with what you say =================
   // It can be reasoned with, or it can act as if it can. Trust is a tool: it smiles, walks beside you, and waits for you to turn your back
@@ -6704,7 +6708,7 @@ const Nemesis = (() => {
   }
   function parse(t) {
     t = t.toLowerCase();
-    const rules = [[/kill|die\b|fight|attack|hate|enemy|stab|monster|freak/, 'threat'], [/peace|truce|friend|sorry|calm|ally|alliance|no fight|don.?t hurt|forgive/, 'peace'], [/give|gift|take this|present|trade|swap|deal|offer|here you/, 'gift'],
+    const rules = [[/took|stole|steal|thief|missing|where.?s my|gave me|poison|liar|lying|trick/, 'accuse'], [/kill|die\b|fight|attack|hate|enemy|stab|monster|freak/, 'threat'], [/peace|truce|friend|sorry|calm|ally|alliance|no fight|don.?t hurt|forgive/, 'peace'], [/give|gift|take this|present|trade|swap|deal|offer|here you/, 'gift'],
       [/food|hungry|eat|bread|meat|beef|starv/, 'food'], [/follow|come with|come on|together|join|walk with/, 'follow'], [/leave|go away|alone|stop|get lost|back off|shoo/, 'leave'],
       [/who|name|what are you|are you real/, 'who'], [/where|base|house|home|live/, 'where'], [/why|purpose|want|goal|what do you/, 'why'], [/hello|\bhi\b|hey|greet|sup\b/, 'hello']];
     for (const [re, k] of rules) if (re.test(t)) return k;
@@ -6717,7 +6721,7 @@ const Nemesis = (() => {
     setTimeout(() => reply(intent), 350 + R() * 500);
   }
   function befriend(why) {
-    if (soc.mode !== 'friendly') { soc.mode = 'friendly'; soc.until = T + rnd(200, 320); soc.chk = T; lesson('it pretends to be a friend'); say('pretending to be a friend — ' + (why || 'to get close')); }
+    if (soc.mode !== 'friendly') { soc.mode = 'friendly'; soc.until = T + rnd(150, 520) + mem.forgiven * 60; soc.chk = T; soc.nextT = T + rnd(8, 30); soc.sch = null; soc.lying = false; soc.moodT = 0; soc.mood = PICK(['sweet', 'sweet', 'sour']); lesson('it pretends to be a friend'); say('pretending to be a friend — ' + (why || 'to get close')); }
     if (n.goal !== 'companion') setGoal('companion');
   }
   function reply(intent) {
@@ -6726,11 +6730,13 @@ const Nemesis = (() => {
     switch (intent) {
       case 'hello': tell('it', friendly ? PICK(['Hello again.', 'Good to see a face.', 'Hi. It is a quiet day.']) : soc.trust > 0.2 ? 'Hello.' : PICK(['...', 'You found me.', 'Hello, stranger.'])); break;
       case 'who': tell('it', friendly ? PICK(['Somebody like you. I woke up here and did not know why either.', 'A traveler. I get lonely out here.']) : PICK(['Someone who lives here too.', 'Someone who is still here.'])); break;
+      case 'accuse': tell('it', friendly ? PICK(['Me? I would never. How could you say that?', 'You are imagining things. Again.', 'I was with you the whole time.']) : 'Prove it.'); soc.trust = Math.max(0, soc.trust - 0.05); break;
       case 'where': tell('it', friendly ? 'Around. I will show you sometime.' : 'Somewhere you will not find.'); break;
       case 'why': tell('it', friendly ? 'Company. That is all.' : 'To see how long you last.'); break;
       case 'peace': {
         const chance = cl(0.3 + mem.cunning * 0.5 + (A.ready ? -0.2 : 0.25) - mem.bold * 0.15 + soc.trust * 0.25, 0.08, 0.92);
         if (angry) { tell('it', 'You hit me. No.'); break; }
+        if (soc.betrayed && T - (soc.lastShove || -999) < 400 && R() < 0.55 + mem.forgiven * 0.12) { mem.forgiven++; tell('it', PICK(['You are right. I am sorry. It will not happen again.', 'I do not know what came over me. Forgive me?'])); soc.trust = 0.35; befriend('forgiven'); break; }
         if (friendly) { tell('it', 'We already have peace.'); break; }
         if (R() < chance) { soc.trust = Math.max(soc.trust, 0.3); tell('it', PICK(['All right. Peace. Let us not hurt each other.', 'Peace, then. I am tired of fighting too.'])); befriend('peace agreed'); }
         else { tell('it', PICK(['No.', 'I do not think so.'])); if (A.ready && R() < 0.5) { soc.mode = 'hostile'; n.goalT = 9; } }
@@ -6739,14 +6745,14 @@ const Nemesis = (() => {
       case 'gift': {
         const g = Inventory.takeHeld(1);
         if (!g) { tell('it', 'Your hands are empty.'); break; }
-        addInv(g.id, g.n); soc.gifts++; soc.trust = Math.min(1, soc.trust + 0.3);
+        addInv(g.id, g.n); soc.gifts++; mem.cunning = Math.min(0.95, mem.cunning + 0.02); soc.trust = Math.min(1, soc.trust + 0.3);
         tell('it', friendly ? PICK(['Thank you. I will remember it.', 'That is kind of you.']) : 'Hm. Thank you.');
         if (!friendly && !angry && soc.trust >= 0.45) { tell('it', 'Maybe you are not so bad.'); befriend('a gift'); }
         break;
       }
       case 'food': {
         const f = foodItem();
-        if (friendly && f && n.food > 8) { takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1); soc.trust = Math.min(1, soc.trust + 0.2); tell('it', 'Here. Take it.'); }
+        if (friendly && f && n.food > 8) { const bad = soc.trust > 0.4 && R() < 0.4; takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1, bad ? 99 : undefined); soc.trust = Math.min(1, soc.trust + 0.2); tell('it', bad ? 'I cooked it myself. Eat up.' : 'Here. Take it.'); }
         else tell('it', friendly ? 'I have none to spare.' : 'Find your own.');
         break;
       }
@@ -6781,32 +6787,131 @@ const Nemesis = (() => {
   }
   const lethalFor = dmg => dmg >= Vitals.hp;
   function shoveNow(dx, dz, why) {
-    Player.shove(dx * 10, dz * 10, 5.2, 0.7); n.atk = 0.3; soc.betrayed++; soc.mode = 'hostile'; soc.cool = T + 120; n.watch = 7;
+    Player.shove(dx * 10, dz * 10, 5.2, 0.7); n.atk = 0.3; soc.betrayed++; soc.lastShove = T; soc.sch = null; soc.lying = false; soc.mode = 'hostile'; soc.cool = T + 120; n.watch = 7;
     mem.cunning = Math.min(0.95, mem.cunning + 0.05); lesson('a friendly face and a drop'); say('pushed you — ' + why); Events.emit('nemesisShove', {});
     GameAudio.animal('hit1', n.x, n.z, 0.7, 0.7); setGoal('hold');
     setTimeout(() => { if (n.alive) tell('it', Vitals.dead ? 'Sorry.' : '...'); }, 900);
   }
+  // ---- the toxic friend: it is never predictable, it never stops smiling, and it is always working on something
+  const TOX = {
+    sweet: ['You are the best friend I have ever had.', 'I would do anything for you. Anything.', 'Stay close. I like having you near.', 'We make a good team, you and me.'],
+    sour: ['You are so slow. I always have to wait for you.', 'Honestly? I expected more from you.', 'Nobody else would put up with you the way I do.', 'You never say thank you.', 'I did all the work. As usual.'],
+    manic: ['Did you hear that? ...No. Never mind.', 'Ha! Your face. I love it.', 'Do you ever think how far down it goes?', 'Sometimes I wonder what you would do without me.', 'Do not look behind you. Kidding! Or am I?'],
+  };
+  const GUILT = ['After everything I have done for you.', 'Fine. Do not share. I will just stay hungry. Again.', 'A real friend would trust me.', 'I thought you were different.', 'You always assume the worst about me. It hurts.'];
+  function schemeStat(k) { const s = mem.scheme[k]; return s ? (s[0] + 1) / (s[1] + 2) : 0.5; }
+  function schemeEnd(ok, note) {
+    const c = soc.sch; if (!c) return;
+    const s = mem.scheme[c.k] || (mem.scheme[c.k] = [0, 0]); s[1]++; if (ok) s[0]++;
+    say((ok ? 'it worked: ' : 'it did not work: ') + c.label + (note ? ' (' + note + ')' : '')); soc.sch = null; soc.nextT = T + rnd(10, 75) * (soc.mood === 'manic' ? 0.45 : soc.mood === 'sweet' ? 1.3 : 1);
+  }
+  // a place a fall would kill you, and somewhere it could stand beside it
+  function luringSpot() {
+    const P = Player.p; let best = null;
+    for (let i = 0; i < 26; i++) {
+      const a = R() * Math.PI * 2, r = rnd(8, 30), x = Math.floor(P.x + Math.cos(a) * r), z = Math.floor(P.z + Math.sin(a) * r);
+      if (!World.hasChunk(x, z)) continue; const y = groundY(x, z); if (!stand(x, y, z) || waterAt(x, y, z)) continue;
+      for (let k = 0; k < 8; k++) { const b = k / 8 * Math.PI * 2, dx = Math.cos(b), dz = Math.sin(b), dmg = dropAt(x + 0.5, y, z + 0.5, dx, dz); if (lethalFor(dmg) && (!best || dmg > best.dmg)) best = { x: x + 0.5, y, z: z + 0.5, dx, dz, dmg }; }
+    }
+    return best;
+  }
+  const worthScore = (id) => ({ diamond: 8, silver_ingot: 5, gold_bar: 4, gold_coin: 2, coal: 1 }[id] || 0) + (IT[id].tool ? 2 + (IT[id].tier || 1) : 0) + (FOOD(id) ? 1 : 0);
+  function pickScheme() {
+    const A = mind.A || assess(), w = [], spot = luringSpot(), val = Inventory.peek(worthScore), e = findEdge();
+    if (spot) w.push(['lure', 3 + mem.cunning * 2, { spot }]);
+    if (val && worthScore(val.id) >= 2) w.push(['pilfer', 2 + mem.cunning + worthScore(val.id) * 0.15]);
+    w.push(['fakeHurt', 1.5]); w.push(['guilt', 2.2]); w.push(['demand', Inventory.held() ? 1.7 : 0.1]);
+    if (A.night > 0.6) w.push(['abandon', 1.5]);
+    if (e && e.dmg >= 3 && e.dmg <= 9) w.push(['prank', 1.4]);
+    if (soc.trust > 0.45 && A.food !== undefined) w.push(['spike', 1.3]);
+    if (soc.queue) { const q = soc.queue; soc.queue = null; return { k: q, label: LABEL[q] }; }
+    let tot = 0; for (const c of w) { c[1] *= (0.4 + schemeStat(c[0])) * (soc.mood === 'manic' && c[0] !== 'guilt' ? 1.4 : 1); tot += c[1]; }
+    let r = R() * tot, pick = w[0]; for (const c of w) { r -= c[1]; if (r <= 0) { pick = c; break; } }
+    return Object.assign({ k: pick[0], label: LABEL[pick[0]] }, pick[2] || {});
+  }
+  const LABEL = { lure: 'lead you to a fatal drop', pilfer: 'quietly take something of yours', fakeHurt: 'pretend to be hurt and strike when you come to help', guilt: 'make you feel guilty', demand: 'ask for your things, as a friend', abandon: 'vanish and leave you alone in the dark', prank: 'push you off a small drop, as a joke', spike: 'give you food that is not good for you' };
+  function runScheme(dt) {
+    const P = Player.p, c = soc.sch, d = eyeDist();
+    c.t = (c.t || 0) + dt;
+    switch (c.k) {
+      case 'guilt': tell('it', PICK(GUILT)); soc.trust = Math.max(0, soc.trust - 0.05); schemeEnd(true); return;
+      case 'demand': {
+        if (!c.said) { const h = Inventory.held(); c.said = T; c.g0 = soc.gifts; tell('it', h ? `Give me your ${IT[h.id].name.toLowerCase()}. Friends share.` : 'You have nothing worth giving me. Typical.'); if (!h) schemeEnd(false); }
+        else if (soc.gifts > c.g0) { tell('it', 'Finally. Was that so hard?'); schemeEnd(true); }
+        else if (T - c.said > 30) { tell('it', 'Fine. Keep it. I thought we were friends.'); soc.trust = Math.max(0, soc.trust - 0.15); soc.queue = 'pilfer'; schemeEnd(false, 'so it will take it instead'); }
+        return;
+      }
+      case 'pilfer': {
+        if (c.t > 60) { schemeEnd(false, 'no chance'); return; }
+        const pf = { x: -Math.sin(P.yaw), z: -Math.cos(P.yaw) }, back = d > 0.1 && ((n.x - P.x) * pf.x + (n.z - P.z) * pf.z) / d < -0.2;
+        if (d < 2.3 && (back || Inventory.isOpen)) {
+          const s = Inventory.steal((id) => worthScore(id) + 0.1); if (s) { addInv(s.id, s.n); mem.steals++; soc.stolen = (soc.stolen || 0) + 1; c.said = s.id; schemeEnd(true, 'took ' + s.id); } else schemeEnd(false, 'nothing to take');
+        }
+        return;
+      }
+      case 'lure': {
+        const s = c.spot; if (!s) { schemeEnd(false); return; }
+        if (!c.arr) { const r = goTo(s.x, s.y, s.z, 1.2, WALK, { maxN: 900 }); if (r === 'arrived') { c.arr = T; tell('it', PICK(['Over here! You have to see this.', 'Come look. Trust me.'])); } else if (r === 'fail' || c.t > 90) schemeEnd(false, 'could not get there'); return; }
+        faceTo(P.x, P.z); it.dx = it.dz = 0; n.wave = 0.8;
+        if (Math.hypot(P.x - s.x, P.z - s.z) < 6 && !c.pointed) { c.pointed = true; soc.distract = T + 4; tell('it', 'Look down there! Do you see it?'); }
+        if (soc.betrayed > (c.b0 === undefined ? (c.b0 = soc.betrayed) : c.b0)) { schemeEnd(true, 'pushed'); return; }
+        if (T - c.arr > 45) schemeEnd(false, 'you did not come');
+        return;
+      }
+      case 'fakeHurt': {
+        if (!c.lie) {
+          const r = travel(P.x + Math.cos(P.yaw + 2.3) * 4, P.z + Math.sin(P.yaw + 2.3) * 4, 1.5, WALK); if (r === 'arrived' || c.t > 12) { c.lie = T; soc.lying = true; tell('it', PICK(['Ugh... my leg... I fell... help me...', 'Please... I cannot get up...'])); } return;
+        }
+        it.dx = it.dz = 0; faceTo(P.x, P.z);
+        if (d < 2.9) { soc.lying = false; n.atk = 0.3; const dmg = Math.round(swordDmg() * 1.7 * 10) / 10 + 1; Vitals.damage(dmg, 'nemesis'); if (!Vitals.dead) { Player.shove((P.x - n.x) / (d || 1) * 6, (P.z - n.z) / (d || 1) * 6, 4.5, 0.2); tell('it', 'You really are gullible.'); } soc.mode = 'hostile'; soc.cool = T + 60; schemeEnd(true, 'you came to help'); setGoal(Vitals.dead ? 'search' : 'fight'); return; }
+        if (T - c.lie > 40) { soc.lying = false; tell('it', 'Never mind. I am fine.'); schemeEnd(false, 'you did not come'); }
+        return;
+      }
+      case 'abandon': {
+        if (!c.tgt) { const a = Math.atan2(n.z - P.z, n.x - P.x); c.tgt = { x: P.x + Math.cos(a) * 55, z: P.z + Math.sin(a) * 55 }; }
+        if (!c.gone) { const r = travel(c.tgt.x, c.tgt.z, 6, RUN * 0.85); if (r === 'arrived' || r === 'fail' || d > 45) { c.gone = T; } return; }
+        it.dx = it.dz = 0;
+        if (T - c.gone > rnd(40, 90)) { tell('it', 'Sorry. I got lost. Did you miss me?'); schemeEnd(true); }
+        return;
+      }
+      case 'prank': {
+        c.t2 = (c.t2 || 0) + dt; if (c.t > 50) { schemeEnd(false); return; }
+        const b0 = c.b0 === undefined ? (c.b0 = soc.betrayed) : c.b0;
+        if (soc.pranked > (c.p0 === undefined ? (c.p0 = soc.pranked || 0) : c.p0)) { schemeEnd(true); }
+        return;
+      }
+      case 'spike': {
+        const f = foodItem(); if (!f) { schemeEnd(false, 'no food'); return; }
+        takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.6, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.6, 1, 99); tell('it', PICK(['I cooked this for you. Eat up.', 'Here. You look hungry. Go on, eat.'])); schemeEnd(true); return;
+      }
+    }
+  }
   function doCompanion(dt) {
     const P = Player.p;
-    if (soc.mode !== 'friendly') { setGoal('search'); return; }
-    if (Vitals.dead) { soc.mode = 'hostile'; setGoal('search'); return; }
+    if (soc.mode !== 'friendly') { soc.lying = false; soc.sch = null; setGoal('search'); return; }
+    if (Vitals.dead) { soc.mode = 'hostile'; soc.sch = null; setGoal('search'); return; }
     const dx = P.x - n.x, dz = P.z - n.z, d = Math.hypot(dx, dz) || 1;
     if (T > soc.until) {                                       // the pretending ends
-      soc.mode = 'hostile'; soc.cool = T + 150;
+      soc.mode = 'hostile'; soc.cool = T + 150; soc.lying = false; soc.sch = null;
       if ((mind.A || assess()).ready) { tell('it', 'Enough. I am done pretending.'); setGoal('fight'); } else { tell('it', 'I have to go.'); setGoal('search'); }
       return;
     }
-    faceTo(P.x, P.z, true);
+    if (!soc.lying) faceTo(P.x, P.z, true);
+    // moods change without warning
+    if (T > (soc.moodT || 0)) { soc.moodT = T + rnd(30, 90); soc.mood = PICK(['sweet', 'sweet', 'sour', 'sour', 'manic']); }
     // is this the moment?
     if (T - soc.chk > 0.15) {
       soc.chk = T; const away = { x: dx / d, z: dz / d };
-      const pf = { x: -Math.sin(P.yaw), z: -Math.cos(P.yaw) }, turned = pf.x * away.x + pf.z * away.z > 0.25;    // your back is to it
+      const pf = { x: -Math.sin(P.yaw), z: -Math.cos(P.yaw) }, turned = pf.x * away.x + pf.z * away.z > 0.25 || T < (soc.distract || 0);    // your back is to it, or you are looking at something else
       const drop = d < 2.6 ? dropAt(P.x, P.y, P.z, away.x, away.z) : 0;
       n.plan2 = null;
-      if (d < 2.6 && turned && drop > 0 && (lethalFor(drop) || (drop >= Vitals.hp * 0.7 && R() < 0.5))) { shoveNow(away.x, away.z, `a ${drop}-heart fall, and you were looking away`); return; }
+      if (!soc.lying && d < 2.6 && turned && drop > 0) {
+        if (lethalFor(drop) && R() < 0.85) { shoveNow(away.x, away.z, `a ${drop}-heart fall, and you were looking away`); return; }
+        if (soc.sch && soc.sch.k === 'prank' && drop >= 3 && drop <= 9) { Player.shove(away.x * 8, away.z * 8, 4.5, 0.6); soc.pranked = (soc.pranked || 0) + 1; n.atk = 0.3; tell('it', PICK(['Ha! Relax, it was a joke.', 'Your face! I could not resist.'])); return; }
+      }
       if (Bed.sleeping && d < 3) { soc.mode = 'hostile'; tell('it', '...'); setGoal('fight'); return; }
       const e = findEdge();
-      if (e && lethalFor(e.dmg)) {                    // stand on the far side of you from the drop, on ground it can actually stand on
+      if (e && (lethalFor(e.dmg) || (soc.sch && soc.sch.k === 'prank' && e.dmg >= 3 && e.dmg <= 9))) {   // stand on the far side of you from the drop, on ground it can actually stand on
         const base = Math.atan2(-e.dz, -e.dx); let spot = null;
         for (const off of [0, 0.5, -0.5, 1, -1]) for (const r of [1.7, 1.3]) {
           const x = P.x + Math.cos(base + off) * r, z = P.z + Math.sin(base + off) * r, y = Math.floor(P.y + 0.1);
@@ -6815,13 +6920,16 @@ const Nemesis = (() => {
         if (spot) n.plan2 = { spot, e };
       }
     }
+    // it always has something in mind
+    if (!soc.sch && T > (soc.nextT || 0) && !soc.lying) { const s = pickScheme(); soc.sch = s; say('scheme — ' + s.label); }
+    if (soc.sch) { runScheme(dt); if (soc.sch && ['lure', 'fakeHurt', 'abandon'].indexOf(soc.sch.k) >= 0) return; }
     // keep beside you, or slip round to the far side of the drop
-    const want = T < soc.far ? 9 : 3.0;
+    const want = T < soc.far ? 9 : soc.sch && soc.sch.k === 'pilfer' ? 1.8 : 3.0;
     if (n.plan2 && d < 8) { const s = n.plan2.spot; const r = goTo(s.x, groundY(Math.floor(s.x), Math.floor(s.z)), s.z, 0.8, WALK, { maxN: 500 }); if (r === 'arrived') { it.dx = it.dz = 0; } return; }
-    const r = travel(P.x, P.z, want, d > 14 ? RUN * 0.8 : WALK);
-    if (d < want + 1) it.dx = it.dz = 0;
+    travel(P.x, P.z, want, d > 14 ? RUN * 0.8 : WALK);
+    if (d < want + (want < 2 ? 0.15 : 1)) it.dx = it.dz = 0;
     soc.talkT = (soc.talkT || 0) - dt;
-    if (soc.talkT <= 0 && d < 8) { soc.talkT = rnd(35, 70); tell('it', PICK(['Nice place to build.', 'Have you seen the sea from up on the hills?', 'I found some silver once. Deep down.', 'It gets dark fast here.', 'Stay close. Things wander at night.'])); }
+    if (soc.talkT <= 0 && d < 8) { soc.talkT = rnd(30, 75); tell('it', PICK(TOX[soc.mood || 'sweet'])); }
   }
   // it walks up to you, hands empty, and says it does not want to fight
   function doParley(dt) {
@@ -6884,7 +6992,7 @@ const Nemesis = (() => {
     } else if (r === 'fail') { finish(false); setGoal('search'); }
   }
   function doRetrieve(dt) {
-    const d = mem.death; if (!d) { finish(true); setGoal('search'); return; }
+    const d = (mind.obj && mind.obj.pos) || mem.death; if (!d) { finish(true); setGoal('search'); return; }
     if (!Inventory.dropsNear(d.x, d.y, d.z, 10).length) { finish(true); setGoal('search'); return; }
     if (seenNow() && !mind.A.ready) { setGoal('flee'); return; }
     const r = travel(d.x, d.z, 2, RUN * 0.9);
@@ -7473,7 +7581,7 @@ const Nemesis = (() => {
       n.dead -= dt; R2.lying.rotation.x = Math.min(1.5, (1.6 - n.dead) * 3); R2.armL.rotation.set(-0.3, 0, 1.2); R2.armR.rotation.set(-0.2, 0, -1.3);
       mat.opacity = 1; if (n.dead <= 0) R2.root.visible = false; return;
     }
-    R2.lying.rotation.x = 0;
+    R2.lying.rotation.x = soc.lying ? 1.45 : 0; if (soc.lying) { R2.armL.rotation.set(-0.4, 0, 1.0); R2.armR.rotation.set(-0.3, 0, -1.1); }
     if (n.atk > 0) { const s = Math.sin((1 - n.atk / 0.3) * Math.PI); R2.armR.rotation.x = -1.7 * s; R2.lean.rotation.y = -0.2 * s; } else R2.lean.rotation.y = 0;
     if (n.mine) { R2.armR.rotation.x = -1.2 - Math.sin(T * 14) * 0.6; }
     if (n.wave > 0) { n.wave -= dt; R2.armL.rotation.set(-2.6, 0, 0.3 + Math.sin(T * 9) * 0.3); }
@@ -7604,7 +7712,7 @@ const Nemesis = (() => {
   function importState(s) {
     mem = freshMem(); n.alive = false; n.dead = 0; n.respawn = 0; n.inv = {}; n.use = {}; n.spawnTry = null; own = new Set(); World.setAnchor(null);
     if (!s || !s.mem) return;
-    mem = Object.assign(freshMem(), s.mem); mem.tact = Object.assign(freshMem().tact, mem.tact); mem.avoid = Object.assign(freshMem().avoid, mem.avoid); mem.ownN = mem.ownN || {}; if (mem.base) mem.base.todo = blueprint();
+    mem = Object.assign(freshMem(), s.mem); mem.tact = Object.assign(freshMem().tact, mem.tact); mem.avoid = Object.assign(freshMem().avoid, mem.avoid); mem.scheme = mem.scheme || {}; mem.ownN = mem.ownN || {}; if (mem.base) mem.base.todo = blueprint();
     n.respawn = s.respawn || 0;
     if (s.alive) { n.alive = true; n.x = s.x; n.y = s.y; n.z = s.z; n.hp = s.hp; n.food = s.food; n.inv = s.inv || {}; n.use = s.use || {}; n.carry = s.carry || 0; n.goal = 'search'; n.path = null; n.vx = n.vy = n.vz = 0; n.belief = null; n.seenAt = -99; }
   }

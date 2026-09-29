@@ -296,3 +296,16 @@ It arrives about 8 minutes into a survival world and starts far away, so it is h
 - **It fights smarter:** it hits and steps back out of your reach, and knockback now really throws you.
 - **You can talk to it.** Tap it (or press T on a computer, or use “Talk to it” in F3) within a few blocks: quick replies (Hello, Who are you, Let us make peace, Here take this, Do you have food, Come with me, Leave me alone, I will kill you) or type anything. On a computer the keys 1–8 pick a quick reply.
 - **It can lie.** If it is not ready to fight (or sees a cliff behind you) it walks up unarmed and says it only wants to talk, and will agree to peace. It follows you like a friend, and while it does it studies the ground. When you turn your back with a drop in front of you, deep enough that the fall would kill you, it shoves you off. Water below saves you. Hit it, or say you will kill it, and the friendship is over.
+
+## 9.0 – The toxic friend
+If The Other becomes your friend, it is not a friend. While it walks beside you it is always working on something, and its mood swings between sweet, sour and manic (so it is hard to predict):
+- **Guilt and gaslighting:** “After everything I have done for you.” Accuse it of anything and it denies it.
+- **Demands:** “Give me your sword. Friends share.” Refuse, and it sulks, then takes it anyway.
+- **Pilfering:** when your back is turned or your inventory is open, it quietly takes your best things.
+- **Fake injury:** it lies down groaning for help, then strikes when you come close.
+- **Luring:** it takes you to a place with a fatal drop (“Come look at this”), tells you to look down, and pushes.
+- **Pranks:** small pushes off short drops (“Relax, it was a joke”).
+- **Spiked food:** food it “cooked for you” can make you sick (poison now slowly costs hearts, never below two).
+- **Abandoning you** in the dark, then coming back with “Sorry, I got lost.”
+- If you die, it takes everything you dropped. If you forgive it, it uses that: it remembers who forgives.
+It also learns which schemes work on you and uses those more.
