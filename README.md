@@ -309,3 +309,8 @@ If The Other becomes your friend, it is not a friend. While it walks beside you 
 - **Abandoning you** in the dark, then coming back with “Sorry, I got lost.”
 - If you die, it takes everything you dropped. If you forgive it, it uses that: it remembers who forgives.
 It also learns which schemes work on you and uses those more.
+
+## 9.1 – It understands you, a real keyboard, smarter movement
+- **It understands what you type.** Typos and slang are fixed up (“helo”, “plz”, “thnaks”, “wanna”), “not/don't” is understood (“I don't want to fight” means peace), and one message can contain more than one thing (“I'm hungry, do you have food?”). It knows your name when you tell it, answers about the weather, the time of day, its health, what it carries and what it plans, recognises items you name (“take my diamond”, “can I have your sword”), remembers what you were just talking about (“why?”), asks you questions (“Do you trust me?”) and understands yes/no. Unknown things get a hint of what to ask.
+- **A comfortable on-screen keyboard** for phones: big keys, capital letters automatically, shift/caps, numbers and symbols, held backspace, word suggestions as you type, next-word suggestions, and the quick replies as chips when the field is empty. The ⌨ button in the chat hides or shows it; on a computer you just use your keyboard.
+- **Smarter movement:** it cuts corners on its path, leads its target instead of running to where you were, does not run off ledges chasing you, sidesteps after you swing, and creeps quietly (and out of your view) when it stalks you.
