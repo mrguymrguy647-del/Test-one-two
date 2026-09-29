@@ -10,8 +10,18 @@ android {
         applicationId 'com.blockcraft.game'
         minSdk 21
         targetSdk 34
-        versionCode 7
-        versionName '6.1'
+        versionCode 31
+        versionName '9.3'
+    }
+
+    // Every build is signed with the same key, so a new version installs over the old one and keeps your worlds.
+    signingConfigs {
+        stainless {
+            storeFile file('stainless.keystore')
+            storePassword 'stainlesscraft'
+            keyAlias 'stainless'
+            keyPassword 'stainlesscraft'
+        }
     }
 
     // The game (web/index.html) is packed into the app so it runs offline.
@@ -22,8 +32,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.stainless
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.stainless
         }
     }
 

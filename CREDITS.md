@@ -22,3 +22,5 @@ made into a seamless loop. Those edited versions keep the license of their origi
 | `bird3` | [Best Cardinal Bird](http://soundbible.com/1515-Best-Cardinal-Bird.html), via the ambience mod | PsychoBird | CC BY 3.0 |
 | `cow1`, `sheep1`, `pig1`, `pig_hurt1`, `chicken1`–`chicken3` | Freesound recordings via the Minetest [mobs_animal mod](https://github.com/minetest-mirrors/mobs_animal) | (see the mod's license.txt) | CC0 |
 | `hit1` | [freesound 566436](https://freesound.org/people/Merrick079/sounds/566436/), via [mobs_redo](https://github.com/minetest-mirrors/mobs_redo) | Merrick079 | CC0 |
+| `tool_break1`–`tool_break3` | [freesound 33206](http://www.freesound.org/people/HerbertBoland/sounds/33206/), via [Minetest Game](https://github.com/minetest/minetest_game) | HerbertBoland | CC BY 3.0 |
+| `fire1`–`fire3` (furnace) | [freesound 17548](http://www.freesound.org/people/Dynamicell/sounds/17548/), via Minetest Game's fire mod (trimmed) | Dynamicell | CC BY 3.0 |
