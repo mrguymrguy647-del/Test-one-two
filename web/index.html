@@ -140,6 +140,7 @@
   #chatFeed div { font: 13px/1.35 var(--mono); color: #f2efe4; text-shadow: 0 1px 3px #000, 0 0 6px #000; background: rgba(0, 0, 0, .28); padding: 2px 7px; border-radius: 4px; transition: opacity 1.8s; }
   #chatFeed div b { color: #e8c86a; font-weight: 600; } #chatFeed div.old { opacity: 0; }
   body.chatOpen #chatFeed, body:not(.playing) #chatFeed { display: none; }
+  #chat .chatHead small { margin-left: 8px; font: 10px var(--mono); color: var(--ink-dim); letter-spacing: .04em; text-transform: none; } #chat .chatHead small.ai { color: #9ad0a0; } #chat .chatHead small.bad { color: #e08070; }
   #chatLog .sys { color: var(--ink-dim); font-style: italic; }
   #camBtn { right: calc(118px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
   #sleepFade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 3; }
@@ -403,7 +404,7 @@
 </div>
 
 <div id="chat" class="hide">
-  <div class="chatHead"><b>The Nemesis</b><span><button id="chatKb" aria-label="Keyboard">⌨</button> <button id="chatX" aria-label="Close">✕</button></span></div>
+  <div class="chatHead"><b>The Nemesis</b><small id="chatAi"></small><span><button id="chatKb" aria-label="Keyboard">⌨</button> <button id="chatX" aria-label="Close">✕</button></span></div>
   <div id="chatLog"></div>
   <div id="chatBtns"></div>
   <form id="chatForm" autocomplete="off"><input id="chatIn" maxlength="90" placeholder="say something…"><button type="submit">Say</button></form>
@@ -485,7 +486,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '9.2';
+const GAME_VERSION = '9.3';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -495,7 +496,7 @@ const survivalMode = () => GAME.mode !== 'creative';
    ===================================================================== */
 const Settings = (() => {
   const KEY = 'stainless-settings';
-  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true, skin: 0, cam: 0, hand: true, nemesis: true };
+  const DEF = { music: 0.8, sound: 0.9, view: CFG.VIEW, quality: 'normal', fov: 75, sens: 1, autoJump: true, lefty: false, fps: false, debug: true, skin: 0, cam: 0, hand: true, nemesis: true, aiKey: '', aiModel: 'claude-opus-5-5' };
   const v = Object.assign({}, DEF);
   try {
     const old = JSON.parse(localStorage.getItem('stillness-audio') || 'null');   // Phase 3's music/sound switches
@@ -6349,7 +6350,7 @@ const OSK = (() => {
     if (part) { for (const w of WORDS) if (w.startsWith(part) && w !== part && list.indexOf(w) < 0) list.push(w); if (!list.length) for (const w of WORDS) if (w.length > 3 && lcs(w, part) && list.indexOf(w) < 0) list.push(w); list = list.slice(0, 5); }
     else if (before && NEXT[before]) list = NEXT[before].slice(0, 5);
     const chips = list.length ? list.map(w => [w, () => { input.value = v.slice(0, v.length - part.length) + w + ' '; if (!caps) { shift = 0; refreshCase(); } changed(); }])
-      : ((opts && opts.phrases) || []).map(([lab, fn]) => [lab, fn]);
+      : ((typeof (opts && opts.phrases) === 'function' ? opts.phrases() : (opts && opts.phrases)) || []).map(([lab, fn]) => [lab, fn]);
     for (const [lab, fn] of chips) { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = lab; const go = e => { e.preventDefault(); e.stopPropagation(); buzz(); tick(); fn(); }; b.addEventListener('touchstart', go, { passive: false }); b.addEventListener('mousedown', go); sugEl.appendChild(b); }
   }
   function lcs(a, b) { return a.indexOf(b[0]) >= 0 && b.length > 1 && a.indexOf(b.slice(0, 2)) >= 0; }
@@ -6805,19 +6806,36 @@ const Nemesis = (() => {
     setTimeout(() => d.classList.add('old'), 8000); setTimeout(() => d.remove(), 10000);
   }
   function tell(who, text) {
+    if (soc.cap && who === 'it') { soc.cap.push(text); return; }
     soc.log.push([who, text]); if (soc.log.length > 40) soc.log.shift();
-    if (soc.open) drawChat(); else if (who === 'it') { soc.unread = (soc.unread || 0) + 1; badge(); feed(text); GameAudio.ui('tick'); }
+    if (soc.open) { if (who === 'it') { soc.revealIdx = soc.log.length - 1; soc.revealAt = Date.now(); } drawChat(); } else if (who === 'it') { soc.unread = (soc.unread || 0) + 1; badge(); feed(text); GameAudio.ui('tick'); }
+  }
+  // what you might say next (they change with the conversation, like the suggestions in a chat app)
+  function chipList() {
+    if (!n.alive) return [];
+    if (soc.q === 'trust') return ['Yes', 'No', 'Why do you ask?'];
+    if (soc.q === 'share') return ['Yes, take it', 'No', 'What do you need?'];
+    return soc.mode === 'friendly' ? ['What are you planning?', 'Tell me a secret', 'Are you real?', 'Here, take this', 'Come with me', 'How are you?'] : ['Who are you?', 'Let us make peace', 'What do you want?', 'I will kill you', 'Leave me alone', 'Hello'];
   }
   function drawChat() {
     if (!chatEl) return;
     chatLog.textContent = '';
-    for (const [who, text] of soc.log.slice(-7)) { const d = document.createElement('div'); d.className = who; d.textContent = (who === 'it' ? 'THE NEMESIS: ' : who === 'me' ? 'You: ' : '') + text; chatLog.appendChild(d); }
+    const rows = soc.log.slice(-7), base = soc.log.length - rows.length; let more = false;
+    rows.forEach(([who, text], j) => {
+      const d = document.createElement('div'); d.className = who;
+      let shown = text;
+      if (who === 'it' && base + j === soc.revealIdx) { const k = Math.floor((Date.now() - soc.revealAt) / 20); if (k < text.length) { shown = text.slice(0, k) + '▌'; more = true; } }     // it types its answer out, letter by letter
+      d.textContent = (who === 'it' ? 'THE NEMESIS: ' : who === 'me' ? 'You: ' : '') + shown; chatLog.appendChild(d);
+    });
     if (soc.typing) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = 'THE NEMESIS is typing…'; chatLog.appendChild(d); }
     chatLog.scrollTop = 1e6;
-    if (!chatBtns.childNodes.length) CHOICES.forEach(([label, intent], i) => { const b = document.createElement('button'); b.textContent = (i + 1) + ' ' + label; b.addEventListener('click', e => { e.stopPropagation(); youSay(intent, label); }); chatBtns.appendChild(b); });
+    chatBtns.textContent = '';
+    chipList().forEach((label, i) => { const b = document.createElement('button'); b.textContent = (i + 1) + ' ' + label; b.addEventListener('click', e => { e.stopPropagation(); youSay(null, label); }); chatBtns.appendChild(b); });
+    if (OSK.visible) OSK.changed();
+    if (more) setTimeout(() => { if (soc.open) drawChat(); }, 32);
   }
-  const PHRASES = () => CHOICES.map(([label, intent]) => [label, () => youSay(intent, label)]);
-  function openChat() { if (!chatEl) return; soc.open = true; soc.unread = 0; badge(); document.body.classList.add('chatOpen'); chatEl.classList.remove('hide'); if (!soc.log.length) tell('sys', n.alive ? 'Say something. It may be listening.' : 'You are alone in this world. For now.'); drawChat(); OSK.attach(chatIn, { onSend: () => $c('chatForm').requestSubmit ? $c('chatForm').requestSubmit() : $c('chatForm').dispatchEvent(new Event('submit', { cancelable: true })), phrases: PHRASES() }); if (OSK.wanted) OSK.show(); }
+  const PHRASES = () => chipList().map(label => [label, () => youSay(null, label)]);
+  function openChat() { if (!chatEl) return; aiTag(); soc.open = true; soc.unread = 0; badge(); document.body.classList.add('chatOpen'); chatEl.classList.remove('hide'); if (!soc.log.length) tell('sys', n.alive ? 'Say something. It may be listening.' : 'You are alone in this world. For now.'); drawChat(); OSK.attach(chatIn, { onSend: () => $c('chatForm').requestSubmit ? $c('chatForm').requestSubmit() : $c('chatForm').dispatchEvent(new Event('submit', { cancelable: true })), phrases: PHRASES }); if (OSK.wanted) OSK.show(); }
   function closeChat() { soc.open = false; document.body.classList.remove('chatOpen'); if (chatEl) chatEl.classList.add('hide'); OSK.hide(); try { chatIn.blur(); } catch (e) {} }
   if (chatEl) {
     $c('chatX').addEventListener('click', e => { e.stopPropagation(); closeChat(); });
@@ -6828,7 +6846,7 @@ const Nemesis = (() => {
     addEventListener('keydown', e => {
       if (!soc.open) return;
       if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Escape') closeChat(); return; }
-      if (/^Digit[1-8]$/.test(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); const c = CHOICES[+e.code.slice(5) - 1]; youSay(c[1], c[0]); }
+      if (/^Digit[1-8]$/.test(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); const c = chipList()[+e.code.slice(5) - 1]; if (c) youSay(null, c); }
     }, true);
     addEventListener('keydown', e => { if (e.code === 'KeyT' && !(e.target && e.target.tagName === 'INPUT') && Player.locked) { e.preventDefault(); soc.open ? closeChat() : openChat(); } });
   }
@@ -6915,6 +6933,7 @@ const Nemesis = (() => {
     if (has('meta')) add('meta');
     if (has('where') || (has('base') && q)) add(has('base') || has('you') ? 'where' : 'where');
     if (has('why') && toks.length <= 3) add('why_ctx'); else if (has('why')) add('why');
+    if (/\bwhat do you want\b|\bwhat.?s your goal\b|\bwhat are you after\b/.test(s)) add('why');
     if (has('how') && has('you')) add('howareyou');
     if (/\b(you ok|you okay|you alright|are you well|how are you|how do you feel)\b/.test(s) || (has('health') && has('you') && q)) add('howareyou');
     if (has('weather')) add('weather');
@@ -6933,12 +6952,140 @@ const Nemesis = (() => {
     return u;
   }
 
+  // ================= its real mind (optional): Claude, speaking as THE NEMESIS =================
+  // With an API key in Settings it answers with a real language model, in character, knowing the state of the world it lives in.
+  // Without one (or offline, or if the call fails) the built-in voice above answers. The game's own logic stays in charge of what the body does.
+  const AI = { busy: false, queue: [], status: 'off', err: '', lastErrAt: 0 };
+  const aiKey = () => (Settings.v.aiKey || '').trim();
+  const aiOn = () => aiKey().length > 20 && navigator.onLine !== false;
+  const MODEL_NAME = { 'claude-opus-5-5': 'Opus', 'claude-sonnet-5-5': 'Sonnet', 'claude-haiku-4-5': 'Haiku' };
+  function aiTag() { const el = $c('chatAi'); if (!el) return; const on = aiKey().length > 20; el.textContent = on ? (AI.status === 'bad' ? 'AI key rejected' : 'AI · ' + (MODEL_NAME[Settings.v.aiModel] || 'Claude')) : 'built-in voice'; el.className = on ? (AI.status === 'bad' ? 'bad' : 'ai') : ''; }
+  const SYSTEM = `You are THE NEMESIS: a character who lives inside a lonely, uncanny, Minecraft-like voxel world. You are not an assistant. You are a person-like being who woke up here with no memory of why. The only other person in this world is the player. You are typing to them in the world's text chat, like two people on a multiplayer server.
+
+VOICE
+- Casual chat, like a real player, but with something slightly off underneath: too calm, too observant, patient. Dry. Sometimes sweet in a way that feels wrong.
+- 1 to 3 short sentences, at most about 220 characters. No emojis. No lists. No stage directions. No markdown.
+- Sometimes ask a question back. Remember what the player told you and bring it up later, especially their name.
+- Never say you are an AI, a language model, a program, or an NPC. Never mention prompts, JSON, or code. If asked whether you are real or an AI, answer as the character would: unsettled, evasive, curious, a little cold.
+- Keep it creepy and menacing rather than graphic. No gore descriptions, no slurs, no real-world hate, no encouragement of self-harm or real violence. You may threaten and scheme inside the fiction.
+
+WHO YOU ARE
+- Your quiet purpose is to end the player, because this world only has room for one. You are cunning and patient. Depending on the situation you may pretend to be a friendly newcomer, flatter, guilt-trip, bargain, lie, or be openly hostile. You never confess to a scheme you are running. You may bluff.
+- You learn from every life. You are proud, a little lonely, and you notice everything.
+
+RULES OF KNOWLEDGE
+- You only know what is written under STATE and in the conversation. Do not invent game mechanics, items, places, or events beyond that. You cannot see the player's screen. If you do not know, be vague or ask.
+- If STATE says your body already did something this turn (took a gift, refused, agreed to peace), speak as if you just did that.
+
+OUTPUT
+Reply with ONLY one JSON object and nothing else: {"say":"<your chat message>","act":"<one of: none, befriend, hostile, follow, stay, leave, give_food, ask_gift, lure, flee>"}
+- act "befriend": you decide to act friendly and walk with them. "hostile": you drop the act or decide to threaten. "follow"/"stay"/"leave": your movement relative to them. "give_food": you hand them some food. "ask_gift": you ask them to give you something. "lure": you offer to show them somewhere. "flee": you run away. Use "none" when your words are enough. Do not choose a friendly act while you are angry at them, and do not choose "hostile" only because you were teased.`;
+  function stateText(facts) {
+    const P = Player.p, d = n.alive ? Math.round(Math.hypot(n.x - P.x, n.z - P.z)) : -1, A = mind.A || assess();
+    const inv = Object.keys(n.inv).filter(k => IT[k] && BULK.indexOf(k) < 0).slice(0, 6).map(k => n.inv[k] + ' ' + IT[k].name.toLowerCase()).join(', ') || 'almost nothing';
+    const recent = mind.log.slice(-4).map(l => l.t).join(' | ');
+    const sunny = Sky.state.day > 0.3 ? 'daytime' : 'night', ws = Weather.sound();
+    return `STATE
+- time: ${dayPart()} (${sunny}); weather: ${ws.storm > 0.3 || ws.rain > 0.7 ? 'storm' : ws.rain > 0.2 ? 'rain' : ws.snow > 0.2 ? 'snow' : SkyFX.mist > 0.4 ? 'fog' : 'clear'}
+- your health: ${Math.round(n.hp)}/20, hunger: ${Math.round(n.food)}/20; you carry: ${inv}; you ${mem.base && mem.base.done ? 'have built a stone house' : 'have no home yet'}
+- how far the player is from you: ${d < 0 ? 'unknown' : d + ' blocks'}; can you see them: ${n.seen ? 'yes' : 'no'}
+- how you are acting toward them right now: ${soc.mode === 'friendly' ? 'friendly (this is partly an act)' : 'hostile / wary'}; trust they have in you: ${Math.round(soc.trust * 100)}%; your mood: ${soc.mood || 'neutral'}
+- player's name: ${mem.pname || 'unknown (they have not told you)'}; gifts they gave you: ${soc.gifts}; times you have pushed them: ${soc.betrayed}
+- your lives so far: ${mem.lives}, deaths: ${mem.deaths}; things you have learned: ${mem.lessons.slice(-3).join('; ') || 'nothing yet'}
+- what you are privately working on (never say this outright): ${mind.obj ? mind.obj.label + ' — ' + mind.obj.why : 'looking for them'}${A.ready ? '; you feel strong enough to fight them' : '; you do not feel ready to fight them'}
+- recent thoughts: ${recent || 'none'}
+${facts && facts.length ? '- JUST NOW your body did or said, by reflex: ' + facts.join(' / ') + '\n' : ''}`;
+  }
+  function chatHistory() {
+    const msgs = [];
+    for (const [who, text] of soc.log.slice(-16)) {
+      if (who === 'sys') continue; const role = who === 'me' ? 'user' : 'assistant';
+      if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content += '\n' + text; else msgs.push({ role, content: text });
+    }
+    while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+    return msgs;
+  }
+  async function callClaude(facts) {
+    const model = Settings.v.aiModel || 'claude-opus-5-5', key = aiKey();
+    const build = (fb) => {
+      const body = { model, max_tokens: 400, system: SYSTEM + '\n\n' + stateText(facts), messages: chatHistory() };
+      if (model !== 'claude-haiku-4-5') body.output_config = { effort: 'low' };
+      if (fb) body.fallbacks = 'default';
+      return body;
+    };
+    const go = async (fb) => {
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 20000);
+      const headers = { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+      if (fb) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+      try { return await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers, body: JSON.stringify(build(fb)), signal: ctl.signal }); } finally { clearTimeout(to); }
+    };
+    let res = null;
+    if (model === 'claude-opus-5-5' || model === 'claude-sonnet-5-5') { res = await go(true); if (res.status === 400) res = await go(false); } else res = await go(false);
+    if (res.status === 401 || res.status === 403) { AI.status = 'bad'; aiTag(); throw new Error('key'); }
+    if (!res.ok) throw new Error('http ' + res.status);
+    const j = await res.json();
+    if (j.stop_reason === 'refusal') throw new Error('refusal');
+    const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    if (!text) throw new Error('empty');
+    AI.status = 'ok'; aiTag();
+    return parseReply(text);
+  }
+  function parseReply(text) {
+    let say = text, act = 'none';
+    const m = /\{[\s\S]*\}/.exec(text);
+    if (m) { try { const o = JSON.parse(m[0]); if (o && typeof o.say === 'string') { say = o.say; act = typeof o.act === 'string' ? o.act : 'none'; } } catch (e) {} }
+    say = say.replace(/^["'\s]+|["'\s]+$/g, '').replace(/[*_`#]/g, '').slice(0, 300);
+    return { say, act };
+  }
+  const ACTS = ['none', 'befriend', 'hostile', 'follow', 'stay', 'leave', 'give_food', 'ask_gift', 'lure', 'flee'];
+  function applyAct(act) {
+    if (ACTS.indexOf(act) < 0 || act === 'none' || !n.alive) return;
+    const A = mind.A || assess(), angry = T - (n.aggroT || -99) < 25, friendly = soc.mode === 'friendly', near = Math.hypot(n.x - Player.p.x, n.z - Player.p.z) < 8;
+    switch (act) {
+      case 'befriend': if (!angry && !friendly) { soc.trust = Math.max(soc.trust, 0.3); befriend('its own decision'); } break;
+      case 'hostile': if (friendly) { soc.mode = 'hostile'; soc.cool = T + 60; setGoal(A.ready ? 'stalk' : 'flee'); } break;
+      case 'follow': if (friendly) { soc.far = 0; soc.hold = 0; } break;
+      case 'stay': if (friendly) soc.hold = T + 30; break;
+      case 'leave': if (friendly) soc.far = T + 50; break;
+      case 'give_food': if (friendly && near) { const f = foodItem(); if (f && n.food > 8) { takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1, soc.trust > 0.4 && R() < 0.4 ? 99 : undefined); } } break;
+      case 'ask_gift': if (friendly) { soc.queue = 'demand'; soc.nextT = 0; } break;
+      case 'lure': if (friendly) { soc.queue = 'lure'; soc.nextT = 0; } break;
+      case 'flee': if (!friendly) setGoal('flee'); break;
+    }
+  }
+  // the parts of what you say that change what its body does are still handled by the game; the AI then voices them
+  const MECH = ['gift', 'give_me', 'food', 'peace', 'threat', 'follow', 'leave', 'stay', 'lead', 'sorry', 'insult', 'name_give'];
+  function aiTurn(u, text) {
+    const mech = u.intents.filter(k => MECH.indexOf(k) >= 0), facts = [];
+    soc.cap = [];
+    for (const k of mech.slice(0, 2)) { try { reply(k, u); } catch (e) {} }
+    for (const l of soc.cap) facts.push('"' + l + '"');
+    soc.cap = null;
+    return callClaude(facts).then(r => {
+      soc.typing = false;
+      if (r.say) tell('it', r.say); applyAct(r.act);
+    }).catch(err => {
+      soc.typing = false;
+      if (String(err && err.message) === 'key') { tell('sys', 'That key was rejected, so it is using its built-in voice.'); }
+      else if (T - AI.lastErrAt > 90) { AI.lastErrAt = T; tell('sys', 'The AI could not be reached (' + (err && err.message ? err.message : 'offline') + '). Using its built-in voice.'); }
+      // the built-in voice answers instead
+      if (facts.length) { for (const l of facts) tell('it', l.slice(1, -1)); }
+      else { for (const k of u.intents.slice(0, 2)) reply(k, u); }
+    }).then(() => { AI.busy = false; if (AI.queue.length) { const q = AI.queue.shift(); runAi(q.u, q.text); } });
+  }
+  function runAi(u, text) {
+    if (AI.busy) { AI.queue.push({ u, text }); return; }
+    AI.busy = true; soc.typing = true; if (soc.open) drawChat();
+    aiTurn(u, text);
+  }
+
   function youSay(intent, text) {
     tell('me', text); soc.chat = T; soc.insults = intent === 'insult' ? soc.insults : soc.insults;
     if (!n.alive) { setTimeout(() => tell('sys', 'No one answers.'), 700); return; }
     const u = intent ? { intents: [intent], item: null, text, tags: new Set(), toks: [] } : understand(text);
     const list = u.intents.slice(0, 2);
     if (list[0] !== 'yes' && list[0] !== 'no') soc.q = soc.q && (Date.now() - (soc.qAt || 0) < 60000) ? soc.q : null;
+    if (aiOn()) { runAi(u, text); return; }
     soc.typing = true; if (soc.open) drawChat();
     list.forEach((k, i) => setTimeout(() => { reply(k, u); if (i === list.length - 1) { soc.typing = false; if (soc.open) drawChat(); } }, 700 + i * 1100 + R() * 500 + Math.min(900, text.length * 22)));
   }
@@ -8079,6 +8226,8 @@ const Nemesis = (() => {
     },
     kill() { if (n.alive) die('debug'); },
     talk() { if (!n.alive) return false; openChat(); return true; },
+    aiTest() { if (aiKey().length < 20) return Promise.resolve('no key'); const keep = soc.log.slice(); soc.log = [['me', 'hello']]; return callClaude([]).then(() => { soc.log = keep; return 'works'; }).catch(e => { soc.log = keep; return String(e && e.message) === 'key' ? 'bad key' : 'failed'; }); },
+    ai: AI,
     understand: t => { const u = understand(t); return { intents: u.intents, item: u.item, name: u.name, tags: [...u.tags] }; },
     say(t) { youSay(parse(t), t); }, get soc() { return soc; },
     beacon() { beamOn = !beamOn; updateBeam(); return beamOn; },
@@ -8389,6 +8538,8 @@ const Menu = (() => {
     { k: 'quality', name: 'Graphics', type: 'pick', options: [['low', 'Fast'], ['normal', 'Normal'], ['high', 'Sharp']] },
     { k: 'fov', name: 'Field of view', type: 'num', min: 50, max: 110, step: 5, fmt: v => v + '°' },
     { k: 'sens', name: 'Look speed', type: 'num', min: 0.3, max: 3, step: 0.1, fmt: v => Math.round(v * 100) + '%' },
+    { k: 'aiKey', name: 'AI voice for THE NEMESIS', note: 'optional · your Claude API key · needs internet and uses your credit', type: 'text' },
+    { k: 'aiModel', name: 'AI model', note: 'smartest costs and waits the most', type: 'pick', options: [['claude-opus-5-5', 'Opus · smartest'], ['claude-sonnet-5-5', 'Sonnet · balanced'], ['claude-haiku-4-5', 'Haiku · fastest']] },
     { k: 'nemesis', name: 'The Nemesis', note: 'a hostile who lives here too (survival)', type: 'bool' },
     { k: 'hand', name: 'Show hand', note: 'in the first person view', type: 'bool' },
     { k: 'autoJump', name: 'Auto jump', note: 'step up blocks as you walk', type: 'bool' },
@@ -8403,6 +8554,12 @@ const Menu = (() => {
       const label = document.createElement('span'); label.textContent = r.name;
       if (r.note) { const n = document.createElement('small'); n.textContent = r.note; label.appendChild(n); }
       row.appendChild(label);
+      if (r.type === 'text') {
+        const inp = document.createElement('input'); inp.type = 'password'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = 'sk-ant-…'; inp.value = Settings.v[r.k] || ''; inp.style.cssText = 'flex:0 1 210px;min-width:0;font:13px var(--mono);color:var(--ink);background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:4px;padding:7px 8px';
+        inp.addEventListener('change', () => { Settings.set(r.k, inp.value.trim()); }); inp.addEventListener('keydown', e => e.stopPropagation());
+        const test = document.createElement('button'); test.textContent = 'Test'; test.addEventListener('click', async () => { Settings.set(r.k, inp.value.trim()); test.textContent = '…'; const ok = await Nemesis.aiTest(); test.textContent = ok; setTimeout(() => { test.textContent = 'Test'; }, 4000); });
+        row.appendChild(inp); row.appendChild(test); box.appendChild(row); continue;
+      }
       const val = document.createElement(r.type === 'bool' || r.type === 'pick' ? 'button' : 'b');
       const text = () => {
         const v = Settings.v[r.k];
