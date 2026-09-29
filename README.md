@@ -258,3 +258,7 @@ android/            Android app that shows the game full screen in a WebView
 Inside `web/index.html` the code is split into sections: CONFIG, UTIL (noise), WORLD, SKY & TIME,
 SETTINGS, PLAYER, EVENTS, TOUCH CONTROLS, WEATHER, POST, AUDIO, INVENTORY, ANIMALS, SURVIVAL, DIRECTOR,
 DEBUG, SAVE (the world list and each world's save) and MAIN (menus and the game loop).
+
+## 8.3 – Bug fixes
+- Forbidden-sun stare effects now only build when the forbidden sun is truly visible (not behind clouds, mist, leaves, water, underground, in the fake world, asleep).
+- Controls: joystick dead zone + response curve, sprint latches when pushed fully forward, better air control, short jump grace after leaving a ledge, steadier hold-to-mine and look-drag thresholds.

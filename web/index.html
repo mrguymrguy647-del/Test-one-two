@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.2';
+const GAME_VERSION = '8.3';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -1737,7 +1737,7 @@ const Player = (() => {
   const p = { x: 0, y: 40, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, hw: 0.3, h: 1.8, eye: 1.62, onGround: false, fly: false, inWater: false };
   const keys = {};
   const touch = { mx: 0, mz: 0, run: false, jump: false, down: false };   // filled in by the touch controls
-  let locked = false, breakHeld = false, placeHeld = false, actCool = 0;
+  let coyote = 0, locked = false, breakHeld = false, placeHeld = false, actCool = 0;
 
   // ---- collision against the voxel grid, one axis at a time
   function hits(x, y, z) {
@@ -1798,9 +1798,10 @@ const Player = (() => {
     p.inWater = World.get(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z)) === World.B.WATER;
     const speed = (p.fly ? 12 : p.inWater ? 2.8 : run ? 6.2 : 4.3) * (p.fly ? 1 : Cave.slow);
     const wx = (-sy * f + cy * s) / len * speed, wz = (-cy * f - sy * s) / len * speed;
-    const acc = p.onGround || p.fly ? 14 : p.inWater ? 5 : 3.5;
+    const acc = p.onGround || p.fly ? 16 : p.inWater ? 5 : 7.5;              // (more say in the air than before)
     p.vx += (wx - p.vx) * Math.min(1, dt * acc); p.vz += (wz - p.vz) * Math.min(1, dt * acc);
     const wasGround = p.onGround;
+    coyote = wasGround ? 0.12 : Math.max(0, coyote - dt);
     if (p.fly) p.vy += (((jump ? 1 : 0) - (down ? 1 : 0)) * 9 - p.vy) * Math.min(1, dt * 10);
     else if (p.inWater) {
       if (World.get(Math.floor(p.x), Math.floor(p.y + p.eye), Math.floor(p.z)) === World.B.WATER) {       // under the surface you swim the way you look
@@ -1808,7 +1809,7 @@ const Player = (() => {
         p.vy += (tv - p.vy) * Math.min(1, dt * 4);
       } else { p.vy -= 12 * dt; if (jump) p.vy = Math.min(p.vy + 40 * dt, 3.4); p.vy = Math.max(p.vy, -4); }
     }
-    else { p.vy -= 27 * dt; if (jump && wasGround) p.vy = 8.6; p.vy = Math.max(p.vy, -48); }
+    else { p.vy -= 27 * dt; if (jump && (wasGround || coyote > 0)) { p.vy = 8.6; coyote = 0; } p.vy = Math.max(p.vy, -48); }
     p.onGround = false;
     const blocked = move('x', p.vx * dt) | move('z', p.vz * dt);
     move('y', p.vy * dt);
@@ -2053,7 +2054,7 @@ const Touch = (() => {
         stick.style.transform = `translate(${sx}px, ${sy}px)`; stick.classList.add('active');
       } else {
         const L = { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t0: performance.now(), moved: false, holding: false };
-        L.timer = setTimeout(() => { L.holding = true; Player.beginBreak(); }, 280);
+        L.timer = setTimeout(() => { L.holding = true; Player.beginBreak(); }, 240);
         looks.set(t.identifier, L);
       }
     }
@@ -2065,14 +2066,20 @@ const Touch = (() => {
         let dx = t.clientX - sx, dy = t.clientY - sy; const d = Math.hypot(dx, dy);
         if (d > R) { dx *= R / d; dy *= R / d; }
         knob.style.transform = `translate(${dx}px, ${dy}px)`;
-        Object.assign(Player.touch, { mx: dx / R, mz: -dy / R, run: d > R * 0.95 && dy < -R * 0.6 });
+        // a small dead zone (so a resting thumb does nothing), a gentle curve (fine steps when you push a little),
+        // and running that starts when you push far forward and lasts until you ease off
+        let m = Math.min(1, d / R);
+        m = m < 0.12 ? 0 : Math.pow((m - 0.12) / 0.88, 1.2);
+        const dir = d ? Math.hypot(dx, dy) : 1, nx = d ? dx / dir : 0, ny = d ? dy / dir : 0, T = Player.touch;
+        if (!T.run && m > 0.9 && -ny > 0.55) T.run = true; else if (T.run && (m < 0.55 || -ny < 0.2)) T.run = false;
+        T.mx = nx * m; T.mz = -ny * m;
         continue;
       }
       const L = looks.get(t.identifier);
       if (!L) continue;
       const dx = t.clientX - L.x, dy = t.clientY - L.y;
       L.x = t.clientX; L.y = t.clientY;
-      if (!L.moved && Math.hypot(t.clientX - L.sx, t.clientY - L.sy) > 10) { L.moved = true; if (!L.holding) clearTimeout(L.timer); }
+      if (!L.moved && Math.hypot(t.clientX - L.sx, t.clientY - L.sy) > 7) { L.moved = true; if (!L.holding) clearTimeout(L.timer); }
       if (L.moved) Player.look(dx * LOOK * Settings.v.sens, dy * LOOK * Settings.v.sens);
     }
   }, { passive: false });
@@ -2215,7 +2222,7 @@ const Weather = (() => {
   const fwd = new THREE.Vector3();
   function sunBlocked() {
     const o = camera.position, d = Sky.state.sunDir;
-    for (let t = 1; t < 60; t += 0.6) if (World.OPAQUE[World.get(Math.floor(o.x + d.x * t), Math.floor(o.y + d.y * t), Math.floor(o.z + d.z * t))]) return true;
+    for (let t = 1; t < 60; t += 0.6) { const b = World.get(Math.floor(o.x + d.x * t), Math.floor(o.y + d.y * t), Math.floor(o.z + d.z * t)); if (World.OPAQUE[b] || b === B.LEAVES || b === B.WATER) return true; }
     return false;
   }
 
@@ -2412,7 +2419,9 @@ const Weather = (() => {
     forb.amt += ((forb.on ? 1 : 0) - forb.amt) * Math.min(1, dt * 1.5);
     if (forb.on && Player.locked && dt > 0 && Sky.state.sunDir.y > -0.03) {
       fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      const staring = fwd.dot(Sky.state.sunDir) > 0.978 && !sunBlocked();
+      // only when the sun can really be seen: the forbidden sun is fully there, the sky is clear, and you are in the open
+      const canSee = forb.amt > 0.85 && SkyFX.cloud < 0.55 && SkyFX.mist < 0.3 && Sea.under < 0.3 && !ctx.inMine && !Realm.fake && !Bed.sleeping && !Vitals.dead;
+      const staring = canSee && fwd.dot(Sky.state.sunDir) > 0.978 && !sunBlocked();
       forb.stare = staring ? forb.stare + dt : Math.max(0, forb.stare - dt * 0.8);
     } else if (!forb.kickT) forb.stare = Math.max(0, forb.stare - dt);
     post.amt = smoothstep(0.3, STARE_KICK, forb.stare);
