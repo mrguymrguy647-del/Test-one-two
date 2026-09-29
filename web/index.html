@@ -369,6 +369,7 @@
 
 <div id="debug" class="hide">
   <h2>Debug · F3</h2>
+  <div class="btns" style="margin-bottom:8px"><button id="dbgOther" style="background:#7a1f2a;border-color:#c04050;font-weight:700">☠ Summon the Other</button><button id="dbgOtherA">Summon (it knows where you are)</button><button id="dbgOtherB">Red beacon</button><button id="dbgOtherG">Take me to it</button><button id="dbgOtherK">Kill it</button></div>
   <pre id="dbgInfo"></pre>
   <h3>Time of day</h3>
   <div class="btns">
@@ -401,7 +402,7 @@
   <h3>Animals</h3>
   <div class="btns">
     <button data-spawn="cow">Cow</button><button data-spawn="sheep">Sheep</button><button data-spawn="pig">Pig</button><button data-spawn="chicken">Chicken</button>
-    <button id="dbgDeer">The deer</button><button id="dbgOther">The Other</button><button id="dbgOtherA">The Other (hunting)</button><button id="dbgOtherK">Kill it</button><button id="dbgOtherB">Red beacon on it</button><button id="dbgOtherG">Take me to it</button><button id="dbgItems">Give items</button>
+    <button id="dbgDeer">The deer</button><button id="dbgItems">Give items</button>
   </div>
   <h3>Nearest animal</h3>
   <div class="btns">
@@ -442,7 +443,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.7';
+const GAME_VERSION = '8.8';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
