@@ -133,6 +133,14 @@
   body:not(.playing) .hud { visibility: hidden; }
   body:not(.playing) #hotbar, body:not(.playing) #cross, body:not(.playing) #blockname { visibility: hidden; }
   #bagBtn { right: calc(66px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #chatBtn { right: calc(170px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
+  #chatBadge { position: absolute; right: -5px; top: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #c0392b; color: #fff; font: 700 11px/17px var(--mono); text-align: center; font-style: normal; }
+  #chatBadge.hide { display: none; }
+  #chatFeed { position: fixed; left: calc(12px + env(safe-area-inset-left, 0px)); top: calc(70px + env(safe-area-inset-top, 0px)); width: min(46vw, 360px); z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 3px; }
+  #chatFeed div { font: 13px/1.35 var(--mono); color: #f2efe4; text-shadow: 0 1px 3px #000, 0 0 6px #000; background: rgba(0, 0, 0, .28); padding: 2px 7px; border-radius: 4px; transition: opacity 1.8s; }
+  #chatFeed div b { color: #e8c86a; font-weight: 600; } #chatFeed div.old { opacity: 0; }
+  body.chatOpen #chatFeed, body:not(.playing) #chatFeed { display: none; }
+  #chatLog .sys { color: var(--ink-dim); font-style: italic; }
   #camBtn { right: calc(118px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); width: 44px; height: 44px; border-radius: 10px; }
   #sleepFade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 3; }
   #sleepHint { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font: 14px var(--mono); color: var(--ink); letter-spacing: .08em; opacity: 0; transition: opacity 1s; pointer-events: none; z-index: 4; }
@@ -214,7 +222,7 @@
   .slot.none canvas { opacity: .3; }
   @media (max-height: 460px) { #vitals canvas { width: 158px; height: 14px; } #vitals { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); } }
 
-  /* talking to the Other */
+  /* talking to THE NEMESIS */
   #chat { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: min(330px, 52vw); z-index: 7; max-height: calc(100% - 84px); display: flex; flex-direction: column; gap: 6px; padding: 10px;
     background: var(--veil-strong); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.4 var(--mono); color: var(--ink); }
   #chat.hide { display: none; }
@@ -276,6 +284,8 @@
 <button id="pauseBtn" class="tbtn hud touchonly" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
 <button id="dbgBtn" class="tbtn hud touchonly" aria-label="Debug menu">F3</button>
 <button id="bagBtn" class="tbtn hud touchonly" aria-label="Bag"><svg viewBox="0 0 24 24"><path d="M9 6a3 3 0 0 1 6 0h3l2 14H4L6 6zm2 0h2a1 1 0 0 0-2 0z"/></svg></button>
+<button id="chatBtn" class="tbtn hud touchonly" aria-label="Chat"><svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg><i id="chatBadge" class="hide"></i></button>
+<div id="chatFeed"></div>
 <button id="camBtn" class="tbtn hud touchonly" aria-label="Camera"><svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 10c4 0 8 2 8 5v3H4v-3c0-3 4-5 8-5z"/></svg></button>
 <div id="toast" class="hud"></div>
 <div id="sleepFade"></div><div id="sleepHint">Tap to wake up</div>
@@ -393,7 +403,7 @@
 </div>
 
 <div id="chat" class="hide">
-  <div class="chatHead"><b>The Other</b><span><button id="chatKb" aria-label="Keyboard">⌨</button> <button id="chatX" aria-label="Close">✕</button></span></div>
+  <div class="chatHead"><b>The Nemesis</b><span><button id="chatKb" aria-label="Keyboard">⌨</button> <button id="chatX" aria-label="Close">✕</button></span></div>
   <div id="chatLog"></div>
   <div id="chatBtns"></div>
   <form id="chatForm" autocomplete="off"><input id="chatIn" maxlength="90" placeholder="say something…"><button type="submit">Say</button></form>
@@ -401,7 +411,7 @@
 <div id="osk" class="hide"><div id="oskSug"></div><div id="oskKeys"></div></div>
 <div id="debug" class="hide">
   <h2>Debug · F3</h2>
-  <div class="btns" style="margin-bottom:8px"><button id="dbgOther" style="background:#7a1f2a;border-color:#c04050;font-weight:700">☠ Summon the Other</button><button id="dbgOtherA">Summon (it knows where you are)</button><button id="dbgOtherB">Red beacon</button><button id="dbgOtherG">Take me to it</button><button id="dbgOtherT">Talk to it</button><button id="dbgOtherK">Kill it</button></div>
+  <div class="btns" style="margin-bottom:8px"><button id="dbgOther" style="background:#7a1f2a;border-color:#c04050;font-weight:700">☠ Summon THE NEMESIS</button><button id="dbgOtherA">Summon (it knows where you are)</button><button id="dbgOtherB">Red beacon</button><button id="dbgOtherG">Take me to it</button><button id="dbgOtherT">Talk to it</button><button id="dbgOtherK">Kill it</button></div>
   <pre id="dbgInfo"></pre>
   <h3>Time of day</h3>
   <div class="btns">
@@ -475,7 +485,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '9.1';
+const GAME_VERSION = '9.2';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -6371,7 +6381,7 @@ const Nemesis = (() => {
     lives: 0, deaths: 0, kills: 0, grace: 480, base: null, home: null, last: null, heat: {}, visited: {}, inspected: {}, ownN: {},
     caution: 0.35, bold: 0.5, cunning: 0.3, foeDmg: 1, foeHits: 0, stash: {}, lessons: [], killedBy: '', steals: 0,
     tact: { ambush: [1, 2], open: [1, 2] }, tierSeen: 0, avoid: { fall: 0, water: 0, hunger: 0 },
-    pname: '', foeHp: 20, foeHpAt: 0, calib: 0, strat: {}, scheme: {}, forgiven: 0, corpse: null, death: null, recon: -1e9, lookAt: -1e9, sleepAt: null, fights: 0,
+    pname: '', said: {}, foeHp: 20, foeHpAt: 0, calib: 0, strat: {}, scheme: {}, forgiven: 0, corpse: null, death: null, recon: -1e9, lookAt: -1e9, sleepAt: null, fights: 0,
   });
   let mem = freshMem();
   const lesson = t => { if (mem.lessons.indexOf(t) < 0) { mem.lessons.push(t); if (mem.lessons.length > 14) mem.lessons.shift(); } };
@@ -6405,7 +6415,9 @@ const Nemesis = (() => {
     const r = CRAFT[id]; if (!r) return false;
     for (const k in r[0]) if (have(k) < r[0][k]) return false;
     for (const k in r[0]) takeInv(k, r[0][k]);
-    addInv(id, r[1]); return true;
+    addInv(id, r[1]);
+    if (/_pickaxe$|_sword$/.test(id) && !mem.said[id]) { mem.said[id] = 1; chatter('finally made a ' + IT[id].name.toLowerCase() + '!', true); }
+    return true;
   }
   function wear(tool) {
     if (!tool) return; n.use[tool] = (n.use[tool] || 0) + 1;
@@ -6518,6 +6530,13 @@ const Nemesis = (() => {
     GameAudio.animal(STEP[b] || 'step_hard', n.x, n.z, (sp > 5 ? 0.85 : 0.6) * (n.sneak ? 0.3 : 1), rnd(0.9, 1.05));
   }
 
+  // ================= it plays like someone new to the game (and slowly stops) =================
+  // Fresh out of the ground it wobbles, stops to look around, bunny-hops, misses, panics, and talks in the chat. Every life makes it a little better.
+  const nub = () => cl(1 - (T - n.life) / 1500 - Math.max(0, mem.lives - 1) * 0.12, 0.12, 1);
+  let chatCool = 0, idleChat = 70, nightSaid = false, wasWet = false, sawFirst = false;
+  const IDLE = ['this place is huge', 'anyone else here?', 'how do you even find iron again', 'i keep getting lost lol', 'is it me or do the animals stare at you', 'i think the cows hate me', 'i wish i had a map', 'the sea is so pretty', 'ok what now'];
+  function chatter(text, force) { if (!force && T < chatCool) return; chatCool = T + rnd(22, 45); tell('it', text); }
+
   // ================= walking a path =================
   function follow(dt, speed) {
     let wp = n.path && n.path[n.pi]; if (!wp) return 'done';
@@ -6530,6 +6549,7 @@ const Nemesis = (() => {
       const b = bulkId(); if (!b) return 'stuck';
       if (Math.hypot(n.x - (wp.x + 0.5), n.z - (wp.z + 0.5)) < 2.2) { placeAt(wp.x, wp.y - 1, wp.z, b); }
     }
+    if (wp.y <= n.y - 2.5 && n.onGround && nub() > 0.45 && n.peek !== n.pi && n.goal !== 'flee' && n.goal !== 'fight') { n.peek = n.pi; n.pause = 0.9; return 'moving'; }     // looks over the edge first
     const tx = wp.x + 0.5, tz = wp.z + 0.5, dx = tx - n.x, dz = tz - n.z, d = Math.hypot(dx, dz) || 1;
     it.dx = dx / d; it.dz = dz / d; it.speed = speed;
     faceTo(tx, tz, true);
@@ -6636,7 +6656,7 @@ const Nemesis = (() => {
     if (seen) {
       n.seenAt = T; n.belief = { x: px, y: P.y, z: pz, t: T, conf: 1 }; mem.last = { x: px, y: P.y, z: pz };
       const k = ck(px, pz); mem.heat[k] = (mem.heat[k] || 0) + 1;
-      if (dist < 18) { const h = Inventory.held(), d = h && IT[h.id] ? (IT[h.id].damage || 1) : 1; if (d !== mem.foeDmg) { mem.foeDmg = d; if (d >= 4) lesson('the other carries a strong weapon'); } }
+      if (dist < 18) { const h = Inventory.held(), d = h && IT[h.id] ? (IT[h.id].damage || 1) : 1; if (d !== mem.foeDmg) { mem.foeDmg = d; if (d >= 4) lesson('you carry a strong weapon'); } }
       n.sawAsleep = Bed.sleeping && dist < 14; if (dist < 18) { mem.foeHp = Vitals.hp; mem.foeHpAt = T; } if (Bed.sleeping) mem.sleepAt = Sky.time;
       if (Bed.sleeping || Weather.ctx.inHouse) { const bd = Bed.list[0]; mem.home = bd ? { x: bd.x, y: bd.y, z: bd.z } : { x: px, y: P.y, z: pz }; }
     } else n.sawAsleep = false;
@@ -6706,7 +6726,7 @@ const Nemesis = (() => {
     const pct = v => Math.round(v * 100) + '%';
     const contactAgo = T - Math.max(n.seenAt, n.noise ? n.noise.t : -1e9, n.life);
     // --- close in: it can win, and it knows where you are
-    if (A.ready && (A.sn || A.fresh)) add('engage', 'finish the other', 1.05 + (n.sawAsleep ? 0.25 : 0), `it thinks it wins ${pct(A.win)} of the time (needs ${pct(A.thr)}), and you are right there`, { stalk: 0.5, fight: 0.15 }, 200);
+    if (A.ready && (A.sn || A.fresh)) add('engage', 'finish you', 1.05 + (n.sawAsleep ? 0.25 : 0), `it thinks it wins ${pct(A.win)} of the time (needs ${pct(A.thr)}), and you are right there`, { stalk: 0.5, fight: 0.15 }, 200);
     // --- not ready: work out what is missing
     if (!A.ready && (A.sn || A.fresh || mem.home || mem.last || true)) {
       const g = gearNeed(), miss = A.kit.join(', ');
@@ -6777,22 +6797,31 @@ const Nemesis = (() => {
   const $c = id => document.getElementById(id);
   const chatEl = $c('chat'), chatLog = $c('chatLog'), chatBtns = $c('chatBtns'), chatIn = $c('chatIn');
   const CHOICES = [['Hello', 'hello'], ['Who are you?', 'who'], ['Let us make peace', 'peace'], ['Here, take this', 'gift'], ['Do you have food?', 'food'], ['Come with me', 'follow'], ['Leave me alone', 'leave'], ['I will kill you', 'threat']];
+  function badge() { const b = $c('chatBadge'); if (!b) return; b.textContent = soc.unread > 9 ? '9+' : soc.unread || ''; b.classList.toggle('hide', !soc.unread); }
+  function feed(text) {                                     // it talks like a player in a multiplayer game: a line that fades after a few seconds
+    const f = $c('chatFeed'); if (!f) return; const d = document.createElement('div'), b = document.createElement('b');
+    b.textContent = '<THE NEMESIS> '; d.appendChild(b); d.appendChild(document.createTextNode(text)); f.appendChild(d);
+    while (f.children.length > 5) f.firstChild.remove();
+    setTimeout(() => d.classList.add('old'), 8000); setTimeout(() => d.remove(), 10000);
+  }
   function tell(who, text) {
-    soc.log.push([who, text]); if (soc.log.length > 30) soc.log.shift();
-    if (soc.open) drawChat(); else if (who === 'it') { Inventory.toast('The Other: ' + text); }
+    soc.log.push([who, text]); if (soc.log.length > 40) soc.log.shift();
+    if (soc.open) drawChat(); else if (who === 'it') { soc.unread = (soc.unread || 0) + 1; badge(); feed(text); GameAudio.ui('tick'); }
   }
   function drawChat() {
     if (!chatEl) return;
     chatLog.textContent = '';
-    for (const [who, text] of soc.log.slice(-7)) { const d = document.createElement('div'); d.className = who; d.textContent = (who === 'it' ? 'The Other: ' : 'You: ') + text; chatLog.appendChild(d); }
+    for (const [who, text] of soc.log.slice(-7)) { const d = document.createElement('div'); d.className = who; d.textContent = (who === 'it' ? 'THE NEMESIS: ' : who === 'me' ? 'You: ' : '') + text; chatLog.appendChild(d); }
+    if (soc.typing) { const d = document.createElement('div'); d.className = 'sys'; d.textContent = 'THE NEMESIS is typing…'; chatLog.appendChild(d); }
     chatLog.scrollTop = 1e6;
     if (!chatBtns.childNodes.length) CHOICES.forEach(([label, intent], i) => { const b = document.createElement('button'); b.textContent = (i + 1) + ' ' + label; b.addEventListener('click', e => { e.stopPropagation(); youSay(intent, label); }); chatBtns.appendChild(b); });
   }
   const PHRASES = () => CHOICES.map(([label, intent]) => [label, () => youSay(intent, label)]);
-  function openChat() { if (!n.alive || !chatEl) return; soc.open = true; chatEl.classList.remove('hide'); if (!soc.log.length) tell('it', '...'); drawChat(); OSK.attach(chatIn, { onSend: () => $c('chatForm').requestSubmit ? $c('chatForm').requestSubmit() : $c('chatForm').dispatchEvent(new Event('submit', { cancelable: true })), phrases: PHRASES() }); if (OSK.wanted) OSK.show(); }
-  function closeChat() { soc.open = false; if (chatEl) chatEl.classList.add('hide'); OSK.hide(); try { chatIn.blur(); } catch (e) {} }
+  function openChat() { if (!chatEl) return; soc.open = true; soc.unread = 0; badge(); document.body.classList.add('chatOpen'); chatEl.classList.remove('hide'); if (!soc.log.length) tell('sys', n.alive ? 'Say something. It may be listening.' : 'You are alone in this world. For now.'); drawChat(); OSK.attach(chatIn, { onSend: () => $c('chatForm').requestSubmit ? $c('chatForm').requestSubmit() : $c('chatForm').dispatchEvent(new Event('submit', { cancelable: true })), phrases: PHRASES() }); if (OSK.wanted) OSK.show(); }
+  function closeChat() { soc.open = false; document.body.classList.remove('chatOpen'); if (chatEl) chatEl.classList.add('hide'); OSK.hide(); try { chatIn.blur(); } catch (e) {} }
   if (chatEl) {
     $c('chatX').addEventListener('click', e => { e.stopPropagation(); closeChat(); });
+    const cb = $c('chatBtn'); if (cb) { const tg = e => { e.preventDefault(); e.stopPropagation(); if (soc.open) closeChat(); else openChat(); }; cb.addEventListener('touchstart', tg, { passive: false }); cb.addEventListener('click', tg); }
     $c('chatKb').addEventListener('click', e => { e.stopPropagation(); if (OSK.visible) OSK.hide(); else OSK.show(); });
     chatEl.addEventListener('mousedown', e => e.stopPropagation()); chatEl.addEventListener('click', e => e.stopPropagation()); chatEl.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
     $c('chatForm').addEventListener('submit', e => { e.preventDefault(); const t = chatIn.value.trim(); chatIn.value = ''; OSK.changed(); if (t) youSay(null, t); });
@@ -6801,7 +6830,7 @@ const Nemesis = (() => {
       if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Escape') closeChat(); return; }
       if (/^Digit[1-8]$/.test(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); const c = CHOICES[+e.code.slice(5) - 1]; youSay(c[1], c[0]); }
     }, true);
-    addEventListener('keydown', e => { if (e.code === 'KeyT' && !(e.target && e.target.tagName === 'INPUT') && n.alive && Math.hypot(n.x - Player.p.x, n.z - Player.p.z) < 9 && Player.locked) { e.preventDefault(); soc.open ? closeChat() : openChat(); } });
+    addEventListener('keydown', e => { if (e.code === 'KeyT' && !(e.target && e.target.tagName === 'INPUT') && Player.locked) { e.preventDefault(); soc.open ? closeChat() : openChat(); } });
   }
   const PICK = a => a[Math.floor(R() * a.length)];
   // ---- understanding what you type: forgiving about spelling, aware of “not”, able to find several things in one line, and it remembers
@@ -6906,10 +6935,12 @@ const Nemesis = (() => {
 
   function youSay(intent, text) {
     tell('me', text); soc.chat = T; soc.insults = intent === 'insult' ? soc.insults : soc.insults;
+    if (!n.alive) { setTimeout(() => tell('sys', 'No one answers.'), 700); return; }
     const u = intent ? { intents: [intent], item: null, text, tags: new Set(), toks: [] } : understand(text);
     const list = u.intents.slice(0, 2);
     if (list[0] !== 'yes' && list[0] !== 'no') soc.q = soc.q && (Date.now() - (soc.qAt || 0) < 60000) ? soc.q : null;
-    list.forEach((k, i) => setTimeout(() => reply(k, u), 350 + i * 800 + R() * 400));
+    soc.typing = true; if (soc.open) drawChat();
+    list.forEach((k, i) => setTimeout(() => { reply(k, u); if (i === list.length - 1) { soc.typing = false; if (soc.open) drawChat(); } }, 700 + i * 1100 + R() * 500 + Math.min(900, text.length * 22)));
   }
   function befriend(why) {
     if (soc.mode !== 'friendly') { soc.mode = 'friendly'; soc.until = T + rnd(150, 520) + mem.forgiven * 60; soc.chk = T; soc.nextT = T + rnd(8, 30); soc.sch = null; soc.lying = false; soc.moodT = 0; soc.mood = PICK(['sweet', 'sweet', 'sour']); lesson('it pretends to be a friend'); say('pretending to be a friend — ' + (why || 'to get close')); }
@@ -6920,7 +6951,7 @@ const Nemesis = (() => {
     const A = mind.A || assess(), friendly = soc.mode === 'friendly', angry = T - (n.aggroT || -99) < 25;
     switch (intent) {
       case 'hello': tell('it', friendly ? PICK(['Hello again.', 'Good to see a face.', 'Hi. It is a quiet day.']) : soc.trust > 0.2 ? 'Hello.' : PICK(['...', 'You found me.', 'Hello, stranger.'])); break;
-      case 'who': tell('it', friendly ? PICK(['Somebody like you. I woke up here and did not know why either.', 'A traveler. I get lonely out here.']) : PICK(['Someone who lives here too.', 'Someone who is still here.'])); break;
+      case 'who': tell('it', friendly ? PICK(['Somebody like you. I woke up here and did not know why either. Some call me THE NEMESIS.', 'A traveler. I get lonely out here. You can call me THE NEMESIS.']) : PICK(['Someone who lives here too. THE NEMESIS, if you need a name.', 'Someone who is still here.'])); break;
       case 'accuse': tell('it', friendly ? PICK(['Me? I would never. How could you say that?', 'You are imagining things. Again.', 'I was with you the whole time.']) : 'Prove it.'); soc.trust = Math.max(0, soc.trust - 0.05); break;
       case 'where': tell('it', friendly ? 'Around. I will show you sometime.' : 'Somewhere you will not find.'); break;
       case 'why': tell('it', friendly ? 'Company. That is all.' : 'To see how long you last.'); break;
@@ -6934,6 +6965,7 @@ const Nemesis = (() => {
         break;
       }
       case 'gift': {
+        if (Math.hypot(n.x - Player.p.x, n.z - Player.p.z) > 8) { tell('it', 'I cannot reach you from here. Bring it over.'); break; }
         const g = u.item && Inventory.count(u.item) > 0 ? Inventory.takeItem(u.item, 1) : Inventory.takeHeld(1);
         if (!g) { tell('it', 'Your hands are empty.'); break; }
         addInv(g.id, g.n); soc.gifts++; mem.cunning = Math.min(0.95, mem.cunning + 0.02); soc.trust = Math.min(1, soc.trust + 0.3);
@@ -6942,6 +6974,7 @@ const Nemesis = (() => {
         break;
       }
       case 'food': {
+        if (friendly && Math.hypot(n.x - Player.p.x, n.z - Player.p.z) > 8) { tell('it', 'Come closer and I will see what I have.'); break; }
         const f = foodItem();
         if (friendly && f && n.food > 8) { const bad = soc.trust > 0.4 && R() < 0.4; takeInv(f, 1); Inventory.drop(f, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1, bad ? 99 : undefined); soc.trust = Math.min(1, soc.trust + 0.2); tell('it', bad ? 'I cooked it myself. Eat up.' : 'Here. Take it.'); }
         else tell('it', friendly ? 'I have none to spare.' : 'Find your own.');
@@ -7023,6 +7056,7 @@ const Nemesis = (() => {
       case 'why_ctx': tell('it', ({ threat: 'Because you said you would.', peace: 'Because I am tired of fighting.', food: 'Because food is scarce.', gift: 'Because friends give.', follow: 'Because I do not want to be alone.' }[soc.lastBefore]) || (friendly ? 'Because I like you.' : 'Because I can.')); break;
       case 'why': tell('it', friendly ? 'Company. That is all.' : 'To see how long you last.'); break;
       case 'give_me': {
+        if (Math.hypot(n.x - Player.p.x, n.z - Player.p.z) > 8) { tell('it', 'Come closer first.'); break; }
         const want = u.item && have(u.item) ? u.item : null;
         if (friendly && want && soc.trust > 0.2) { takeInv(want, 1); Inventory.drop(want, n.x + Math.sin(-n.yaw) * 0.5, n.y + 0.8, n.z + Math.cos(-n.yaw) * 0.5, 1); tell('it', 'Fine. Take it.'); soc.trust = Math.min(1, soc.trust + 0.05); }
         else tell('it', friendly ? (u.item ? 'I do not have that.' : 'Give you what?') : 'Take it from me, then.');
@@ -7423,6 +7457,7 @@ const Nemesis = (() => {
       else if (dist < 1.5) { it.dx = it.dz = 0; it.jump = false; goTo(n.x + rnd(-2, 2), n.y, n.z + rnd(-2, 2), 0.5, WALK); }
       return 'working';
     }
+    if (!bs.done) chatter('built a house! not much but its mine', true);
     bs.done = true; return 'done';
   }
 
@@ -7509,6 +7544,7 @@ const Nemesis = (() => {
     const crit = !n.onGround && n.vy < 0 ? 1.5 : 1, asleep = Bed.sleeping ? 2 : 1;
     const dmg = Math.round(swordDmg() * sneak * crit * asleep * 10) / 10 + (bestTool('sword') ? 0 : 0.5);
     n.cool = bestTool('sword') ? 0.7 : 0.95; wear(bestTool('sword'));
+    if (R() < 0.04 + 0.13 * nub()) { n.cool *= 0.7; GameAudio.animal('place', n.x, n.z, 0.3, 1.6); return; }      // swings and misses
     if (n.fight) n.fight.hits++;
     GameAudio.animal('hit1', n.x, n.z, 0.7, rnd(0.9, 1.1));
     Vitals.damage(dmg, 'nemesis');
@@ -7552,7 +7588,7 @@ const Nemesis = (() => {
     }
     if (Vitals.dead) killedYou();
   }
-  function killedYou() { if (T - (n.killT || -99) < 5) return; n.killT = T; mem.kills++; mem.bold = Math.min(0.95, mem.bold + 0.08); mem.caution = Math.max(0.1, mem.caution - 0.04); lesson('it has killed the other'); endFight('win'); n.belief = null; n.seen = false; n.carry = 0; setGoal('search'); }
+  function killedYou() { if (T - (n.killT || -99) < 5) return; n.killT = T; mem.kills++; mem.bold = Math.min(0.95, mem.bold + 0.08); mem.caution = Math.max(0.1, mem.caution - 0.04); lesson('it has killed you'); endFight('win'); n.belief = null; n.seen = false; n.carry = 0; setGoal('search'); }
   // ---- creeping up on you: it stops when you look, and comes when you don't
   function doStalk(dt) {
     const P = Player.p, sn = seenNow(), pos = foePos();
@@ -7760,7 +7796,7 @@ const Nemesis = (() => {
   const enabled = () => !!Settings.v.nemesis && (forced || GAME.mode !== 'creative');
   function hurtSelf(d, why) {
     if (!n.alive || d <= 0) return;
-    n.hp -= d; n.hurt = 0.4; n.lastHurt = why + ' ' + d;
+    n.hp -= d; n.hurt = 0.4; n.lastHurt = why + ' ' + d; if (why === 'fall') chatter(PICK(['ow', 'ow. i hate falling']));
     if (n.hp <= 0) die(why);
   }
   function hurt(dmg, fx, fz, byPlayer) {
@@ -7784,9 +7820,10 @@ const Nemesis = (() => {
     for (const id of shed) { if (IT[id]) Inventory.drop(id, n.x, n.y + 0.4, n.z, n.inv[id]); }
     n.inv = {}; n.use = {}; n.carry = 0;
     mem.deaths++;
+    if (why === 'player') tell('it', PICK(['ow. what was that for?', 'gg', 'wow ok', 'lol you got me']));
     if (why === 'player') {
       mem.caution = Math.min(0.95, mem.caution + 0.1); mem.bold = Math.max(0.1, mem.bold - 0.04); mem.cunning = Math.min(0.95, mem.cunning + 0.08);
-      lesson('the other kills with ' + (n.lastHitBy || 'a hand').replace(/_/g, ' '));
+      lesson('you kill it with ' + (n.lastHitBy || 'a hand').replace(/_/g, ' '));
       endFight('lose'); mem.killedBy = n.lastHitBy || 'hand';
     } else if (why === 'fall') { mem.avoid.fall++; lesson('heights hurt'); }
     else if (why === 'drown') { mem.avoid.water++; lesson('water is not a friend'); }
@@ -7805,7 +7842,7 @@ const Nemesis = (() => {
     n.alive = true; n.dead = 0; n.x = x + 0.5; n.z = z + 0.5; n.y = groundY(Math.floor(x), Math.floor(z)) + 0.05; n.vx = n.vy = n.vz = 0; n.hp = 20; n.food = rnd(13, 19); n.air = 10;
     n.inv = {}; n.use = {}; n.belief = null; n.noise = null; n.sign = null; n.seen = false; n.seenAt = -99; n.carry = 0; n.fall = null; n.fight = null; n.path = null; n.tgt = null;
     n.yaw = R() * Math.PI * 2; n.goal = 'search'; n.goalT = 0; n.steal = null; n.smelt = 0; n.restT = 0; n.frozen = 0; n.fetch = !!(mem.base && Object.keys(mem.stash).length);
-    mem.lives++; mem.visited = {}; n.life = T; n.sabDone = false; mind.obj = null; soc.mode = 'hostile'; soc.trust = 0; soc.greeted = false; soc.cool = 0; say('awake, somewhere, with no idea where you are');
+    mem.lives++; mem.visited = {}; n.life = T; n.said1 = false; sawFirst = false; idleChat = rnd(60, 120); n.pause = 0; n.sabDone = false; mind.obj = null; soc.mode = 'hostile'; soc.trust = 0; soc.greeted = false; soc.cool = 0; say('awake, somewhere, with no idea where you are');
     makeSkin(); Events.emit('nemesisBorn', { lives: mem.lives });
   }
   function trySpawn(dt) {
@@ -7864,7 +7901,7 @@ const Nemesis = (() => {
     if (n.wave > 0) { n.wave -= dt; R2.armL.rotation.set(-2.6, 0, 0.3 + Math.sin(T * 9) * 0.3); }
     if (sp < 0.4 && !n.atk) { R2.armL.rotation.z = 0.05 + Math.sin(T * 1.6) * 0.02; R2.armR.rotation.z = -0.05 - Math.sin(T * 1.6) * 0.02; }
     // the head turns to whatever it is watching
-    const tgtLook = n.seen && Math.hypot(P.x - n.x, P.z - n.z) < 40 ? (() => { let d = Math.atan2(-(P.x - n.x), -(P.z - n.z)) - n.yaw; while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832; return cl(d, -1.1, 1.1); })() : 0;
+    const tgtLook = !(n.seen && Math.hypot(P.x - n.x, P.z - n.z) < 40) ? cl(n.gaze || 0, -1.1, 1.1) : n.seen && Math.hypot(P.x - n.x, P.z - n.z) < 40 ? (() => { let d = Math.atan2(-(P.x - n.x), -(P.z - n.z)) - n.yaw; while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832; return cl(d, -1.1, 1.1); })() : 0;
     look += (tgtLook - look) * Math.min(1, dt * 6); R2.head.rotation.y = look;
     const h = bestTool('sword') || bestTool('pickaxe'), id = n.mine ? bestTool('pickaxe') || h : h;
     if (id !== heldId) { heldId = id; if (id) { heldSpr.material.map = Inventory.iconOf(id).mat.map; heldSpr.material.needsUpdate = true; } heldSpr.visible = !!id; }
@@ -7926,6 +7963,14 @@ const Nemesis = (() => {
     if (n.food <= 0) { n.starve = (n.starve || 0) + dt; if (n.starve > 4) { n.starve = 0; hurtSelf(1, 'starve'); } }
     if (!n.alive) return;
     senses(dt); pickup(dt); stealScan(dt);
+    // it talks like a player, in the chat
+    if (T - n.life > 30 && !n.said1) { n.said1 = true; chatter(mem.lives > 1 ? 'im back. did anyone miss me' : 'hello? is anyone else here?', true); }
+    idleChat -= dt; if (idleChat <= 0) { idleChat = rnd(70, 170); if (n.goal !== 'fight' && n.goal !== 'flee' && soc.mode !== 'friendly') chatter(n.food < 8 ? 'im so hungry' : PICK(IDLE)); }
+    if (n.inWater && !wasWet) chatter(PICK(['ugh i fell in the water lol', 'wet socks. great']));
+    wasWet = n.inWater;
+    if (Sky.state.day < 0.28 && !nightSaid) { nightSaid = true; chatter(PICK(['its getting dark already', 'uh oh. night. i dont like night'])); } else if (Sky.state.day > 0.6) nightSaid = false;
+    if (n.seen && !sawFirst) { sawFirst = true; if (soc.mode === 'hostile' && !(mind.A && mind.A.ready)) chatter(PICK(['oh! a player! hi!', 'hey! finally someone', 'hello!! over here'])); }
+    if (!n.seen && T - n.seenAt > 60) sawFirst = false;
     if (n.watch > 0) { n.watch -= dt; n.goal = 'hold'; n.thinkT = 0.3; if (n.watch <= 0) n.goalT = 9; }   // after a push it stands and watches
     else {
       mind.t -= dt; if (mind.t <= 0) { mind.t = 1.3; deliberate(); }
@@ -7941,6 +7986,22 @@ const Nemesis = (() => {
       }
     } else if (n.escape > 0) { n.escape -= dt; it.dx = Math.cos(n.escA); it.dz = Math.sin(n.escA); it.speed = WALK; if (n.onGround && R() < dt * 2) it.jump = true; if (n.inWater) it.swim = true; }
     else run(dt);
+    // like a newer player: weaving, stopping to look around, bunny-hopping, glancing about
+    if (n.alive && !n.mine && n.goal !== 'fight' && n.goal !== 'flee' && n.goal !== 'hold' && n.goal !== 'build' && !soc.lying) {
+      const nb = nub();
+      n.pause = Math.max(0, (n.pause || 0) - dt);
+      if (it.dx || it.dz) {
+        const a = Math.sin(T * 1.9 + n.x * 0.05) * 0.14 * nb, c = Math.cos(a), sn2 = Math.sin(a), ox = it.dx;
+        it.dx = ox * c - it.dz * sn2; it.dz = ox * sn2 + it.dz * c; it.speed *= 1 + Math.sin(T * 0.8) * 0.05 * nb;
+        if (n.pause <= 0 && R() < dt * 0.05 * nb && n.goal !== 'stalk' && n.goal !== 'companion' && n.goal !== 'parley') n.pause = rnd(0.5, 1.7);
+        if (it.speed > WALK + 0.4 && n.onGround && !n.inWater && R() < dt * 0.3 * nb) it.jump = true;
+      }
+      if (n.pause > 0) { it.dx = it.dz = 0; n.yaw += Math.sin(T * 1.3) * dt * 0.7 * nb; }
+    } else if (n.goal === 'flee' && (it.dx || it.dz)) {           // panic: zigzag and jump
+      const nb = nub(), a = Math.sin(T * 6) * 0.45 * nb, c = Math.cos(a), sn2 = Math.sin(a), ox = it.dx;
+      it.dx = ox * c - it.dz * sn2; it.dz = ox * sn2 + it.dz * c; if (n.onGround && R() < dt * 0.9 * nb) it.jump = true;
+    }
+    n.gazeT = (n.gazeT || 0) - dt; if (n.gazeT <= 0) { n.gazeT = rnd(1.2, 3.8); n.gaze = rnd(-1, 1) * (0.35 + 0.65 * nub()); }
     if (it.dx || it.dz) n.mvT = (n.mvT || 0) + dt;
     n.chkT = (n.chkT || 0) + dt;
     if (n.chkT >= 15) {          // trying to go somewhere and not getting anywhere?
@@ -7989,15 +8050,15 @@ const Nemesis = (() => {
   function importState(s) {
     mem = freshMem(); n.alive = false; n.dead = 0; n.respawn = 0; n.inv = {}; n.use = {}; n.spawnTry = null; own = new Set(); World.setAnchor(null);
     if (!s || !s.mem) return;
-    mem = Object.assign(freshMem(), s.mem); mem.tact = Object.assign(freshMem().tact, mem.tact); mem.avoid = Object.assign(freshMem().avoid, mem.avoid); mem.scheme = mem.scheme || {}; mem.ownN = mem.ownN || {}; if (mem.base) mem.base.todo = blueprint();
+    mem = Object.assign(freshMem(), s.mem); mem.tact = Object.assign(freshMem().tact, mem.tact); mem.avoid = Object.assign(freshMem().avoid, mem.avoid); mem.scheme = mem.scheme || {}; mem.said = mem.said || {}; mem.ownN = mem.ownN || {}; if (mem.base) mem.base.todo = blueprint();
     n.respawn = s.respawn || 0;
     if (s.alive) { n.alive = true; n.x = s.x; n.y = s.y; n.z = s.z; n.hp = s.hp; n.food = s.food; n.inv = s.inv || {}; n.use = s.use || {}; n.carry = s.carry || 0; n.goal = 'search'; n.path = null; n.vx = n.vy = n.vz = 0; n.belief = null; n.seenAt = -99; }
   }
   function info() {
     const P = Player.p;
-    if (!n.alive) return `the other  ${enabled() ? 'not here yet' : 'off'}${mem.lives === 0 ? ' · arrives in ' + Math.ceil(Math.max(0, mem.grace)) + 's' : ' · back in ' + Math.ceil(Math.max(0, n.respawn)) + 's'} · lives ${mem.lives} deaths ${mem.deaths}`;
+    if (!n.alive) return `the nemesis  ${enabled() ? 'not here yet' : 'off'}${mem.lives === 0 ? ' · arrives in ' + Math.ceil(Math.max(0, mem.grace)) + 's' : ' · back in ' + Math.ceil(Math.max(0, n.respawn)) + 's'} · lives ${mem.lives} deaths ${mem.deaths}`;
     const inv = Object.keys(n.inv).map(k => k + ':' + n.inv[k]).join(' ') || '—';
-    return `the other  ${compass()}\n           ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
+    return `the nemesis  ${compass()}\n           ${n.goal} · hp ${n.hp.toFixed(0)} food ${n.food.toFixed(0)} · ${Math.hypot(n.x - P.x, n.z - P.z).toFixed(0)} away · ${n.seen ? 'sees you' : n.belief ? 'knows ' + Math.round(T - n.belief.t) + 's ago' : 'lost'}\n` +
       `           has ${inv}\n           base ${mem.base ? (mem.base.done ? 'built' : mem.base.i + '/' + mem.base.todo.length) : 'none'} · lives ${mem.lives} deaths ${mem.deaths} kills ${mem.kills} · bold ${mem.bold.toFixed(2)} careful ${mem.caution.toFixed(2)}\n` +
       `           learned: ${mem.lessons.slice(-3).join('; ') || '—'}\n` +
       `           talk: ${soc.mode}${soc.mode === 'friendly' ? ' (' + Math.max(0, Math.round(soc.until - T)) + 's left)' : ''} · trust ${soc.trust.toFixed(1)} · shoved ${soc.betrayed}\n` +
@@ -8075,7 +8136,7 @@ const Debug = (() => {
   document.getElementById('dbgOtherK').addEventListener('click', () => Nemesis.kill());
   document.getElementById('dbgOtherB').addEventListener('click', e => { const on = Nemesis.beacon(); e.target.classList.toggle('on', on); });
   document.getElementById('dbgOtherT').addEventListener('click', () => { if (!Nemesis.talk()) Inventory.toast('It is not here yet'); });
-  document.getElementById('dbgOtherG').addEventListener('click', () => { if (!Nemesis.goTo()) Inventory.toast('It is not here yet: tap “The Other” to bring one'); });
+  document.getElementById('dbgOtherG').addEventListener('click', () => { if (!Nemesis.goTo()) Inventory.toast('It is not here yet: tap “Summon THE NEMESIS” to bring one'); });
   document.getElementById('dbgItems').addEventListener('click', () => Inventory.giveAll());
   el.querySelectorAll('[data-gmode]').forEach(b => b.addEventListener('click', () => {
     GAME.mode = b.dataset.gmode; if (!GAME.temp) Worlds.update(GAME.id, { mode: GAME.mode }); applyMode();
@@ -8328,7 +8389,7 @@ const Menu = (() => {
     { k: 'quality', name: 'Graphics', type: 'pick', options: [['low', 'Fast'], ['normal', 'Normal'], ['high', 'Sharp']] },
     { k: 'fov', name: 'Field of view', type: 'num', min: 50, max: 110, step: 5, fmt: v => v + '°' },
     { k: 'sens', name: 'Look speed', type: 'num', min: 0.3, max: 3, step: 0.1, fmt: v => Math.round(v * 100) + '%' },
-    { k: 'nemesis', name: 'The Other', note: 'a hostile who lives here too (survival)', type: 'bool' },
+    { k: 'nemesis', name: 'The Nemesis', note: 'a hostile who lives here too (survival)', type: 'bool' },
     { k: 'hand', name: 'Show hand', note: 'in the first person view', type: 'bool' },
     { k: 'autoJump', name: 'Auto jump', note: 'step up blocks as you walk', type: 'bool' },
     { k: 'lefty', name: 'Left-handed', note: 'joystick on the right', type: 'bool', touch: true },
