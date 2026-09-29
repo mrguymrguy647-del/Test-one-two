@@ -262,3 +262,10 @@ DEBUG, SAVE (the world list and each world's save) and MAIN (menus and the game 
 ## 8.3 – Bug fixes
 - Forbidden-sun stare effects now only build when the forbidden sun is truly visible (not behind clouds, mist, leaves, water, underground, in the fake world, asleep).
 - Controls: joystick dead zone + response curve, sprint latches when pushed fully forward, better air control, short jump grace after leaving a ledge, steadier hold-to-mine and look-drag thresholds.
+
+## 8.4 – Ores, silver, diamonds and new blocks
+- **Ores** in the stone underground: coal (common), silver (deeper), diamond (rare, deep). They form small veins and show up in cave walls.
+- **New items:** coal (fuel), raw silver (smelt it in a furnace → silver ingot), diamond.
+- **New tools:** silver (faster and longer-lasting than stone) and diamond (fastest, very durable, strongest sword) — pickaxe, axe, shovel, sword.
+- **Mining tiers:** wood/gold pickaxes get coal and bricks, stone gets silver, silver gets diamond. Too weak a pickaxe means the ore breaks slowly and drops nothing.
+- **New blocks:** bricks (stone + gravel), lamp (glass + coal), and blocks of coal, silver and diamond (9 ingots → block, block → 9 back).

@@ -442,7 +442,7 @@ const CFG = {
   REACH: 6,
 };
 
-const GAME_VERSION = '8.3';
+const GAME_VERSION = '8.4';
 // the world being played. MAIN fills it in from the world list; "temp" is the unsaved world behind the menu
 const GAME = { id: null, name: '', mode: 'creative', temp: true, dead: false };
 const survivalMode = () => GAME.mode !== 'creative';
@@ -601,6 +601,17 @@ const Tex = (() => {
     }
   }
 
+  // veins of ore painted over the stone: dark rim, body, glint
+  function ore(P, c, n, glint) {
+    for (let i = 0; i < n; i++) {
+      const cx = 3 + P.rnd() * 26, cy = 3 + P.rnd() * 26, r = 1.6 + P.rnd() * 1.8;
+      for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+        const d = Math.hypot(x - cx, y - cy); if (d > r + 0.4) continue;
+        P.set(x, y, d > r - 0.4 ? mul(c[0], 0.8) : (x + y - cx - cy) < -0.5 ? c[2] : d < r * 0.5 && P.rnd() < glint * 0.4 ? c[2] : c[1]);
+      }
+      P.set(Math.round(cx), Math.round(cy), c[0]);
+    }
+  }
   const PAINT = {
     grassTop(P) {
       P.each((x, y) => grassColor(P, x, y));
@@ -727,6 +738,39 @@ const Tex = (() => {
       for (let k = 0; k < 6; k++) { P.set(16 + k, 27 - k, glint, 190); }
       P.set(4, 4, [255, 255, 255]); P.set(TS - 5, TS - 5, [255, 255, 255], 200);
     },
+    coalOre(P) { PAINT.stone(P); ore(P, [[18, 18, 22], [38, 38, 44], [70, 70, 78]], 9, 0.7); },
+    silverOre(P) { PAINT.stone(P); ore(P, [[176, 190, 214], [226, 236, 252], [255, 255, 255]], 9, 0.9); },
+    diamondOre(P) { PAINT.stone(P); ore(P, [[24, 150, 158], [70, 226, 224], [214, 255, 250]], 6, 1.0); },
+    brick(P) {
+      const pal = [[132, 58, 44], [150, 68, 52], [168, 80, 60], [184, 94, 72]];
+      P.each((x, y) => { const row = (y / 8) | 0, ox = (row & 1) * 8, bx = (x + ox) % 16;
+        if (y % 8 === 7 || bx === 15) return [192, 184, 170];
+        return quant(pal, ct(P.n(x, y, 6, 6, 2), 1.4), x, y, 0.25); });
+    },
+    coalBlock(P) {
+      const pal = [[20, 20, 24], [30, 30, 36], [42, 42, 50], [58, 58, 68]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 5, 5, 3), 1.6), x, y, 0.25));
+      for (let i = 0; i < 10; i++) P.set(P.rnd() * TS | 0, P.rnd() * TS | 0, [96, 98, 110]);
+      P.rect(0, 0, TS, 1, [12, 12, 14]); P.rect(0, TS - 1, TS, TS, [12, 12, 14]); P.rect(0, 0, 1, TS, [12, 12, 14]); P.rect(TS - 1, 0, TS, TS, [12, 12, 14]);
+    },
+    silverBlock(P) {
+      const pal = [[176, 188, 206], [204, 216, 232], [228, 238, 250], [248, 252, 255]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 3, 3, 2) * 0.5 + (1 - (x + y) / (TS * 2)) * 0.5, 1.5), x, y, 0.2));
+      P.rect(0, 0, TS, 2, [240, 244, 250]); P.rect(0, 0, 2, TS, [240, 244, 250]); P.rect(0, TS - 2, TS, TS, [110, 118, 130]); P.rect(TS - 2, 0, TS, TS, [110, 118, 130]);
+      P.rect(5, 5, TS - 5, 6, [120, 128, 140]); P.rect(5, TS - 6, TS - 5, TS - 5, [120, 128, 140]);
+    },
+    diamondBlock(P) {
+      const pal = [[24, 150, 158], [50, 196, 200], [96, 232, 228], [180, 252, 248]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 4, 4, 2) * 0.6 + (1 - (x + y) / (TS * 2)) * 0.4, 1.6), x, y, 0.2));
+      P.rect(0, 0, TS, 2, [214, 255, 250]); P.rect(0, 0, 2, TS, [214, 255, 250]); P.rect(0, TS - 2, TS, TS, [14, 110, 118]); P.rect(TS - 2, 0, TS, TS, [14, 110, 118]);
+      for (let i = 0; i < 6; i++) { const x = 4 + P.rnd() * 24 | 0, y = 4 + P.rnd() * 24 | 0; P.set(x, y, [255, 255, 255]); P.set(x + 1, y, [214, 255, 250]); P.set(x, y + 1, [214, 255, 250]); }
+    },
+    lamp(P) {
+      const pal = [[214, 160, 70], [236, 190, 90], [250, 218, 130], [255, 240, 180]];
+      P.each((x, y) => quant(pal, ct(P.n(x, y, 3, 3, 2), 1.3), x, y, 0.2));
+      P.rect(0, 0, TS, 2, [120, 84, 44]); P.rect(0, TS - 2, TS, TS, [120, 84, 44]); P.rect(0, 0, 2, TS, [120, 84, 44]); P.rect(TS - 2, 0, TS, TS, [120, 84, 44]);
+      P.rect(15, 2, 17, TS - 2, [120, 84, 44]); P.rect(2, 15, TS - 2, 17, [120, 84, 44]);
+    },
     gravel(P) {
       const pal = [[118, 116, 114], [100, 98, 98], [136, 130, 122], [110, 104, 98], [148, 142, 132], [90, 88, 90], [126, 118, 108]];
       const V = cells(P, 6, 0.85);
@@ -782,7 +826,7 @@ const Tex = (() => {
       for (let i = 0; i < 5; i++) P.rect(11 + i * 2, 5, 12 + i * 2, 8, [38, 38, 44]);           // vent
     },
   };
-  const ORDER = ['grassTop', 'grassSide', 'dirt', 'stone', 'sand', 'water', 'logSide', 'logTop', 'leaves', 'planks', 'glass', 'gravel', 'wool', 'tableTop', 'tableSide', 'furnace'];
+  const ORDER = ['grassTop', 'grassSide', 'dirt', 'stone', 'sand', 'water', 'logSide', 'logTop', 'leaves', 'planks', 'glass', 'gravel', 'wool', 'tableTop', 'tableSide', 'furnace', 'coalOre', 'silverOre', 'diamondOre', 'brick', 'coalBlock', 'silverBlock', 'diamondBlock', 'lamp'];
   const TILE = {}; ORDER.forEach((n, i) => { TILE[n] = i; });
 
   // ---------------- put every tile in its cell, with the edge repeated all round ----------------
@@ -818,14 +862,15 @@ const Tex = (() => {
 const World = (() => {
   const { CHUNK: CS, HEIGHT: H, SEA } = CFG;
   const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SAND = 4, WATER = 5, LOG = 6, LEAVES = 7, PLANKS = 8, GLASS = 9, GRAVEL = 10, WOOL = 11, TABLE = 12, FURNACE = 13;
-  const B = { AIR, GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, PLANKS, GLASS, GRAVEL, WOOL, TABLE, FURNACE };
+  const COAL_ORE = 14, SILVER_ORE = 15, DIAMOND_ORE = 16, BRICK = 17, COAL_BLOCK = 18, SILVER_BLOCK = 19, DIAMOND_BLOCK = 20, LAMP = 21;
+  const B = { AIR, GRASS, DIRT, STONE, SAND, WATER, LOG, LEAVES, PLANKS, GLASS, GRAVEL, WOOL, TABLE, FURNACE, COAL_ORE, SILVER_ORE, DIAMOND_ORE, BRICK, COAL_BLOCK, SILVER_BLOCK, DIAMOND_BLOCK, LAMP };
 
   // ---- the texture atlas is painted by TEXTURES above; this is how each tile may be turned or mirrored from block to block
   // (bit 1: mirror left-right, bit 2: mirror up-down, bit 4: swap the two, so the four turns and mirrors all happen)
   const TILE = Tex.TILE;
   const TILE_OPS = {
     [TILE.grassTop]: 7, [TILE.dirt]: 7, [TILE.stone]: 7, [TILE.sand]: 7, [TILE.gravel]: 7, [TILE.leaves]: 7, [TILE.wool]: 7, [TILE.logTop]: 7,
-    [TILE.grassSide]: 1, [TILE.logSide]: 1, [TILE.planks]: 3, [TILE.furnace]: 1,
+    [TILE.coalOre]: 7, [TILE.silverOre]: 7, [TILE.diamondOre]: 7, [TILE.grassSide]: 1, [TILE.logSide]: 1, [TILE.planks]: 3, [TILE.furnace]: 1,
   };
   const INFO = [];     // per block: name, tex [top, bottom, side], kind: solid | cutout | water
   const def = (id, name, top, bottom, side, kind = 'solid') => INFO[id] = { name, tex: [top, bottom, side], kind };
@@ -842,6 +887,14 @@ const World = (() => {
   def(WOOL, 'Wool', TILE.wool, TILE.wool, TILE.wool);
   def(TABLE, 'Crafting table', TILE.tableTop, TILE.planks, TILE.tableSide);
   def(FURNACE, 'Furnace', TILE.stone, TILE.stone, TILE.furnace);
+  def(COAL_ORE, 'Coal ore', TILE.coalOre, TILE.coalOre, TILE.coalOre);
+  def(SILVER_ORE, 'Silver ore', TILE.silverOre, TILE.silverOre, TILE.silverOre);
+  def(DIAMOND_ORE, 'Diamond ore', TILE.diamondOre, TILE.diamondOre, TILE.diamondOre);
+  def(BRICK, 'Bricks', TILE.brick, TILE.brick, TILE.brick);
+  def(COAL_BLOCK, 'Block of coal', TILE.coalBlock, TILE.coalBlock, TILE.coalBlock);
+  def(SILVER_BLOCK, 'Block of silver', TILE.silverBlock, TILE.silverBlock, TILE.silverBlock);
+  def(DIAMOND_BLOCK, 'Block of diamond', TILE.diamondBlock, TILE.diamondBlock, TILE.diamondBlock);
+  def(LAMP, 'Lamp', TILE.lamp, TILE.lamp, TILE.lamp);
   const SOLID = new Uint8Array(32), OPAQUE = new Uint8Array(32), OCC = new Uint8Array(32);
   INFO.forEach((b, i) => { if (!b) return; SOLID[i] = b.kind !== 'water' ? 1 : 0; OPAQUE[i] = b.kind === 'solid' ? 1 : 0; OCC[i] = b.kind === 'solid' || i === LEAVES ? 1 : 0; });
 
@@ -1196,6 +1249,20 @@ const World = (() => {
     for (let rz = rz0 - 1; rz <= rz0 + 1; rz++) for (let rx = rx0 - 1; rx <= rx0 + 1; rx++) for (const st of seaStructs(rx, rz)) if (Math.hypot(st.chest.x - px, st.chest.z - pz) < rad) out.push(st.chest);
     return out;
   }
+  // ore veins: small blobs around a seeded point in each 6-block cell. coal is common, silver deeper, diamond rare and deep
+  const ORES = [[COAL_ORE, 0.14, 1.8, 4, 40], [SILVER_ORE, 0.11, 1.6, 4, 30], [DIAMOND_ORE, 0.05, 1.3, 3, 15]];
+  function oreAt(wx, y, wz, h) {
+    if (y < 1) return STONE;
+    for (let k = ORES.length - 1; k >= 0; k--) {
+      const o = ORES[k]; if (y > o[4] || y > h - 5) continue;
+      const cx = Math.floor(wx / 6), cy = Math.floor(y / 6), cz = Math.floor(wz / 6), sd = seed + 300 + k * 17, hk = cy * 7919 + cx;
+      if (hash2(hk, cz, sd) > o[1]) continue;
+      const px = cx * 6 + hash2(hk, cz, sd + 1) * 6, py = cy * 6 + hash2(hk, cz, sd + 2) * 6, pz = cz * 6 + hash2(hk, cz, sd + 3) * 6;
+      const d = Math.hypot(wx + 0.5 - px, y + 0.5 - py, wz + 0.5 - pz);
+      if (d < o[2] && hash2(wx * 31 + y, wz, sd + 4) < 0.85) return o[0];
+    }
+    return STONE;
+  }
   function generate(cx, cz) {
     const data = new Uint8Array(CS * CS * H), x0 = cx * CS, z0 = cz * CS, hmap = new Int16Array(CS * CS);
     for (let z = 0; z < CS; z++) for (let x = 0; x < CS; x++) {
@@ -1205,7 +1272,7 @@ const World = (() => {
       for (let y = 0; y <= Math.max(h, SEA); y++) {
         let b;
         if (y > h) b = WATER;
-        else if (y < h - 3) b = STONE;
+        else if (y < h - 3) b = y < 40 ? oreAt(wx, y, wz, h) : STONE;
         else if (deep) b = hash2(wx, wz, seed + 5) < 0.4 ? GRAVEL : SAND;
         else if (beach) b = SAND;
         else b = y === h ? GRASS : DIRT;
@@ -2758,9 +2825,9 @@ const GameAudio = (() => {
   }
 
   // ---------------- footsteps and blocks ----------------
-  const STEP = { [B.GRASS]: 'grass', [B.LEAVES]: 'grass', [B.DIRT]: 'dirt', [B.SAND]: 'sand', [B.GRAVEL]: 'gravel', [B.STONE]: 'hard',
+  const STEP = { [B.GRASS]: 'grass', [B.LEAVES]: 'grass', [B.DIRT]: 'dirt', [B.SAND]: 'sand', [B.GRAVEL]: 'gravel', [B.STONE]: 'hard', [B.COAL_ORE]: 'hard', [B.SILVER_ORE]: 'hard', [B.DIAMOND_ORE]: 'hard', [B.BRICK]: 'hard', [B.COAL_BLOCK]: 'hard', [B.SILVER_BLOCK]: 'hard', [B.DIAMOND_BLOCK]: 'hard', [B.LAMP]: 'glass',
                  [B.LOG]: 'wood', [B.PLANKS]: 'wood', [B.GLASS]: 'glass' };
-  const DIG = { [B.GRASS]: 'dig_crumbly', [B.DIRT]: 'dig_crumbly', [B.SAND]: 'dig_crumbly', [B.GRAVEL]: 'dig_crumbly', [B.STONE]: 'dig_cracky',
+  const DIG = { [B.GRASS]: 'dig_crumbly', [B.DIRT]: 'dig_crumbly', [B.SAND]: 'dig_crumbly', [B.GRAVEL]: 'dig_crumbly', [B.STONE]: 'dig_cracky', [B.COAL_ORE]: 'dig_cracky', [B.SILVER_ORE]: 'dig_cracky', [B.DIAMOND_ORE]: 'dig_cracky', [B.BRICK]: 'dig_cracky', [B.COAL_BLOCK]: 'dig_cracky', [B.SILVER_BLOCK]: 'dig_cracky', [B.DIAMOND_BLOCK]: 'dig_cracky', [B.LAMP]: 'break_glass',
                 [B.LOG]: 'dig_choppy', [B.PLANKS]: 'dig_choppy', [B.LEAVES]: 'dig_snappy', [B.GLASS]: 'break_glass' };
   let stepDist = 0, wasGround = true, fallV = 0;
   function steps(dt) {
@@ -2975,12 +3042,15 @@ const Inventory = (() => {
   const item = (id, name, o) => { ITEM[id] = Object.assign({ id, name, stack: 64 }, o || {}); };
   const BLOCK_ITEM = {};
   for (const [id, b] of [['grass', B.GRASS], ['dirt', B.DIRT], ['stone', B.STONE], ['sand', B.SAND], ['gravel', B.GRAVEL], ['log', B.LOG],
-    ['planks', B.PLANKS], ['leaves', B.LEAVES], ['glass', B.GLASS], ['wool', B.WOOL], ['table', B.TABLE], ['furnace', B.FURNACE]]) {
+    ['planks', B.PLANKS], ['leaves', B.LEAVES], ['glass', B.GLASS], ['wool', B.WOOL], ['table', B.TABLE], ['furnace', B.FURNACE],
+    ['coal_ore', B.COAL_ORE], ['silver_ore', B.SILVER_ORE], ['diamond_ore', B.DIAMOND_ORE], ['brick', B.BRICK], ['coal_block', B.COAL_BLOCK], ['silver_block', B.SILVER_BLOCK], ['diamond_block', B.DIAMOND_BLOCK], ['lamp', B.LAMP]]) {
     item(id, World.INFO[b].name, { block: b }); BLOCK_ITEM[b] = id;
   }
   Object.assign(ITEM.log, { fuel: 15 }); Object.assign(ITEM.planks, { fuel: 15 }); Object.assign(ITEM.table, { fuel: 15 });
   Object.assign(ITEM.wool, { fuel: 5 }); Object.assign(ITEM.sand, { smelt: 'glass' });
+  Object.assign(ITEM.coal_block, { fuel: 800 });
   item('stick', 'Stick', { fuel: 5 });
+  item('coal', 'Coal', { fuel: 80 }); item('raw_silver', 'Raw silver', { smelt: 'silver_ingot' }); item('silver_ingot', 'Silver ingot'); item('diamond', 'Diamond');
   item('bed', 'Bed', { stack: 1, bed: true });
   item('leather', 'Leather'); item('feather', 'Feather'); item('egg', 'Egg', { stack: 16 });
   item('beef', 'Raw beef', { food: 3, smelt: 'steak' }); item('steak', 'Steak', { food: 8 });
@@ -2991,19 +3061,25 @@ const Inventory = (() => {
   item('fish', 'Raw fish', { food: 3, smelt: 'cooked_fish' }); item('cooked_fish', 'Cooked fish', { food: 7 });
   item('gold_coin', 'Gold coin', { cursed: 0.12 }); item('gold_bar', 'Gold bar', { cursed: 0.5, stack: 16 }); item('pearl', 'Pearl', { stack: 16 });
   item('idol', 'Drowned idol', { cursed: 1.5, stack: 4 }); item('journal', 'Waterlogged journal', { stack: 1 });
-  for (const [m, M, speed, dur] of [['wood', 'Wooden', 2, 60], ['stone', 'Stone', 4, 132], ['gold', 'Golden', 6, 40]])
-    for (const [t, dmg] of [['pickaxe', 1], ['axe', 2], ['shovel', 1], ['sword', m === 'wood' ? 2 : m === 'gold' ? 4 : 3]])
-      item(m + '_' + t, M + ' ' + t, { tool: t, mat: m, speed, dur, damage: dmg, stack: 1, fuel: m === 'wood' ? 10 : 0, cursed: m === 'gold' ? 0.3 : undefined });
+  const TIER = { wood: 1, gold: 1, stone: 2, silver: 3, diamond: 4 };
+  const SWORD = { wood: 2, stone: 3, silver: 4, gold: 4, diamond: 6 };
+  for (const [m, M, speed, dur] of [['wood', 'Wooden', 2, 60], ['stone', 'Stone', 4, 132], ['silver', 'Silver', 5.5, 260], ['gold', 'Golden', 6, 40], ['diamond', 'Diamond', 8, 1400]])
+    for (const [t, dmg] of [['pickaxe', 1], ['axe', 2], ['shovel', 1], ['sword', SWORD[m]]])
+      item(m + '_' + t, M + ' ' + t, { tool: t, mat: m, tier: TIER[m], speed, dur, damage: t === 'sword' ? dmg : m === 'diamond' ? dmg + 1 : dmg, stack: 1, fuel: m === 'wood' ? 10 : 0, cursed: m === 'gold' ? 0.3 : undefined });
+  // what a block gives when mined, if not itself
+  const DROP = { [B.COAL_ORE]: 'coal', [B.SILVER_ORE]: 'raw_silver', [B.DIAMOND_ORE]: 'diamond' };
 
   // how long a block takes to mine (hardness, the right tool, and whether you need it to get the block)
   const MINE = {
     [B.GRASS]: [0.6, 'shovel'], [B.DIRT]: [0.5, 'shovel'], [B.SAND]: [0.5, 'shovel'], [B.GRAVEL]: [0.6, 'shovel'], [B.LEAVES]: [0.2],
     [B.LOG]: [2, 'axe'], [B.PLANKS]: [2, 'axe'], [B.TABLE]: [2.5, 'axe'], [B.WOOL]: [0.8], [B.GLASS]: [0.3],
     [B.STONE]: [1.5, 'pickaxe', true], [B.FURNACE]: [3.5, 'pickaxe', true],
+    [B.COAL_ORE]: [2.2, 'pickaxe', true, 1], [B.SILVER_ORE]: [3, 'pickaxe', true, 2], [B.DIAMOND_ORE]: [3.8, 'pickaxe', true, 3], [B.BRICK]: [2, 'pickaxe', true, 1],
+    [B.COAL_BLOCK]: [4, 'pickaxe', true, 1], [B.SILVER_BLOCK]: [4.5, 'pickaxe', true, 2], [B.DIAMOND_BLOCK]: [5.5, 'pickaxe', true, 3], [B.LAMP]: [0.4],
   };
 
   // ================= recipes (P planks, S stone, s stick, L log) =================
-  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log', w: 'wool', G: 'gold_bar', C: 'gold_coin' };
+  const KEYS = { P: 'planks', S: 'stone', s: 'stick', L: 'log', w: 'wool', G: 'gold_bar', C: 'gold_coin', I: 'silver_ingot', D: 'diamond', K: 'coal', g: 'gravel', y: 'glass', B: 'brick', X: 'silver_block', Z: 'diamond_block', Q: 'coal_block' };
   const RECIPES = [
     { out: ['planks', 4], shape: ['L'] },
     { out: ['stick', 4], shape: ['P', 'P'] },
@@ -3011,8 +3087,13 @@ const Inventory = (() => {
     { out: ['furnace', 1], shape: ['SSS', 'S S', 'SSS'] },
     { out: ['bed', 1], shape: ['www', 'PPP'] },
     { out: ['gold_bar', 1], shape: ['CC', 'CC'] },
+    { out: ['brick', 4], shape: ['Sg', 'gS'] },
+    { out: ['lamp', 2], shape: [' y ', 'yKy', ' y '] },
+    { out: ['coal_block', 1], shape: ['KKK', 'KKK', 'KKK'] }, { out: ['coal', 9], shape: ['Q'] },
+    { out: ['silver_block', 1], shape: ['III', 'III', 'III'] }, { out: ['silver_ingot', 9], shape: ['X'] },
+    { out: ['diamond_block', 1], shape: ['DDD', 'DDD', 'DDD'] }, { out: ['diamond', 9], shape: ['Z'] },
   ];
-  for (const [m, c] of [['wood', 'P'], ['stone', 'S'], ['gold', 'G']]) RECIPES.push(
+  for (const [m, c] of [['wood', 'P'], ['stone', 'S'], ['silver', 'I'], ['gold', 'G'], ['diamond', 'D']]) RECIPES.push(
     { out: [m + '_pickaxe', 1], shape: [c + c + c, ' s ', ' s '] },
     { out: [m + '_axe', 1], shape: [c + c, c + 's', ' s'] },
     { out: [m + '_shovel', 1], shape: [c, 's', 's'] },
@@ -3075,6 +3156,10 @@ const Inventory = (() => {
   ART.cooked_chicken = [['#5e3a20', '#b98050', '#fff3e6'], ART0.chicken[3]];
   ART.gold_coin = [['#7a5a10', '#e8b830', '#fff0a0'], ['................', '................', '.....111111.....', '....12222221....', '...1223333221...', '...1233223321...', '...1232222321...', '...1232222321...', '...1233223321...', '...1223333221...', '....12222221....', '.....111111.....']];
   ART.gold_bar = [['#6b4c0c', '#e0a828', '#fff2b0'], ['................', '................', '................', '....111111111...', '...13333333321..', '..1322222222221.', '..1222222222221.', '..1222222222221.', '...11111111111..']];
+  ART.coal = [['#15151a', '#34343c', '#6c6c78'], ['................', '................', '......11111.....', '....11222221....', '...1223322221...', '...1222232221...', '..122222222221..', '..122322222221..', '...1222222221...', '....11222211....', '......1111......']];
+  ART.raw_silver = [['#5f6672', '#a9b1bd', '#eef2f7'], ['................', '................', '.....11111......', '...11222221.....', '..1223322221....', '..1222222321....', '..12222222221...', '...122232221....', '....1122221.....', '......111.......']];
+  ART.silver_ingot = [['#5f6672', '#c4ccd8', '#ffffff'], ['................', '................', '................', '....111111111...', '...13333333321..', '..1322222222221.', '..1222222222221.', '..1222222222221.', '...11111111111..']];
+  ART.diamond = [['#0f6d76', '#3fd8d4', '#e6fffc'], ['................', '................', '....1111111.....', '...133322221....', '..13332222221...', '..1111111111....', '...12222221.....', '....122221......', '.....1221.......', '......11........']];
   ART.pearl = [['#9aa0b4', '#f2eef6', '#ffffff'], ['................', '................', '......1111......', '....11333311....', '...1333322221...', '..133322222221..', '..132222222221..', '..122222222221..', '..122222222211..', '...1222222211...', '....11222111....', '......111.......']];
   ART.idol = [['#10261f', '#3f7a62', '#f0d050'], ['................', '.....11111......', '....1222221.....', '...123223221....', '...133223331....', '...122222221....', '....1222221.....', '...122222221....', '..12222222221...', '..12222222221...', '..12222222221...', '..11111111111...']];
   ART.fish = [['#2f4f6f', '#7fb0d0', '#e8f2f8'], ['................', '................', '................', '.......1111.....', '.....112222211..', '...1122333222211', '..12223322222221', '.1222222222221.1', '..122222222211.1', '...1122222211.11', '.....111111111..']];
@@ -3088,7 +3173,7 @@ const Inventory = (() => {
   }
   function toolArt(kind, mat) {   // tools and sticks, plotted pixel by pixel
     const cv = mk16(), x = cv.getContext('2d');
-    const H = mat === 'stone' ? ['#a4a7ae', '#5c6068'] : mat === 'gold' ? ['#f2cf58', '#a67f22'] : ['#b48c5a', '#6e5433'], S = ['#9c7648', '#5c4126'];
+    const H = mat === 'diamond' ? ['#7cf3ea', '#1fa39c'] : mat === 'silver' ? ['#e6ebf2', '#8b95a3'] : mat === 'stone' ? ['#a4a7ae', '#5c6068'] : mat === 'gold' ? ['#f2cf58', '#a67f22'] : ['#b48c5a', '#6e5433'], S = ['#9c7648', '#5c4126'];
     const dot = (i, j, c) => { if (i >= 0 && j >= 0 && i < 16 && j < 16) { x.fillStyle = c; x.fillRect(i, j, 1, 1); } };
     const line = (x0, y0, x1, y1, c, c2) => {
       const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -3192,7 +3277,7 @@ const Inventory = (() => {
   const attackDamage = () => { const d = held() && ITEM[held().id]; return d && d.damage || 1; };
   function breakTime(b) {   // seconds to mine it by hand or with what you hold, and whether you get the block
     const m = MINE[b] || [1], d = held() && ITEM[held().id], right = !!(d && d.tool && d.tool === m[1]);
-    const drops = !m[2] || right;
+    const drops = !m[2] || (right && (d.tier || 1) >= (m[3] || 1));
     return { time: m[0] * (drops ? 1.5 : 5) / (right ? d.speed : 1), drops, tool: !!(d && d.tool) };
   }
   function blockBroken(t, harvest) {
@@ -3202,7 +3287,7 @@ const Inventory = (() => {
       delete furnaces[key];
     }
     if (openKey === key) close();
-    if (harvest && survivalMode() && BLOCK_ITEM[t.b] && t.b !== B.GLASS) drop(BLOCK_ITEM[t.b], t.x + 0.5, t.y + 0.1, t.z + 0.5);   // glass shatters
+    if (harvest && survivalMode() && (DROP[t.b] || BLOCK_ITEM[t.b]) && t.b !== B.GLASS && t.b !== B.LAMP) drop(DROP[t.b] || BLOCK_ITEM[t.b], t.x + 0.5, t.y + 0.1, t.z + 0.5);   // glass shatters
   }
 
   // ---------------- the hotbar ----------------
@@ -3643,7 +3728,7 @@ const Inventory = (() => {
     get isOpen() { return isOpen; }, set relock(f) { relock = f; }, get sel() { return sel; }, get cursor() { return cursor; },
     dropCount: () => drops.length, match, RECIPES,
     giveAll() { give('bed', 1);  for (const id of ['beef', 'pork', 'mutton', 'chicken', 'milk', 'leather', 'feather', 'egg', 'stick']) give(id, 4); },
-    giveBlocks() { for (const id of ['grass', 'dirt', 'stone', 'sand', 'gravel', 'log', 'planks', 'glass', 'wool', 'table', 'furnace']) give(id, id === 'table' || id === 'furnace' ? 1 : 64, true); toast('+ blocks'); },
+    giveBlocks() { for (const id of ['grass', 'dirt', 'stone', 'sand', 'gravel', 'log', 'planks', 'glass', 'wool', 'table', 'furnace', 'coal_ore', 'silver_ore', 'diamond_ore', 'brick', 'coal_block', 'silver_block', 'diamond_block', 'lamp']) give(id, id === 'table' || id === 'furnace' ? 1 : 64, true); toast('+ blocks'); },
     giveTools() { for (const id in ITEM) if (ITEM[id].tool) give(id, 1, true); toast('+ tools'); },
   };
 })();
